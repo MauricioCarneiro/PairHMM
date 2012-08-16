@@ -69,20 +69,127 @@ public class PairHMM {
         }
     }
 
-    public static void initializeArrays(final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray,
-                                        final int X_METRIC_LENGTH) {
+    public static void initializeArrays(final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray, final int X_METRIC_LENGTH, final int Y_METRIC_LENGTH) {
 
-        for (int iii = 0; iii < X_METRIC_LENGTH; iii++) {
-            Arrays.fill(matchMetricArray[iii], Double.NEGATIVE_INFINITY);
-            Arrays.fill(XMetricArray[iii], Double.NEGATIVE_INFINITY);
-            Arrays.fill(YMetricArray[iii], Double.NEGATIVE_INFINITY);
+        for (int i = 0; i < X_METRIC_LENGTH; i++) {
+            Arrays.fill(matchMetricArray[i], Double.NEGATIVE_INFINITY);
+            Arrays.fill(XMetricArray[i], Double.NEGATIVE_INFINITY);
+            Arrays.fill(YMetricArray[i], Double.NEGATIVE_INFINITY);
         }
-
         // the initial condition
         matchMetricArray[1][1] = 0.0; // Math.log10(1.0);
 
+        final double[] d = {qualToProbLog10((byte) (DEFAULT_GOP + DEFAULT_GOP)), qualToErrorProbLog10(DEFAULT_GOP), 0.0};
+        final double[] e = {qualToProbLog10(DEFAULT_GCP), qualToErrorProbLog10(DEFAULT_GCP), 0.0};
+
+        for (int i = 2; i < Y_METRIC_LENGTH; i++) {
+            updateCell(1, i, 0.0, d, e, matchMetricArray, XMetricArray, YMetricArray);
+        }
     }
 
+    public static double finalizeArrays(final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray,
+                                      final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, int hapStartIndex,
+                                      final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals,
+                                      final int X_METRIC_LENGTH, final int Y_METRIC_LENGTH) {
+        final int i = X_METRIC_LENGTH - 1;
+        final int qualIndexGOP = Math.min(insertionGOP[i-2] + deletionGOP[i-2], MAX_CACHED_QUAL);
+        final double d[] = new double[3];
+        final double e[] = new double[3];
+        d[0] = qualToProbLog10((byte) qualIndexGOP);
+        e[0] = qualToProbLog10(overallGCP[i-2]);
+        d[1] = qualToErrorProbLog10(insertionGOP[i-2]);
+        e[1] = qualToErrorProbLog10(overallGCP[i-2]);
+        d[2] = 0.0;
+        e[2] = 0.0;
+        final byte x = readBases[i-2];
+        final byte qual = readQuals[i-2];
+        for (int j = Math.max(2, hapStartIndex + 1); j < Y_METRIC_LENGTH; j++) {
+            final byte y = haplotypeBases[j-2];
+            final double pBaseReadLog10 = (x == y || x == (byte) 'N' || y == (byte) 'N' ? qualToProbLog10(qual) : qualToErrorProbLog10(qual));
+            updateCell(i, j, pBaseReadLog10, d, e, matchMetricArray, XMetricArray, YMetricArray);
+        }
+
+        // final probability is the log10 sum of the last element in all three state arrays
+        final int endI = X_METRIC_LENGTH - 1;
+        final int endJ = Y_METRIC_LENGTH - 1;
+        return approximateLog10SumLog10(matchMetricArray[endI][endJ], XMetricArray[endI][endJ], YMetricArray[endI][endJ]);
+
+    }
+    public double computeReadLikelihoodGivenHaplotype(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals,
+                                                      final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP) {
+
+        // ensure that all the qual scores have valid values
+        for (int i = 0; i < readQuals.length; i++) {
+            readQuals[i] = (readQuals[i] < MIN_USABLE_Q_SCORE ? MIN_USABLE_Q_SCORE : (readQuals[i] > MAX_CACHED_QUAL ? MAX_CACHED_QUAL : readQuals[i]));
+        }
+
+        // M, X, and Y arrays are of size read and haplotype + 1 because of an extra column for initial conditions and + 1 to consider the final base in a non-global alignment
+        final int X_METRIC_LENGTH = readBases.length + 2;
+        final int Y_METRIC_LENGTH = haplotypeBases.length + 2;
+
+        // initial arrays to hold the probabilities of being in the match, insertion and deletion cases
+        final double[][] matchMetricArray = new double[X_METRIC_LENGTH][Y_METRIC_LENGTH];
+        final double[][] XMetricArray = new double[X_METRIC_LENGTH][Y_METRIC_LENGTH];
+        final double[][] YMetricArray = new double[X_METRIC_LENGTH][Y_METRIC_LENGTH];
+
+        initializeArrays(matchMetricArray, XMetricArray, YMetricArray, X_METRIC_LENGTH, Y_METRIC_LENGTH);
+        computeReadLikelihoodGivenHaplotype(haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP, 0, matchMetricArray, XMetricArray, YMetricArray);
+        return finalizeArrays(matchMetricArray, XMetricArray, YMetricArray, insertionGOP, deletionGOP, overallGCP, 0, haplotypeBases, readBases, readQuals, X_METRIC_LENGTH, Y_METRIC_LENGTH);
+    }
+
+    public void computeReadLikelihoodGivenHaplotype(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals,
+                                                      final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex,
+                                                      final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray) {
+
+        // M, X, and Y arrays are of size read and haplotype + 1 because of an extra column for initial conditions and + 1 to consider the final base in a non-global alignment
+        final int X_METRIC_LENGTH = readBases.length + 2;
+        final int Y_METRIC_LENGTH = haplotypeBases.length + 2;
+
+		// simple rectangular version of update loop, slow
+		for (int i = 2; i < X_METRIC_LENGTH - 1; i++) {
+
+            final int qualIndexGOP = Math.min(insertionGOP[i-2] + deletionGOP[i-2], MAX_CACHED_QUAL);
+            final double d[] = new double[3];
+            final double e[] = new double[3];
+            d[0] = qualToProbLog10((byte) qualIndexGOP);
+            e[0] = qualToProbLog10(overallGCP[i-2]);
+            d[1] = qualToErrorProbLog10(insertionGOP[i-2]);
+            e[1] = qualToErrorProbLog10(overallGCP[i-2]);
+            d[2] = qualToErrorProbLog10(deletionGOP[i-2]);
+            e[2] = qualToErrorProbLog10(overallGCP[i-2]);
+
+            // the emission probability is applied when leaving the state
+            final byte x = readBases[i-2];
+            final byte qual = readQuals[i-2];
+
+            // In case hapStart > 0, we will unnecessarily call this method (avoiding an if statement)
+            updateCell(i, 1, 0.0, d, e, matchMetricArray, XMetricArray, YMetricArray);
+
+            for (int j = Math.max(2, hapStartIndex + 1); j < Y_METRIC_LENGTH; j++) {
+                final byte y = haplotypeBases[j-2];
+                final double pBaseReadLog10 = (x == y || x == (byte) 'N' || y == (byte) 'N' ? qualToProbLog10(qual) : qualToErrorProbLog10(qual));
+                updateCell(i, j, pBaseReadLog10, d, e, matchMetricArray, XMetricArray, YMetricArray);
+			}
+		}
+    }
+
+    /**
+     * Updates a cell in the HMM matrix
+     *
+     * The read and haplotype indices are offset by one because the state arrays have an extra column to hold the initial conditions
+     */
+
+    private static void updateCell(final int indI, final int indJ, double pBaseReadLog10, double[] d, double[] e, final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray) {
+        matchMetricArray[indI][indJ] = pBaseReadLog10 + approximateLog10SumLog10(matchMetricArray[indI - 1][indJ - 1] + d[0], XMetricArray[indI - 1][indJ - 1] + e[0], YMetricArray[indI - 1][indJ - 1] + e[0]);
+        XMetricArray[indI][indJ] = approximateLog10SumLog10(matchMetricArray[indI - 1][indJ] + d[1], XMetricArray[indI - 1][indJ] + e[1]);
+        YMetricArray[indI][indJ] = approximateLog10SumLog10(matchMetricArray[indI][indJ - 1] + d[2], YMetricArray[indI][indJ - 1] + e[2]);
+    }
+
+
+
+    /**************************************************************************
+     * MATH UTILS
+     *************************************************************************/
     static private double qualToProbLog10Raw(int qual) {
         return Math.log10(1.0 - qualToErrorProbRaw(qual));
     }
@@ -150,92 +257,5 @@ public class PairHMM {
         return big + jacobianLogTable[ind];
     }
 
-    public double computeReadLikelihoodGivenHaplotype(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals,
-                                                      final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP) {
 
-        // M, X, and Y arrays are of size read and haplotype + 1 because of an extra column for initial conditions and + 1 to consider the final base in a non-global alignment
-        final int X_METRIC_LENGTH = readBases.length + 2;
-        final int Y_METRIC_LENGTH = haplotypeBases.length + 2;
-
-        // initial arrays to hold the probabilities of being in the match, insertion and deletion cases
-        final double[][] matchMetricArray = new double[X_METRIC_LENGTH][Y_METRIC_LENGTH];
-        final double[][] XMetricArray = new double[X_METRIC_LENGTH][Y_METRIC_LENGTH];
-        final double[][] YMetricArray = new double[X_METRIC_LENGTH][Y_METRIC_LENGTH];
-
-        initializeArrays(matchMetricArray, XMetricArray, YMetricArray, X_METRIC_LENGTH);
-
-        return computeReadLikelihoodGivenHaplotype(haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP, 0, matchMetricArray, XMetricArray, YMetricArray);
-    }
-
-    public double computeReadLikelihoodGivenHaplotype(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals,
-                                                      final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex,
-                                                      final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray) {
-
-        // M, X, and Y arrays are of size read and haplotype + 1 because of an extra column for initial conditions and + 1 to consider the final base in a non-global alignment
-        final int X_METRIC_LENGTH = readBases.length + 2;
-        final int Y_METRIC_LENGTH = haplotypeBases.length + 2;
-
-        // ensure that all the qual scores have valid values
-        for (int i = 0; i < readQuals.length; i++) {
-            readQuals[i] = (readQuals[i] < MIN_USABLE_Q_SCORE ? MIN_USABLE_Q_SCORE : (readQuals[i] > MAX_CACHED_QUAL ? MAX_CACHED_QUAL : readQuals[i]));
-        }
-
-		// simple rectangular version of update loop, slow
-		for (int i = 1; i < X_METRIC_LENGTH; i++) {
-
-            final int qualIndexGOP = (i-1 == 0 ? DEFAULT_GOP + DEFAULT_GOP : Math.min(insertionGOP[i-2] + deletionGOP[i-2], MAX_CACHED_QUAL));
-            final double d[] = new double[3];
-            final double e[] = new double[3];
-            d[0] = qualToProbLog10((byte) qualIndexGOP);
-            e[0] = (i-1 == 0 ? qualToProbLog10(DEFAULT_GCP) : qualToProbLog10(overallGCP[i-2]));
-            d[1] = (i-1 == 0 ? qualToErrorProbLog10(DEFAULT_GOP) : qualToErrorProbLog10(insertionGOP[i-2]));
-            e[1] = (i-1 == 0 ? qualToErrorProbLog10(DEFAULT_GCP) : qualToErrorProbLog10(overallGCP[i-2]));
-            d[2] = (i-1 == 0 || i-1 == readBases.length ? 0.0 : qualToErrorProbLog10(deletionGOP[i-2]));
-            e[2] = (i-1 == 0 || i-1 == readBases.length ? 0.0 : qualToErrorProbLog10(overallGCP[i-2]));
-
-            // update the match array
-            double pBaseReadLog10;
-            byte x = 0;
-            byte qual = 0;
-
-            // the emission probability is applied when leaving the state
-            if (i-1 > 0) {
-                x = readBases[i-2];
-                qual = readQuals[i-2];
-            }
-
-
-            for (int j = hapStartIndex + 1; j < Y_METRIC_LENGTH; j++) {
-				if ((i == 1 && j == 1)) {
-					continue;
-				}
-                if (j-1 > 0) {
-                    final byte y = haplotypeBases[j-2];
-                    pBaseReadLog10 = (x == y || x == (byte) 'N' || y == (byte) 'N' ? qualToProbLog10(qual) : qualToErrorProbLog10(qual));
-                }
-                else {
-                    pBaseReadLog10 = 0.0;
-                }
-                updateCell(i, j, pBaseReadLog10, d, e, matchMetricArray, XMetricArray, YMetricArray);
-			}
-		}
-
-        // final probability is the log10 sum of the last element in all three state arrays
-        final int endI = X_METRIC_LENGTH - 1;
-        final int endJ = Y_METRIC_LENGTH - 1;
-        return approximateLog10SumLog10(matchMetricArray[endI][endJ], XMetricArray[endI][endJ], YMetricArray[endI][endJ]);
-    }
-
-    /**
-     * Updates a cell in the HMM matrix
-     *
-     * The read and haplotype indices are offset by one because the state arrays have an extra column to hold the initial conditions
-     */
-
-    private void updateCell(final int indI, final int indJ, double pBaseReadLog10, double[] d, double[] e, final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray) {
-
-        matchMetricArray[indI][indJ] = pBaseReadLog10 + approximateLog10SumLog10(matchMetricArray[indI - 1][indJ - 1] + d[0], XMetricArray[indI - 1][indJ - 1] + e[0], YMetricArray[indI - 1][indJ - 1] + e[0]);
-        XMetricArray[indI][indJ] = approximateLog10SumLog10(matchMetricArray[indI - 1][indJ] + d[1], XMetricArray[indI - 1][indJ] + e[1]);
-        YMetricArray[indI][indJ] = approximateLog10SumLog10(matchMetricArray[indI][indJ - 1] + d[2], YMetricArray[indI][indJ - 1] + e[2]);
-    }
 }
