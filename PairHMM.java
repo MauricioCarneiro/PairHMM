@@ -213,7 +213,7 @@ public class PairHMM {
             final byte qual = readQuals[im1 - 1];
             pBaseReadLog10 = (x == y || x == (byte) 'N' || y == (byte) 'N' ? qualToProbLog10(qual) : qualToErrorProbLog10(qual));
         }
-        final int qualIndexGOP = (im1 == 0 ? DEFAULT_GOP + DEFAULT_GOP : (insertionGOP[im1 - 1] + deletionGOP[im1 - 1] > MAX_CACHED_QUAL ? MAX_CACHED_QUAL : insertionGOP[im1 - 1] + deletionGOP[im1 - 1]));
+        final int qualIndexGOP = (im1 == 0 ? DEFAULT_GOP + DEFAULT_GOP : Math.min(insertionGOP[im1 - 1] + deletionGOP[im1 - 1], MAX_CACHED_QUAL));
         final double d0 = qualToProbLog10((byte) qualIndexGOP);
         final double e0 = (im1 == 0 ? qualToProbLog10(DEFAULT_GCP) : qualToProbLog10(overallGCP[im1 - 1]));
         matchMetricArray[indI][indJ] = pBaseReadLog10 + approximateLog10SumLog10(matchMetricArray[indI - 1][indJ - 1] + d0, XMetricArray[indI - 1][indJ - 1] + e0, YMetricArray[indI - 1][indJ - 1] + e0);
