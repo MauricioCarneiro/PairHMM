@@ -23,8 +23,7 @@
  */
 
 
-import java.io.*;
-import java.util.*;
+import java.util.Arrays;
 
 /**
  * Hidden Markov Model for Haplotype assembly
@@ -49,7 +48,6 @@ public class PairHMM {
     private static final int JACOBIAN_LOG_TABLE_SIZE = (int) (MAX_JACOBIAN_TOLERANCE / JACOBIAN_LOG_TABLE_STEP) + 1;
     private static final int MAXN = 50000;
     private static final int LOG10_CACHE_SIZE = 4 * MAXN;  // we need to be able to go up to 2*(2N) when calculating some of the coefficients
-    private static final long startTime = System.currentTimeMillis();
 
     static {
         for (int i = 0; i < 256; i++) qualToErrorProbLog10Cache[i] = qualToErrorProbLog10Raw(i);
@@ -105,7 +103,7 @@ public class PairHMM {
     }
 
     public static double qualToErrorProb(final double qual) {
-        return Math.pow(10.0, ((double) qual) / -10.0);
+        return Math.pow(10.0, (qual) / -10.0);
     }
 
     static private double qualToErrorProbLog10Raw(int qual) {
@@ -232,222 +230,4 @@ public class PairHMM {
         final double qBaseRefLog10 = 0.0; // Math.log10(1.0) -- we don't have an estimate for this emission probability so assume q=1.0
         YMetricArray[indI][indJ] = qBaseRefLog10 + approximateLog10SumLog10(matchMetricArray[indI][indJ - 1] + d2, YMetricArray[indI][indJ - 1] + e2);
     }
-
-    /*************************************************************************
-     * Classes and Functions used to parse and apply the tests to the
-     * PairHMM class
-     ************************************************************************/
-
-    private static class XReadLines implements Iterator<String>, Iterable<String> {
-        private final BufferedReader in;      // The stream we're reading from
-        private String nextLine = null;       // Return value of next call to next()
-        private final boolean trimWhitespace;
-        private final String commentPrefix;
-
-        public XReadLines(final File filename) throws FileNotFoundException {
-            this(new FileReader(filename), true, null);
-        }
-
-        /**
-         * Creates a new xReadLines object to read lines from an bufferedReader
-         *
-         * @param reader         file name
-         * @param trimWhitespace trim whitespace
-         * @param commentPrefix  prefix for comments or null if no prefix is set
-         */
-        public XReadLines(final Reader reader, final boolean trimWhitespace, final String commentPrefix) {
-            this.in = (reader instanceof BufferedReader) ? (BufferedReader) reader : new BufferedReader(reader);
-            this.trimWhitespace = trimWhitespace;
-            this.commentPrefix = commentPrefix;
-            try {
-                this.nextLine = readNextLine();
-            } catch (IOException e) {
-                throw new IllegalArgumentException(e);
-            }
-        }
-
-        /**
-         * I'm an iterator too...
-         *
-         * @return an iterator
-         */
-        public Iterator<String> iterator() {
-            return this;
-        }
-
-        public boolean hasNext() {
-            return this.nextLine != null;
-        }
-
-        /**
-         * Actually reads the next line from the stream, not accessible publicly
-         *
-         * @return the next line or null
-         * @throws java.io.IOException if an error occurs
-         */
-        private String readNextLine() throws IOException {
-            String nextLine;
-            while ((nextLine = this.in.readLine()) != null) {
-                if (this.trimWhitespace) {
-                    nextLine = nextLine.trim();
-                    if (nextLine.length() == 0)
-                        continue;
-                }
-                if (this.commentPrefix != null)
-                    if (nextLine.startsWith(this.commentPrefix))
-                        continue;
-                break;
-            }
-            return nextLine;
-        }
-
-        /**
-         * Returns the next line (optionally minus whitespace)
-         *
-         * @return the next line
-         */
-        public String next() {
-            try {
-                String result = this.nextLine;
-                this.nextLine = readNextLine();
-
-                // If we haven't reached EOF yet
-                if (this.nextLine == null) {
-                    in.close();             // And close on EOF
-                }
-
-                // Return the line we read last time through.
-                return result;
-            } catch (IOException e) {
-                throw new IllegalArgumentException(e);
-            }
-        }
-
-        // The file is read-only; we don't allow lines to be removed.
-        public void remove() {
-            throw new UnsupportedOperationException();
-        }
-
-    }
-
-    private static void runTests(LinkedList<Map<String, byte[]>> testCache, PairHMM hmm, boolean debug, boolean write) {
-        if (write) {
-            try {
-
-                List<Double> results = new LinkedList<Double>();
-
-                for (Map<String, byte[]> test : testCache) {
-
-                    double result = hmm.computeReadLikelihoodGivenHaplotype(test.get("reference"), test.get("read"),
-                            test.get("baseQuals"), test.get("insQuals"), test.get("delQuals"), test.get("gcps"));
-
-                    if (debug) {
-                        System.out.printf(" Result:%4.2f%n" +
-                                "==========================================================%n", result);
-                    }
-                    results.add(result);
-                }
-
-                BufferedWriter bw = new BufferedWriter(new FileWriter(new File("output.txt"), true));
-                for (Double result : results) {
-                    bw.write(String.format("%f", result));
-                    bw.newLine();
-                }
-                bw.close();
-
-                System.out.printf("%d - First run-through complete.%n", System.currentTimeMillis() - startTime);
-            } catch (Exception e) {//Catch exception if any
-                throw new RuntimeException(e);
-            }
-        } else {
-            for (Map<String, byte[]> test : testCache) {
-
-                double result = hmm.computeReadLikelihoodGivenHaplotype(test.get("reference"), test.get("read"),
-                        test.get("baseQuals"), test.get("insQuals"), test.get("delQuals"), test.get("gcps"));
-
-                if (debug) {
-                    System.out.printf(" Result:%4.2f%n" +
-                            "==========================================================%n", result);
-                }
-            }
-            System.out.printf("%d - No I/O run-through complete.%n", System.currentTimeMillis() - startTime);
-        }
-    }
-
-    private static LinkedList<Map<String, byte[]>> parseFile(String filePath, boolean debug) {
-        LinkedList<Map<String, byte[]>> testCache = new LinkedList<Map<String, byte[]>>();
-        try {
-
-            for (String line : new PairHMM.XReadLines(new File(filePath))) {
-                String[] p = line.split(" ");
-
-                if (debug) {
-                    System.out.println("REF:" + p[0]);
-                    System.out.println("MUT:" + p[1]);
-                    System.out.println("BQ: " + p[2]);
-                    System.out.println("IQ: " + p[3]);
-                    System.out.println("DQ: " + p[4]);
-                    System.out.println("GCP:" + p[5]);
-                }
-
-                Map<String, byte[]> test = new HashMap<String, byte[]>();
-                test.put("reference", p[0].getBytes());
-                test.put("read", p[1].getBytes());
-                test.put("baseQuals", getQuals(p[2]));
-                test.put("insQuals", getQuals(p[3]));
-                test.put("delQuals", getQuals(p[4]));
-                test.put("gcps", getQuals(p[5]));
-
-                testCache.add(test);
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-
-        return testCache;
-    }
-
-    static byte[] getQuals(String quals) {
-        byte[] output = quals.getBytes();
-
-        for (int i = 0; i < output.length; i++) {
-            output[i] -= (byte) ' ';
-        }
-
-        return output;
-    }
-
-    public static void main(String[] argv) {
-        boolean debug = false;
-        PairHMM hmm = new PairHMM();
-
-        List<String> args = new LinkedList<String>(Arrays.asList(argv));
-        if (args.contains("-debug")) {
-            debug = true;
-            args.remove("-debug");
-        }
-        if (args.size() < 1) {
-            throw new RuntimeException("\r\nYou must specify a file name for input.Format below:\n" +
-                    "hap ref basequals insquals delquals gcp\n ----------------------------\n" +
-                    "Run with -debug for debug output");
-        } else {
-            System.out.printf("%d - Loading input data ...%n", System.currentTimeMillis() - startTime);
-            LinkedList<Map<String, byte[]>> testCache = new LinkedList<Map<String, byte[]>>();
-            for (String arg : args) {
-                testCache.addAll(parseFile(arg, debug));
-            }
-            System.out.printf("%d - DONE loading input data! Now calculating%n", System.currentTimeMillis() - startTime);
-            boolean firstTime = true;
-            for (int i = 0; i < 100; i++) {
-                runTests(testCache, hmm, debug, firstTime);
-                firstTime = false;
-            }
-
-        }
-
-    }
-
-
-
-
 }
