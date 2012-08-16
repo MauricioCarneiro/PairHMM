@@ -4,21 +4,7 @@ import java.io.FileWriter;
 import java.util.*;
 
 /**
- * Short one line description of the walker.
- *
- * <p> [Long description of the walker] </p>
- *
- *
- * <h2>Input</h2> <p> [Description of the Input] </p>
- *
- * <h2>Output</h2> <p> [Description of the Output] </p>
- *
- * <h2>Examples</h2>
- * <pre>
- *    java
- *      -jar GenomeAnalysisTK.jar
- *      -T [walker name]
- *  </pre>
+ * Testing routine for the PairHMM
  *
  * @author Mauricio Carneiro
  * @since 8/15/12
@@ -135,12 +121,7 @@ public class RunTest {
                 testCache.addAll(parseFile(arg, debug));
             }
             System.out.printf("%d - DONE loading input data! Now calculating%n", System.currentTimeMillis() - startTime);
-            boolean firstTime = true;
-            for (int i = 0; i < 100; i++) {
-                runTests(testCache, hmm, debug, firstTime);
-                firstTime = false;
-            }
-
+            runTests(testCache, hmm, debug, true);
         }
 
     }
