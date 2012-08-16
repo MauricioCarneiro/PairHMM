@@ -133,7 +133,7 @@ public class PairHMM {
             small = t;
         }
 
-        if (small == Double.NEGATIVE_INFINITY || big == Double.NEGATIVE_INFINITY)
+        if (small == Double.NEGATIVE_INFINITY)
             return big;
 
         final double diff = big - small;
