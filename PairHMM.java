@@ -176,18 +176,47 @@ public class PairHMM {
         final int Y_METRIC_LENGTH = haplotypeBases.length + 2;
 
         // ensure that all the qual scores have valid values
-        for (int iii = 0; iii < readQuals.length; iii++) {
-            readQuals[iii] = (readQuals[iii] < MIN_USABLE_Q_SCORE ? MIN_USABLE_Q_SCORE : (readQuals[iii] > MAX_CACHED_QUAL ? MAX_CACHED_QUAL : readQuals[iii]));
+        for (int i = 0; i < readQuals.length; i++) {
+            readQuals[i] = (readQuals[i] < MIN_USABLE_Q_SCORE ? MIN_USABLE_Q_SCORE : (readQuals[i] > MAX_CACHED_QUAL ? MAX_CACHED_QUAL : readQuals[i]));
         }
 
 		// simple rectangular version of update loop, slow
-		for (int iii = 1; iii < X_METRIC_LENGTH; iii++) {
-			for (int jjj = hapStartIndex + 1; jjj < Y_METRIC_LENGTH; jjj++) {
-				if ((iii == 1 && jjj == 1)) {
+		for (int i = 1; i < X_METRIC_LENGTH; i++) {
+
+            final int qualIndexGOP = (i-1 == 0 ? DEFAULT_GOP + DEFAULT_GOP : Math.min(insertionGOP[i-2] + deletionGOP[i-2], MAX_CACHED_QUAL));
+            final double d[] = new double[3];
+            final double e[] = new double[3];
+            d[0] = qualToProbLog10((byte) qualIndexGOP);
+            e[0] = (i-1 == 0 ? qualToProbLog10(DEFAULT_GCP) : qualToProbLog10(overallGCP[i-2]));
+            d[1] = (i-1 == 0 ? qualToErrorProbLog10(DEFAULT_GOP) : qualToErrorProbLog10(insertionGOP[i-2]));
+            e[1] = (i-1 == 0 ? qualToErrorProbLog10(DEFAULT_GCP) : qualToErrorProbLog10(overallGCP[i-2]));
+            d[2] = (i-1 == 0 || i-1 == readBases.length ? 0.0 : qualToErrorProbLog10(deletionGOP[i-2]));
+            e[2] = (i-1 == 0 || i-1 == readBases.length ? 0.0 : qualToErrorProbLog10(overallGCP[i-2]));
+
+            // update the match array
+            double pBaseReadLog10;
+            byte x = 0;
+            byte qual = 0;
+
+            // the emission probability is applied when leaving the state
+            if (i-1 > 0) {
+                x = readBases[i-2];
+                qual = readQuals[i-2];
+            }
+
+
+            for (int j = hapStartIndex + 1; j < Y_METRIC_LENGTH; j++) {
+				if ((i == 1 && j == 1)) {
 					continue;
 				}
-				updateCell(iii, jjj, haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP,
-						matchMetricArray, XMetricArray, YMetricArray);
+                if (j-1 > 0) {
+                    final byte y = haplotypeBases[j-2];
+                    pBaseReadLog10 = (x == y || x == (byte) 'N' || y == (byte) 'N' ? qualToProbLog10(qual) : qualToErrorProbLog10(qual));
+                }
+                else {
+                    pBaseReadLog10 = 0.0;
+                }
+                updateCell(i, j, pBaseReadLog10, d, e, matchMetricArray, XMetricArray, YMetricArray);
 			}
 		}
 
@@ -197,37 +226,16 @@ public class PairHMM {
         return approximateLog10SumLog10(matchMetricArray[endI][endJ], XMetricArray[endI][endJ], YMetricArray[endI][endJ]);
     }
 
-    private void updateCell(final int indI, final int indJ, final byte[] haplotypeBases, final byte[] readBases,
-                            final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP,
-                            final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray) {
+    /**
+     * Updates a cell in the HMM matrix
+     *
+     * The read and haplotype indices are offset by one because the state arrays have an extra column to hold the initial conditions
+     */
 
-        // the read and haplotype indices are offset by one because the state arrays have an extra column to hold the initial conditions
-        final int im1 = indI - 1;
-        final int jm1 = indJ - 1;
+    private void updateCell(final int indI, final int indJ, double pBaseReadLog10, double[] d, double[] e, final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray) {
 
-        // update the match array
-        double pBaseReadLog10 = 0.0; // Math.log10(1.0);
-        if (im1 > 0 && jm1 > 0) { // the emission probability is applied when leaving the state
-            final byte x = readBases[im1 - 1];
-            final byte y = haplotypeBases[jm1 - 1];
-            final byte qual = readQuals[im1 - 1];
-            pBaseReadLog10 = (x == y || x == (byte) 'N' || y == (byte) 'N' ? qualToProbLog10(qual) : qualToErrorProbLog10(qual));
-        }
-        final int qualIndexGOP = (im1 == 0 ? DEFAULT_GOP + DEFAULT_GOP : Math.min(insertionGOP[im1 - 1] + deletionGOP[im1 - 1], MAX_CACHED_QUAL));
-        final double d0 = qualToProbLog10((byte) qualIndexGOP);
-        final double e0 = (im1 == 0 ? qualToProbLog10(DEFAULT_GCP) : qualToProbLog10(overallGCP[im1 - 1]));
-        matchMetricArray[indI][indJ] = pBaseReadLog10 + approximateLog10SumLog10(matchMetricArray[indI - 1][indJ - 1] + d0, XMetricArray[indI - 1][indJ - 1] + e0, YMetricArray[indI - 1][indJ - 1] + e0);
-
-        // update the X (insertion) array
-        final double d1 = (im1 == 0 ? qualToErrorProbLog10(DEFAULT_GOP) : qualToErrorProbLog10(insertionGOP[im1 - 1]));
-        final double e1 = (im1 == 0 ? qualToErrorProbLog10(DEFAULT_GCP) : qualToErrorProbLog10(overallGCP[im1 - 1]));
-        final double qBaseReadLog10 = 0.0; // Math.log10(1.0) -- we don't have an estimate for this emission probability so assume q=1.0
-        XMetricArray[indI][indJ] = qBaseReadLog10 + approximateLog10SumLog10(matchMetricArray[indI - 1][indJ] + d1, XMetricArray[indI - 1][indJ] + e1);
-
-        // update the Y (deletion) array, with penalty of zero on the left and right flanks to allow for a local alignment within the haplotype
-        final double d2 = (im1 == 0 || im1 == readBases.length ? 0.0 : qualToErrorProbLog10(deletionGOP[im1 - 1]));
-        final double e2 = (im1 == 0 || im1 == readBases.length ? 0.0 : qualToErrorProbLog10(overallGCP[im1 - 1]));
-        final double qBaseRefLog10 = 0.0; // Math.log10(1.0) -- we don't have an estimate for this emission probability so assume q=1.0
-        YMetricArray[indI][indJ] = qBaseRefLog10 + approximateLog10SumLog10(matchMetricArray[indI][indJ - 1] + d2, YMetricArray[indI][indJ - 1] + e2);
+        matchMetricArray[indI][indJ] = pBaseReadLog10 + approximateLog10SumLog10(matchMetricArray[indI - 1][indJ - 1] + d[0], XMetricArray[indI - 1][indJ - 1] + e[0], YMetricArray[indI - 1][indJ - 1] + e[0]);
+        XMetricArray[indI][indJ] = approximateLog10SumLog10(matchMetricArray[indI - 1][indJ] + d[1], XMetricArray[indI - 1][indJ] + e[1]);
+        YMetricArray[indI][indJ] = approximateLog10SumLog10(matchMetricArray[indI][indJ - 1] + d[2], YMetricArray[indI][indJ - 1] + e[2]);
     }
 }
