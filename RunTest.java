@@ -32,7 +32,7 @@ public class RunTest {
                     results.add(result);
                 }
 
-                BufferedWriter bw = new BufferedWriter(new FileWriter(new File("output.txt"), true));
+                BufferedWriter bw = new BufferedWriter(new FileWriter(new File("output.txt"), false));
                 for (Double result : results) {
                     bw.write(String.format("%f", result));
                     bw.newLine();
