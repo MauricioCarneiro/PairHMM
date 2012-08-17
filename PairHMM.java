@@ -81,6 +81,19 @@ public class PairHMM {
 
     }
 
+    /**
+     * Initializes and computes the Pair HMM matrix.
+     *
+     * Use this method if you're calculating the entire matrix from scratch.
+     *
+     * @param haplotypeBases reference sequence bases
+     * @param readBases      comparison haplotype bases
+     * @param readQuals      comparison haplotype base quals (phred-scaled)
+     * @param insertionGOP   comparison haplotype insertion quals (phred-scaled)
+     * @param deletionGOP    comparison haplotype deletion quals (phred-scaled)
+     * @param overallGCP     comparison haplotype gap continuation quals (phred-scaled)
+     * @return the likelihood of the alignment between read and haplotype
+     */
     public double computeReadLikelihoodGivenHaplotype(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP) {
 
         // ensure that all the qual scores have valid values
@@ -98,18 +111,36 @@ public class PairHMM {
         final double[][] YMetricArray = new double[X_METRIC_LENGTH][Y_METRIC_LENGTH];
 
         initializeArrays(matchMetricArray, XMetricArray, YMetricArray, X_METRIC_LENGTH, Y_METRIC_LENGTH);
-        computeReadLikelihoodGivenHaplotype(haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP, 0, matchMetricArray, XMetricArray, YMetricArray);
-        return finalizeArrays(matchMetricArray, XMetricArray, YMetricArray, insertionGOP, deletionGOP, overallGCP, 0, haplotypeBases, readBases, readQuals, X_METRIC_LENGTH, Y_METRIC_LENGTH);
+        return computeReadLikelihoodGivenHaplotype(haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP, 2, matchMetricArray, XMetricArray, YMetricArray);
     }
 
-    public void computeReadLikelihoodGivenHaplotype(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex, final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray) {
+    /**
+     * Computes the Pair HMM matrix for a previously initialized matrix.
+     *
+     * Only use this method with hapStartIndex >= 2, if you need to fill in the first two rows of the matrix, use the
+     * other version that initializes and computes the matrix.
+     *
+     * @param haplotypeBases   reference sequence bases
+     * @param readBases        comparison haplotype bases
+     * @param readQuals        comparison haplotype base quals (phred-scaled)
+     * @param insertionGOP     comparison haplotype insertion quals (phred-scaled)
+     * @param deletionGOP      comparison haplotype deletion quals (phred-scaled)
+     * @param overallGCP       comparison haplotype gap continuation quals (phred-scaled)
+     * @param hapStartIndex    haplotype index to start the calculation (assumes all previous indices have already been
+     *                         filled on the three metric arrays)
+     * @param matchMetricArray partially pre-filled matches metric array
+     * @param XMetricArray     partially pre-filled insertion metric array
+     * @param YMetricArray     partially pre-filled deletion metric array
+     * @return the likelihood of the alignment between read and haplotype
+     */
+    public double computeReadLikelihoodGivenHaplotype(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex, final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray) {
 
         // M, X, and Y arrays are of size read and haplotype + 1 because of an extra column for initial conditions and + 1 to consider the final base in a non-global alignment
         final int X_METRIC_LENGTH = readBases.length + 2;
         final int Y_METRIC_LENGTH = haplotypeBases.length + 2;
 
         // simple rectangular version of update loop, slow
-        for (int i = 2; i < X_METRIC_LENGTH - 1; i++) {
+        for (int i = hapStartIndex; i < X_METRIC_LENGTH - 1; i++) {
 
             final int qualIndexGOP = Math.min(insertionGOP[i - 2] + deletionGOP[i - 2], MAX_CACHED_QUAL);
             final double d[] = new double[3];
@@ -128,12 +159,14 @@ public class PairHMM {
             // In case hapStart > 0, we will unnecessarily call this method (avoiding an if statement)
             updateCell(i, 1, 0.0, d, e, matchMetricArray, XMetricArray, YMetricArray);
 
-            for (int j = Math.max(2, hapStartIndex + 1); j < Y_METRIC_LENGTH; j++) {
+            for (int j = hapStartIndex; j < Y_METRIC_LENGTH; j++) {
                 final byte y = haplotypeBases[j - 2];
                 final double pBaseReadLog10 = (x == y || x == (byte) 'N' || y == (byte) 'N' ? MathUtils.qualToProbLog10(qual) : MathUtils.qualToErrorProbLog10(qual));
                 updateCell(i, j, pBaseReadLog10, d, e, matchMetricArray, XMetricArray, YMetricArray);
             }
         }
+
+        return finalizeArrays(matchMetricArray, XMetricArray, YMetricArray, insertionGOP, deletionGOP, overallGCP, 0, haplotypeBases, readBases, readQuals, X_METRIC_LENGTH, Y_METRIC_LENGTH);
     }
 
     /**
