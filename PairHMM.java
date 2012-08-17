@@ -50,8 +50,8 @@ public class PairHMM {
         final double[] d = {MathUtils.qualToProbLog10((byte) (DEFAULT_GOP + DEFAULT_GOP)), MathUtils.qualToErrorProbLog10(DEFAULT_GOP), 0.0};
         final double[] e = {MathUtils.qualToProbLog10(DEFAULT_GCP), MathUtils.qualToErrorProbLog10(DEFAULT_GCP), 0.0};
 
-        for (int i = 2; i < Y_METRIC_LENGTH; i++) {
-            updateCell(1, i, 0.0, d, e, matchMetricArray, XMetricArray, YMetricArray);
+        for (int j = 2; j < Y_METRIC_LENGTH; j++) {
+            updateCell(1, j, 0.0, d, e, matchMetricArray, XMetricArray, YMetricArray);
         }
     }
 
