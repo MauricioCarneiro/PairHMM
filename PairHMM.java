@@ -58,6 +58,7 @@ public class PairHMM {
         constantMatrix[X_METRIC_LENGTH-1][4] = 0.0;
         constantMatrix[X_METRIC_LENGTH-1][5] = 0.0;
 
+        // initialize the pBaseReadLog10 matrix for all combinations of read x haplotype bases
         // Abusing the fact that java initializes arrays with 0.0, so no need to fill in rows and columns below 2.
         for (int i = 2; i < X_METRIC_LENGTH; i++) {
             final byte x = readBases[i-2];
@@ -68,6 +69,7 @@ public class PairHMM {
             }
         }
 
+        // fill the matrix with -inf
         for (int i = 0; i < X_METRIC_LENGTH; i++) {
             Arrays.fill(matchMetricArray[i], Double.NEGATIVE_INFINITY);
             Arrays.fill(XMetricArray[i], Double.NEGATIVE_INFINITY);
@@ -76,8 +78,14 @@ public class PairHMM {
         // the initial condition
         matchMetricArray[1][1] = 0.0; // Math.log10(1.0);
 
+        // fill in the first row
         for (int j = 2; j < Y_METRIC_LENGTH; j++) {
             updateCell(1, j, 0.0, constantMatrix[1], matchMetricArray, XMetricArray, YMetricArray);
+        }
+
+        // fill in the first column
+        for (int i = 2; i < X_METRIC_LENGTH; i++) {
+            updateCell(i, 1, 0.0, constantMatrix[i], matchMetricArray, XMetricArray, YMetricArray);
         }
     }
 
@@ -132,7 +140,7 @@ public class PairHMM {
      */
     public double computeReadLikelihoodGivenHaplotype(int X_METRIC_LENGTH, int Y_METRIC_LENGTH, final int hapStartIndex, final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray, double[][] constantMatrix, double[][] pBaseReadLog10) {
         for (int i = hapStartIndex; i < X_METRIC_LENGTH; i++) {
-            for (int j = 1; j < Y_METRIC_LENGTH; j++) {
+            for (int j = hapStartIndex; j < Y_METRIC_LENGTH; j++) {
                 updateCell(i, j, pBaseReadLog10[i][j], constantMatrix[i], matchMetricArray, XMetricArray, YMetricArray);
             }
         }
