@@ -9,5 +9,4 @@ javac RunTest.java
 mkdir $1
 mv *.class $1/
 cd $1
-java RunTest ../batch1.in
-diff output.txt ../batch1.out
+java RunTest ../batch1.in && diff output.txt ../batch1.out
