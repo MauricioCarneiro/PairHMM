@@ -160,7 +160,7 @@ public class PairHMM {
         initializeDistanceMatrix(haplotypeBases, readBases, readQuals, 0, distanceMatrix);
         initializeConstants(insertionGOP, deletionGOP, overallGCP, 0, constantMatrix);
         initializeArrays(X_METRIC_LENGTH, Y_METRIC_LENGTH, matchMetricArray, XMetricArray, YMetricArray, constantMatrix);
-        return computeReadLikelihoodGivenHaplotype( X_METRIC_LENGTH, Y_METRIC_LENGTH, 2, matchMetricArray, XMetricArray, YMetricArray, constantMatrix, distanceMatrix);
+        return computeReadLikelihoodGivenHaplotype( X_METRIC_LENGTH, Y_METRIC_LENGTH, 0, matchMetricArray, XMetricArray, YMetricArray, constantMatrix, distanceMatrix);
     }
 
     /**
@@ -185,8 +185,8 @@ public class PairHMM {
      * @return the likelihood of the alignment between read and haplotype
      */
     public double computeReadLikelihoodGivenHaplotype(int X_METRIC_LENGTH, int Y_METRIC_LENGTH, final int startIndex, final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray, double[][] constantMatrix, double[][] pBaseReadLog10) {
-        for (int i = startIndex; i < X_METRIC_LENGTH; i++) {
-            for (int j = startIndex; j < Y_METRIC_LENGTH; j++) {
+        for (int i = startIndex+2; i < X_METRIC_LENGTH; i++) {
+            for (int j = startIndex+2; j < Y_METRIC_LENGTH; j++) {
                 updateCell(i, j, pBaseReadLog10[i][j], constantMatrix[i], matchMetricArray, XMetricArray, YMetricArray);
             }
         }
