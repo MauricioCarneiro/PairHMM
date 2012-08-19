@@ -37,6 +37,16 @@ public class PairHMM {
     private static final byte DEFAULT_GCP = (byte) 10;
     public final static byte MIN_USABLE_Q_SCORE = 6;
 
+    /**
+     * Initializes the matrix that holds all the constants related to the editing
+     * distance between the read and the haplotype.
+     *
+     * @param haplotypeBases the bases of the haplotype
+     * @param readBases      the bases of the read
+     * @param readQuals      the base quality scores of the read
+     * @param startIndex     where to start updating the distanceMatrix (in case this read is similar to the previous read)
+     * @param distanceMatrix the pre-allocated distance matrix
+     */
     public static void initializeDistanceMatrix(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, int startIndex, double [][] distanceMatrix) {
         // initialize the pBaseReadLog10 matrix for all combinations of read x haplotype bases
         // Abusing the fact that java initializes arrays with 0.0, so no need to fill in rows and columns below 2.
@@ -51,6 +61,15 @@ public class PairHMM {
         }
     }
 
+    /**
+     * Initializes the matrix that holds all the constants related to quality scores.
+     *
+     * @param insertionGOP   insertion quality scores of the read
+     * @param deletionGOP    deletion quality scores of the read
+     * @param overallGCP     overall gap continuation penalty
+     * @param startIndex     where to start updating the constantMatrix (in case this read is simiar to the previous read)
+     * @param constantMatrix the pre-allocated constant matrix
+     */
     public static void initializeConstants(final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, int startIndex, double [][] constantMatrix) {
         final int l = insertionGOP.length;
         constantMatrix[1][0] = MathUtils.qualToProbLog10((byte) (DEFAULT_GOP + DEFAULT_GOP));
@@ -72,6 +91,20 @@ public class PairHMM {
         constantMatrix[l+1][5] = 0.0;
     }
 
+    /**
+     * Initialize the likelihood matrices for matches, insertions and deletions.
+     *
+     * This method will add:
+     *   - sentinels (-inf) in row/colum 0 and length-1.
+     *   - fill in the first row and colum accordingly.
+     *
+     * @param X_METRIC_LENGTH  length of the read
+     * @param Y_METRIC_LENGTH  length of the haplotype
+     * @param matchMetricArray the matches likelihood matrix
+     * @param XMetricArray     the insertions likelihood matrix
+     * @param YMetricArray     the deletions likelihood matrix
+     * @param constantMatrix   the constants matrix
+     */
     public static void initializeArrays(final int X_METRIC_LENGTH, final int Y_METRIC_LENGTH,
                                         final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray, double[][] constantMatrix) {
 
@@ -133,12 +166,17 @@ public class PairHMM {
     /**
      * Computes the Pair HMM matrix for a previously initialized matrix.
      *
-     * Only use this method with hapStartIndex >= 2, if you need to fill in the first two rows of the matrix, use the
+     * Only use this method with startIndex >= 2, if you need to fill in the first two rows of the matrix, use the
      * other version that initializes and computes the matrix.
+     *
+     * This startIndex is equivalent to the haplotype start index plus one because of the padding in the left of the matrices
+     *   startIndex = hapStartIndex + 1
+     *
+     * (startIndex can never be < 2, indices below 2 are initialized in the initializeArrays routine)
      *
      * @param X_METRIC_LENGTH  length of the X metrics array (readBases + 2)
      * @param Y_METRIC_LENGTH  length of the Y metrics array (haplotypeBases + 2)
-     * @param hapStartIndex    haplotype index to start the calculation (assumes all previous indices have already been filled on the three metric arrays)
+     * @param startIndex    haplotype index to start the calculation (assumes all previous indices have already been filled on the three metric arrays)
      * @param matchMetricArray partially pre-filled matches metric array
      * @param XMetricArray     partially pre-filled insertion metric array
      * @param YMetricArray     partially pre-filled deletion metric array
@@ -146,9 +184,9 @@ public class PairHMM {
      * @param pBaseReadLog10   probability constants for all combinations of i and j between haplotype and read
      * @return the likelihood of the alignment between read and haplotype
      */
-    public double computeReadLikelihoodGivenHaplotype(int X_METRIC_LENGTH, int Y_METRIC_LENGTH, final int hapStartIndex, final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray, double[][] constantMatrix, double[][] pBaseReadLog10) {
-        for (int i = hapStartIndex; i < X_METRIC_LENGTH; i++) {
-            for (int j = hapStartIndex; j < Y_METRIC_LENGTH; j++) {
+    public double computeReadLikelihoodGivenHaplotype(int X_METRIC_LENGTH, int Y_METRIC_LENGTH, final int startIndex, final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray, double[][] constantMatrix, double[][] pBaseReadLog10) {
+        for (int i = startIndex; i < X_METRIC_LENGTH; i++) {
+            for (int j = startIndex; j < Y_METRIC_LENGTH; j++) {
                 updateCell(i, j, pBaseReadLog10[i][j], constantMatrix[i], matchMetricArray, XMetricArray, YMetricArray);
             }
         }
@@ -164,10 +202,17 @@ public class PairHMM {
      *
      * The read and haplotype indices are offset by one because the state arrays have an extra column to hold the
      * initial conditions
-     */
 
-    private static void updateCell(final int indI, final int indJ, double pBaseReadLog10, double[] constants, final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray) {
-        matchMetricArray[indI][indJ] = pBaseReadLog10 + MathUtils.approximateLog10SumLog10(matchMetricArray[indI - 1][indJ - 1] + constants[0], XMetricArray[indI - 1][indJ - 1] + constants[1], YMetricArray[indI - 1][indJ - 1] + constants[1]);
+     * @param indI             row index in the matrices to update
+     * @param indJ             column index in the matrices to update
+     * @param distanceMatrix   the likelihood editing distance matrix for the read x haplotype
+     * @param constants        an array with the six constants relevant to this location
+     * @param matchMetricArray the matches likelihood matrix
+     * @param XMetricArray     the insertions likelihood matrix
+     * @param YMetricArray     the deletions likelihood matrix
+     */
+    private static void updateCell(final int indI, final int indJ, double distanceMatrix, double[] constants, final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray) {
+        matchMetricArray[indI][indJ] = distanceMatrix + MathUtils.approximateLog10SumLog10(matchMetricArray[indI - 1][indJ - 1] + constants[0], XMetricArray[indI - 1][indJ - 1] + constants[1], YMetricArray[indI - 1][indJ - 1] + constants[1]);
         XMetricArray[indI][indJ] = MathUtils.approximateLog10SumLog10(matchMetricArray[indI - 1][indJ] + constants[2], XMetricArray[indI - 1][indJ] + constants[3]);
         YMetricArray[indI][indJ] = MathUtils.approximateLog10SumLog10(matchMetricArray[indI][indJ - 1] + constants[4], YMetricArray[indI][indJ - 1] + constants[5]);
     }
