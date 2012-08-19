@@ -37,37 +37,43 @@ public class PairHMM {
     private static final byte DEFAULT_GCP = (byte) 10;
     public final static byte MIN_USABLE_Q_SCORE = 6;
 
-    public static void initializeArrays(final int X_METRIC_LENGTH, final int Y_METRIC_LENGTH,
-                                        final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP,
-                                        final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray, double[][] constantMatrix, double[][] pBaseReadLog10) {
+    public static void initializeDistanceMatrix(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, int startIndex, double [][] distanceMatrix) {
+        // initialize the pBaseReadLog10 matrix for all combinations of read x haplotype bases
+        // Abusing the fact that java initializes arrays with 0.0, so no need to fill in rows and columns below 2.
+
+        for (int i = startIndex; i < readBases.length; i++) {
+            final byte x = readBases[i];
+            final byte qual = readQuals[i];
+            for (int j = startIndex; j < haplotypeBases.length; j++) {
+                final byte y = haplotypeBases[j];
+                distanceMatrix[i+2][j+2] = (x == y || x == (byte) 'N' || y == (byte) 'N' ? MathUtils.qualToProbLog10(qual) : MathUtils.qualToErrorProbLog10(qual));
+            }
+        }
+    }
+
+    public static void initializeConstants(final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, int startIndex, double [][] constantMatrix) {
+        final int l = insertionGOP.length;
         constantMatrix[1][0] = MathUtils.qualToProbLog10((byte) (DEFAULT_GOP + DEFAULT_GOP));
         constantMatrix[1][1] = MathUtils.qualToProbLog10(DEFAULT_GCP);
         constantMatrix[1][2] = MathUtils.qualToErrorProbLog10(DEFAULT_GOP);
         constantMatrix[1][3] = MathUtils.qualToErrorProbLog10(DEFAULT_GCP);
         constantMatrix[1][4] = 0.0;
         constantMatrix[1][5] = 0.0;
-        for (int i = 2; i < X_METRIC_LENGTH; i++) {
-            final int qualIndexGOP = Math.min(insertionGOP[i-2] + deletionGOP[i-2], MAX_CACHED_QUAL);
-            constantMatrix[i][0] = MathUtils.qualToProbLog10((byte) qualIndexGOP);
-            constantMatrix[i][1] = MathUtils.qualToProbLog10(overallGCP[i-2]);
-            constantMatrix[i][2] = MathUtils.qualToErrorProbLog10(insertionGOP[i-2]);
-            constantMatrix[i][3] = MathUtils.qualToErrorProbLog10(overallGCP[i-2]);
-            constantMatrix[i][4] = MathUtils.qualToErrorProbLog10(deletionGOP[i-2]);
-            constantMatrix[i][5] = MathUtils.qualToErrorProbLog10(overallGCP[i-2]);
+        for (int i = startIndex; i < l; i++) {
+            final int qualIndexGOP = Math.min(insertionGOP[i] + deletionGOP[i], MAX_CACHED_QUAL);
+            constantMatrix[i+2][0] = MathUtils.qualToProbLog10((byte) qualIndexGOP);
+            constantMatrix[i+2][1] = MathUtils.qualToProbLog10(overallGCP[i]);
+            constantMatrix[i+2][2] = MathUtils.qualToErrorProbLog10(insertionGOP[i]);
+            constantMatrix[i+2][3] = MathUtils.qualToErrorProbLog10(overallGCP[i]);
+            constantMatrix[i+2][4] = MathUtils.qualToErrorProbLog10(deletionGOP[i]);
+            constantMatrix[i+2][5] = MathUtils.qualToErrorProbLog10(overallGCP[i]);
         }
-        constantMatrix[X_METRIC_LENGTH-1][4] = 0.0;
-        constantMatrix[X_METRIC_LENGTH-1][5] = 0.0;
+        constantMatrix[l+1][4] = 0.0;
+        constantMatrix[l+1][5] = 0.0;
+    }
 
-        // initialize the pBaseReadLog10 matrix for all combinations of read x haplotype bases
-        // Abusing the fact that java initializes arrays with 0.0, so no need to fill in rows and columns below 2.
-        for (int i = 2; i < X_METRIC_LENGTH; i++) {
-            final byte x = readBases[i-2];
-            final byte qual = readQuals[i-2];
-            for (int j = 2; j < Y_METRIC_LENGTH; j++) {
-                final byte y = haplotypeBases[j-2];
-                pBaseReadLog10[i][j] = (x == y || x == (byte) 'N' || y == (byte) 'N' ? MathUtils.qualToProbLog10(qual) : MathUtils.qualToErrorProbLog10(qual));
-            }
-        }
+    public static void initializeArrays(final int X_METRIC_LENGTH, final int Y_METRIC_LENGTH,
+                                        final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray, double[][] constantMatrix) {
 
         // fill the matrix with -inf
         for (int i = 0; i < X_METRIC_LENGTH; i++) {
@@ -117,9 +123,11 @@ public class PairHMM {
         final double[][] XMetricArray = new double[X_METRIC_LENGTH][Y_METRIC_LENGTH];
         final double[][] YMetricArray = new double[X_METRIC_LENGTH][Y_METRIC_LENGTH];
         final double[][] constantMatrix = new double[X_METRIC_LENGTH][6];
-        final double[][] pBaseReadLog10 = new double[X_METRIC_LENGTH][Y_METRIC_LENGTH];
-        initializeArrays(X_METRIC_LENGTH, Y_METRIC_LENGTH, haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP, matchMetricArray, XMetricArray, YMetricArray, constantMatrix, pBaseReadLog10);
-        return computeReadLikelihoodGivenHaplotype( X_METRIC_LENGTH, Y_METRIC_LENGTH, 2, matchMetricArray, XMetricArray, YMetricArray, constantMatrix, pBaseReadLog10);
+        final double[][] distanceMatrix = new double[X_METRIC_LENGTH][Y_METRIC_LENGTH];
+        initializeDistanceMatrix(haplotypeBases, readBases, readQuals, 0, distanceMatrix);
+        initializeConstants(insertionGOP, deletionGOP, overallGCP, 0, constantMatrix);
+        initializeArrays(X_METRIC_LENGTH, Y_METRIC_LENGTH, matchMetricArray, XMetricArray, YMetricArray, constantMatrix);
+        return computeReadLikelihoodGivenHaplotype( X_METRIC_LENGTH, Y_METRIC_LENGTH, 2, matchMetricArray, XMetricArray, YMetricArray, constantMatrix, distanceMatrix);
     }
 
     /**
