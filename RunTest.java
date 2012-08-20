@@ -14,6 +14,44 @@ public class RunTest {
     private static final long startTime = System.currentTimeMillis();
 
 
+
+    /**
+     * Initializes and computes the Pair HMM matrix.
+     *
+     * Use this method if you're calculating the entire matrix from scratch.
+     *
+     * @param haplotypeBases reference sequence bases
+     * @param readBases      comparison haplotype bases
+     * @param readQuals      comparison haplotype base quals (phred-scaled)
+     * @param insertionGOP   comparison haplotype insertion quals (phred-scaled)
+     * @param deletionGOP    comparison haplotype deletion quals (phred-scaled)
+     * @param overallGCP     comparison haplotype gap continuation quals (phred-scaled)
+     * @return the likelihood of the alignment between read and haplotype
+     */
+    public static double hmm(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP) {
+        // ensure that all the qual scores have valid values
+        for (int i = 0; i < readQuals.length; i++) {
+            readQuals[i] = (readQuals[i] < QualityUtils.MIN_USABLE_Q_SCORE ? QualityUtils.MIN_USABLE_Q_SCORE : (readQuals[i] > Byte.MAX_VALUE ? Byte.MAX_VALUE : readQuals[i]));
+        }
+
+        // M, X, and Y arrays are of size read and haplotype + 1 because of an extra column for initial conditions and + 1 to consider the final base in a non-global alignment
+        final int readDimension = readBases.length + 2;
+        final int haplotypeDimension = haplotypeBases.length + 2;
+
+        // initial arrays to hold the probabilities of being in the match, insertion and deletion cases
+        final double[][] matchMetricArray = new double[readDimension][haplotypeDimension];
+        final double[][] XMetricArray = new double[readDimension][haplotypeDimension];
+        final double[][] YMetricArray = new double[readDimension][haplotypeDimension];
+        final double[][] constantMatrix = new double[readDimension][6];
+        final double[][] distanceMatrix = new double[readDimension][haplotypeDimension];
+        PairHMM.initializeDistanceMatrix(haplotypeBases, readBases, readQuals, 0, distanceMatrix);
+        PairHMM.initializeConstants(insertionGOP, deletionGOP, overallGCP, constantMatrix);
+        PairHMM.initializeArrays(readDimension, haplotypeDimension, matchMetricArray, XMetricArray, YMetricArray);
+        return PairHMM.computeReadLikelihoodGivenHaplotype( readDimension, haplotypeDimension, 0, matchMetricArray, XMetricArray, YMetricArray, constantMatrix, distanceMatrix);
+    }
+
+
+
     private static void runTests(LinkedList<Map<String, byte[]>> testCache, boolean debug, boolean write) {
         if (write) {
             try {
@@ -22,8 +60,7 @@ public class RunTest {
 
                 for (Map<String, byte[]> test : testCache) {
 
-                    double result = PairHMM.computeReadLikelihoodGivenHaplotype(test.get("reference"), test.get("read"),
-                            test.get("baseQuals"), test.get("insQuals"), test.get("delQuals"), test.get("gcps"));
+                    double result = hmm(test.get("reference"), test.get("read"), test.get("baseQuals"), test.get("insQuals"), test.get("delQuals"), test.get("gcps"));
 
                     if (debug) {
                         System.out.printf(" Result:%4.2f%n" +
@@ -46,8 +83,7 @@ public class RunTest {
         } else {
             for (Map<String, byte[]> test : testCache) {
 
-                double result = PairHMM.computeReadLikelihoodGivenHaplotype(test.get("reference"), test.get("read"),
-                        test.get("baseQuals"), test.get("insQuals"), test.get("delQuals"), test.get("gcps"));
+                double result = hmm(test.get("reference"), test.get("read"), test.get("baseQuals"), test.get("insQuals"), test.get("delQuals"), test.get("gcps"));
 
                 if (debug) {
                     System.out.printf(" Result:%4.2f%n" +

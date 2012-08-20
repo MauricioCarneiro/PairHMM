@@ -32,10 +32,8 @@ import java.util.Arrays;
  */
 
 public class PairHMM {
-    private static final int MAX_CACHED_QUAL = (int) Byte.MAX_VALUE;
     private static final byte DEFAULT_GOP = (byte) 45;
     private static final byte DEFAULT_GCP = (byte) 10;
-    private final static byte MIN_USABLE_Q_SCORE = 6;
     private static final double [] firstRowConstantMatrix = {
             QualityUtils.qualToProbLog10((byte) (DEFAULT_GOP + DEFAULT_GOP)),
             QualityUtils.qualToProbLog10(DEFAULT_GCP),
@@ -81,7 +79,7 @@ public class PairHMM {
         final int l = insertionGOP.length;
         constantMatrix[1] = firstRowConstantMatrix;
         for (int i = 0; i < l; i++) {
-            final int qualIndexGOP = Math.min(insertionGOP[i] + deletionGOP[i], MAX_CACHED_QUAL);
+            final int qualIndexGOP = Math.min(insertionGOP[i] + deletionGOP[i], Byte.MAX_VALUE);
             constantMatrix[i+2][0] = QualityUtils.qualToProbLog10((byte) qualIndexGOP);
             constantMatrix[i+2][1] = QualityUtils.qualToProbLog10(overallGCP[i]);
             constantMatrix[i+2][2] = QualityUtils.qualToErrorProbLog10(insertionGOP[i]);
@@ -108,41 +106,6 @@ public class PairHMM {
         for (int j = 2; j < hapDimension; j++) {
             updateCell(1, j, 0.0, firstRowConstantMatrix, matchMetricArray, XMetricArray, YMetricArray);
         }
-    }
-
-    /**
-     * Initializes and computes the Pair HMM matrix.
-     *
-     * Use this method if you're calculating the entire matrix from scratch.
-     *
-     * @param haplotypeBases reference sequence bases
-     * @param readBases      comparison haplotype bases
-     * @param readQuals      comparison haplotype base quals (phred-scaled)
-     * @param insertionGOP   comparison haplotype insertion quals (phred-scaled)
-     * @param deletionGOP    comparison haplotype deletion quals (phred-scaled)
-     * @param overallGCP     comparison haplotype gap continuation quals (phred-scaled)
-     * @return the likelihood of the alignment between read and haplotype
-     */
-    public static double computeReadLikelihoodGivenHaplotype(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP) {
-        // ensure that all the qual scores have valid values
-        for (int i = 0; i < readQuals.length; i++) {
-            readQuals[i] = (readQuals[i] < MIN_USABLE_Q_SCORE ? MIN_USABLE_Q_SCORE : (readQuals[i] > MAX_CACHED_QUAL ? MAX_CACHED_QUAL : readQuals[i]));
-        }
-
-        // M, X, and Y arrays are of size read and haplotype + 1 because of an extra column for initial conditions and + 1 to consider the final base in a non-global alignment
-        final int readDimension = readBases.length + 2;
-        final int haplotypeDimension = haplotypeBases.length + 2;
-
-        // initial arrays to hold the probabilities of being in the match, insertion and deletion cases
-        final double[][] matchMetricArray = new double[readDimension][haplotypeDimension];
-        final double[][] XMetricArray = new double[readDimension][haplotypeDimension];
-        final double[][] YMetricArray = new double[readDimension][haplotypeDimension];
-        final double[][] constantMatrix = new double[readDimension][6];
-        final double[][] distanceMatrix = new double[readDimension][haplotypeDimension];
-        initializeDistanceMatrix(haplotypeBases, readBases, readQuals, 0, distanceMatrix);
-        initializeConstants(insertionGOP, deletionGOP, overallGCP, constantMatrix);
-        initializeArrays(readDimension, haplotypeDimension, matchMetricArray, XMetricArray, YMetricArray);
-        return computeReadLikelihoodGivenHaplotype( readDimension, haplotypeDimension, 0, matchMetricArray, XMetricArray, YMetricArray, constantMatrix, distanceMatrix);
     }
 
     /**

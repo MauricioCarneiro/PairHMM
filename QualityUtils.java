@@ -9,6 +9,7 @@ public class QualityUtils {
     private static final double[] log10Cache;
     private static final double[] log10FactorialCache;
     private static final int LOG10_CACHE_SIZE = 4 * MAXN;  // we need to be able to go up to 2*(2N) when calculating some of the coefficients
+    public final static byte MIN_USABLE_Q_SCORE = 6;
 
     static {
         for (int i = 0; i < 256; i++)
