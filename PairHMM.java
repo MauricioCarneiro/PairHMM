@@ -56,7 +56,7 @@ public class PairHMM {
             final byte qual = readQuals[i];
             for (int j = startIndex; j < haplotypeBases.length; j++) {
                 final byte y = haplotypeBases[j];
-                distanceMatrix[i+2][j+2] = (x == y || x == (byte) 'N' || y == (byte) 'N' ? MathUtils.qualToProbLog10(qual) : MathUtils.qualToErrorProbLog10(qual));
+                distanceMatrix[i+2][j+2] = (x == y || x == (byte) 'N' || y == (byte) 'N' ? QualityUtils.qualToProbLog10(qual) : QualityUtils.qualToErrorProbLog10(qual));
             }
         }
     }
@@ -72,20 +72,20 @@ public class PairHMM {
      */
     public static void initializeConstants(final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, int startIndex, double [][] constantMatrix) {
         final int l = insertionGOP.length;
-        constantMatrix[1][0] = MathUtils.qualToProbLog10((byte) (DEFAULT_GOP + DEFAULT_GOP));
-        constantMatrix[1][1] = MathUtils.qualToProbLog10(DEFAULT_GCP);
-        constantMatrix[1][2] = MathUtils.qualToErrorProbLog10(DEFAULT_GOP);
-        constantMatrix[1][3] = MathUtils.qualToErrorProbLog10(DEFAULT_GCP);
+        constantMatrix[1][0] = QualityUtils.qualToProbLog10((byte) (DEFAULT_GOP + DEFAULT_GOP));
+        constantMatrix[1][1] = QualityUtils.qualToProbLog10(DEFAULT_GCP);
+        constantMatrix[1][2] = QualityUtils.qualToErrorProbLog10(DEFAULT_GOP);
+        constantMatrix[1][3] = QualityUtils.qualToErrorProbLog10(DEFAULT_GCP);
         constantMatrix[1][4] = 0.0;
         constantMatrix[1][5] = 0.0;
         for (int i = startIndex; i < l; i++) {
             final int qualIndexGOP = Math.min(insertionGOP[i] + deletionGOP[i], MAX_CACHED_QUAL);
-            constantMatrix[i+2][0] = MathUtils.qualToProbLog10((byte) qualIndexGOP);
-            constantMatrix[i+2][1] = MathUtils.qualToProbLog10(overallGCP[i]);
-            constantMatrix[i+2][2] = MathUtils.qualToErrorProbLog10(insertionGOP[i]);
-            constantMatrix[i+2][3] = MathUtils.qualToErrorProbLog10(overallGCP[i]);
-            constantMatrix[i+2][4] = MathUtils.qualToErrorProbLog10(deletionGOP[i]);
-            constantMatrix[i+2][5] = MathUtils.qualToErrorProbLog10(overallGCP[i]);
+            constantMatrix[i+2][0] = QualityUtils.qualToProbLog10((byte) qualIndexGOP);
+            constantMatrix[i+2][1] = QualityUtils.qualToProbLog10(overallGCP[i]);
+            constantMatrix[i+2][2] = QualityUtils.qualToErrorProbLog10(insertionGOP[i]);
+            constantMatrix[i+2][3] = QualityUtils.qualToErrorProbLog10(overallGCP[i]);
+            constantMatrix[i+2][4] = QualityUtils.qualToErrorProbLog10(deletionGOP[i]);
+            constantMatrix[i+2][5] = QualityUtils.qualToErrorProbLog10(overallGCP[i]);
         }
         constantMatrix[l+1][4] = 0.0;
         constantMatrix[l+1][5] = 0.0;
