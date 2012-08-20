@@ -14,7 +14,7 @@ public class RunTest {
     private static final long startTime = System.currentTimeMillis();
 
 
-    private static void runTests(LinkedList<Map<String, byte[]>> testCache, PairHMM hmm, boolean debug, boolean write) {
+    private static void runTests(LinkedList<Map<String, byte[]>> testCache, boolean debug, boolean write) {
         if (write) {
             try {
 
@@ -22,7 +22,7 @@ public class RunTest {
 
                 for (Map<String, byte[]> test : testCache) {
 
-                    double result = hmm.computeReadLikelihoodGivenHaplotype(test.get("reference"), test.get("read"),
+                    double result = PairHMM.computeReadLikelihoodGivenHaplotype(test.get("reference"), test.get("read"),
                             test.get("baseQuals"), test.get("insQuals"), test.get("delQuals"), test.get("gcps"));
 
                     if (debug) {
@@ -46,7 +46,7 @@ public class RunTest {
         } else {
             for (Map<String, byte[]> test : testCache) {
 
-                double result = hmm.computeReadLikelihoodGivenHaplotype(test.get("reference"), test.get("read"),
+                double result = PairHMM.computeReadLikelihoodGivenHaplotype(test.get("reference"), test.get("read"),
                         test.get("baseQuals"), test.get("insQuals"), test.get("delQuals"), test.get("gcps"));
 
                 if (debug) {
@@ -103,7 +103,6 @@ public class RunTest {
 
     public static void main(String[] argv) {
         boolean debug = false;
-        PairHMM hmm = new PairHMM();
 
         List<String> args = new LinkedList<String>(Arrays.asList(argv));
         if (args.contains("-debug")) {
@@ -121,7 +120,7 @@ public class RunTest {
                 testCache.addAll(parseFile(arg, debug));
             }
             System.out.printf("%d - DONE loading input data! Now calculating%n", System.currentTimeMillis() - startTime);
-            runTests(testCache, hmm, debug, true);
+            runTests(testCache, debug, true);
         }
 
     }
