@@ -12,8 +12,12 @@ import java.util.*;
 public class RunTest {
 
     private static final long startTime = System.currentTimeMillis();
+    private static final PairHMM pairHMM = new LoglessCachingPairHMM();
+    private static LinkedList<TestRow> testsPerHaplotype = new LinkedList<TestRow>();
+    private static double PRECISION = 0.001;
 
-
+    public RunTest() {
+    }
 
     /**
      * Initializes and computes the Pair HMM matrix.
@@ -28,46 +32,78 @@ public class RunTest {
      * @param overallGCP     comparison haplotype gap continuation quals (phred-scaled)
      * @return the likelihood of the alignment between read and haplotype
      */
-    public static double hmm(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP) {
+    public static double hmm(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP,
+                             final byte[] deletionGOP, final byte[] overallGCP,
+                             final int hapStartIndex, final boolean recacheReadValues) {
         // ensure that all the qual scores have valid values
         for (int i = 0; i < readQuals.length; i++) {
             readQuals[i] = (readQuals[i] < QualityUtils.MIN_USABLE_Q_SCORE ? QualityUtils.MIN_USABLE_Q_SCORE : (readQuals[i] > Byte.MAX_VALUE ? Byte.MAX_VALUE : readQuals[i]));
         }
 
-        // M, X, and Y arrays are of size read and haplotype + 1 because of an extra column for initial conditions and + 1 to consider the final base in a non-global alignment
-        final int readDimension = readBases.length + 2;
-        final int haplotypeDimension = haplotypeBases.length + 2;
-
-        // initial arrays to hold the probabilities of being in the match, insertion and deletion cases
-        final double[][] matchMetricArray = new double[readDimension][haplotypeDimension];
-        final double[][] XMetricArray = new double[readDimension][haplotypeDimension];
-        final double[][] YMetricArray = new double[readDimension][haplotypeDimension];
-        final double[][] constantMatrix = new double[readDimension][6];
-        final double[][] distanceMatrix = new double[readDimension][haplotypeDimension];
-        PairHMM.initializeDistanceMatrix(haplotypeBases, readBases, readQuals, 0, distanceMatrix);
-        PairHMM.initializeConstants(insertionGOP, deletionGOP, overallGCP, constantMatrix);
-        PairHMM.initializeArrays(readDimension, haplotypeDimension, matchMetricArray, XMetricArray, YMetricArray);
-        return PairHMM.computeReadLikelihoodGivenHaplotype( readDimension, haplotypeDimension, 0, matchMetricArray, XMetricArray, YMetricArray, constantMatrix, distanceMatrix);
+        return pairHMM.computeReadLikelihoodGivenHaplotypeLog10( haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
     }
 
 
+    private static boolean runTestsHelper(List<Double> results, boolean debug) {
 
-    private static void runTests(LinkedList<Map<String, byte[]>> testCache, boolean debug, boolean write) {
+        for (TestRow test : testsPerHaplotype) {
+            Double result = hmm(test.getHaplotypeBases(), test.getReadBases(),
+                test.getReadQuals(), test.getReadInsQuals(),
+                test.getReadDelQuals(), test.getOverallGCP(),
+                test.getHaplotypeStart(), test.getReachedReadValye());
+
+            if (debug) {
+                System.out.printf(" Result:%4.3f%n" +
+                        "==========================================================%n", result);
+            }
+            if (test.getLikelihood() != result) {
+                System.out.println("Wrong result. Expected " + test.getLikelihood() + " , actual: " + result);
+                return false;
+            }
+            results.add(result);
+        }
+
+        // clear = new haplotype will start
+        testsPerHaplotype.clear();
+        return true;
+    }
+
+    private static boolean runTests(LinkedList<Map<String, TestRow>> testCache, boolean debug, boolean write) {
+
         if (write) {
             try {
 
                 List<Double> results = new LinkedList<Double>();
+                byte[] currentHaplotype = {};
+                int X_METRIC_LENGTH = 0;
+                int Y_METRIC_LENGTH;
 
-                for (Map<String, byte[]> test : testCache) {
+                for (Map<String, TestRow> test : testCache) {
+                    TestRow currentTest = test.get("testInstance");
 
-                    double result = hmm(test.get("reference"), test.get("read"), test.get("baseQuals"), test.get("insQuals"), test.get("delQuals"), test.get("gcps"));
-
-                    if (debug) {
-                        System.out.printf(" Result:%4.2f%n" +
-                                "==========================================================%n", result);
+                    if (X_METRIC_LENGTH < currentTest.getReadBases().length)   {
+                        X_METRIC_LENGTH = currentTest.getReadBases().length;
                     }
-                    results.add(result);
+                    // first pass
+                    if(currentHaplotype.length == 0) {
+                        currentHaplotype = currentTest.getHaplotypeBases();
+                    }
+
+                    // check if new haplotype
+                    if(currentTest.getHaplotypeStart() == 0 & !Arrays.equals(currentHaplotype, currentTest.getHaplotypeBases()) ) {
+                        Y_METRIC_LENGTH = currentHaplotype.length;
+                        pairHMM.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
+
+                        runTestsHelper(results, debug);
+
+                        currentHaplotype = currentTest.getHaplotypeBases();
+                    }
+                    testsPerHaplotype.add(currentTest);
                 }
+
+                Y_METRIC_LENGTH = currentHaplotype.length;
+                pairHMM.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
+                runTestsHelper(results, debug);
 
                 BufferedWriter bw = new BufferedWriter(new FileWriter(new File("output.txt"), false));
                 for (Double result : results) {
@@ -81,9 +117,17 @@ public class RunTest {
                 throw new RuntimeException(e);
             }
         } else {
-            for (Map<String, byte[]> test : testCache) {
+            for (Map<String, TestRow> test : testCache) {
+                TestRow currentTest = test.get("testInstance");
+                double result = hmm(currentTest.getHaplotypeBases(), currentTest.getReadBases(),
+                        currentTest.getReadQuals(), currentTest.getReadInsQuals(),
+                        currentTest.getReadDelQuals(), currentTest.getOverallGCP(),
+                        currentTest.getHaplotypeStart(), currentTest.getReachedReadValye());
 
-                double result = hmm(test.get("reference"), test.get("read"), test.get("baseQuals"), test.get("insQuals"), test.get("delQuals"), test.get("gcps"));
+                if ((currentTest.getLikelihood() - result) < PRECISION) {
+                    System.out.println("Wrong result. Expected " + currentTest.getLikelihood() + " , actual: " + result);
+                    return false;
+                }
 
                 if (debug) {
                     System.out.printf(" Result:%4.2f%n" +
@@ -92,32 +136,41 @@ public class RunTest {
             }
             System.out.printf("%d - No I/O run-through complete.%n", System.currentTimeMillis() - startTime);
         }
+        return true;
     }
 
-    private static LinkedList<Map<String, byte[]>> parseFile(String filePath, boolean debug) {
-        LinkedList<Map<String, byte[]>> testCache = new LinkedList<Map<String, byte[]>>();
+    private static LinkedList<Map<String, TestRow>> parseFile(String filePath, boolean debug) {
+        LinkedList<Map<String, TestRow>> testCache = new LinkedList<Map<String, TestRow>>();
         try {
-
             for (String line : new XReadLines(new File(filePath))) {
                 String[] p = line.split(" ");
 
                 if (debug) {
-                    System.out.println("REF:" + p[0]);
-                    System.out.println("MUT:" + p[1]);
-                    System.out.println("BQ: " + p[2]);
-                    System.out.println("IQ: " + p[3]);
-                    System.out.println("DQ: " + p[4]);
-                    System.out.println("GCP:" + p[5]);
+                    System.out.println("Haplotype Bases:" + p[0]);
+                    System.out.println("Read Bases:" + p[1]);
+                    System.out.println("Read Quals: " + p[2]);
+                    System.out.println("Read Ins Quals: " + p[3]);
+                    System.out.println("Read Del Quals: " + p[4]);
+                    System.out.println("Overall GCP:" + p[5]);
+                    System.out.println("Haplotype start:" + p[6]);
+                    System.out.println("Boolean (reached read values):" + p[7]);
+                    System.out.println("result, likelihood:" + p[8]);
+                }
+                boolean reachedRead;
+                if (p[7].trim().equals("true")) {
+                    reachedRead = true;
+                } else {
+                    reachedRead = false;
                 }
 
-                Map<String, byte[]> test = new HashMap<String, byte[]>();
-                test.put("reference", p[0].getBytes());
-                test.put("read", p[1].getBytes());
-                test.put("baseQuals", getQuals(p[2]));
-                test.put("insQuals", getQuals(p[3]));
-                test.put("delQuals", getQuals(p[4]));
-                test.put("gcps", getQuals(p[5]));
+                Map<String, TestRow> test = new HashMap<String, TestRow>();
+                TestRow testRow = new TestRow(p[0].getBytes(), p[1].getBytes(),
+                        convertToByteArray(p[2]), convertToByteArray(p[3]),
+                        convertToByteArray(p[4]), convertToByteArray(p[5]),
+                        Integer.parseInt(p[6]), reachedRead,
+                        Double.parseDouble(p[8]));
 
+                test.put("testInstance", testRow);
                 testCache.add(test);
             }
         } catch (Exception e) {
@@ -127,11 +180,11 @@ public class RunTest {
         return testCache;
     }
 
-    static byte[] getQuals(String quals) {
+    static byte[] convertToByteArray(String quals) {
         byte[] output = quals.getBytes();
 
         for (int i = 0; i < output.length; i++) {
-            output[i] -= (byte) ' ';
+            output[i] -= 33;
         }
 
         return output;
@@ -139,6 +192,7 @@ public class RunTest {
 
     public static void main(String[] argv) {
         boolean debug = false;
+
 
         List<String> args = new LinkedList<String>(Arrays.asList(argv));
         if (args.contains("-debug")) {
@@ -151,12 +205,16 @@ public class RunTest {
                     "Run with -debug for debug output");
         } else {
             System.out.printf("%d - Loading input data ...%n", System.currentTimeMillis() - startTime);
-            LinkedList<Map<String, byte[]>> testCache = new LinkedList<Map<String, byte[]>>();
+            LinkedList<Map<String, TestRow>> testCache = new LinkedList<Map<String, TestRow>>();
             for (String arg : args) {
                 testCache.addAll(parseFile(arg, debug));
             }
             System.out.printf("%d - DONE loading input data! Now calculating%n", System.currentTimeMillis() - startTime);
-            runTests(testCache, debug, true);
+            if(runTests(testCache, debug, true)) {
+                System.out.println("Tests successful");
+            } else {
+                System.out.println("Tests unsuccessful");
+            }
         }
 
     }

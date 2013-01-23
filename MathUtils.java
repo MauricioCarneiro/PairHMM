@@ -26,8 +26,51 @@ public class MathUtils {
         return (d > 0.0) ? (int) (d + 0.5d) : (int) (d - 0.5d);
     }
 
+    public static int maxElementIndex(final double[] array, final int endIndex) {
+        if (array == null || array.length == 0)
+            throw new IllegalArgumentException("Array cannot be null!");
+
+        int maxI = 0;
+        for (int i = 1; i < endIndex; i++) {
+            if (array[i] > array[maxI])
+                maxI = i;
+        }
+
+        return maxI;
+    }
+
+    public static int maxElementIndex(final double[] array) {
+        return maxElementIndex(array, array.length);
+    }
+
+    public static double arrayMax(final double[] array, final int endIndex) {
+        return array[maxElementIndex(array, endIndex)];
+    }
+
+    public static double log10sumLog10(double[] log10p, int start, int finish) {
+        double sum = 0.0;
+
+        double maxValue = arrayMax(log10p, finish);
+        if(maxValue == Double.NEGATIVE_INFINITY)
+            return maxValue;
+
+        for (int i = start; i < finish; i++) {
+            sum += Math.pow(10.0, log10p[i] - maxValue);
+        }
+
+        return Math.log10(sum) + maxValue;
+    }
+
     public static double approximateLog10SumLog10(double a, double b, double c) {
         return approximateLog10SumLog10(a, approximateLog10SumLog10(b, c));
+    }
+
+    public static double log10sumLog10(double[] log10p, int start) {
+        return log10sumLog10(log10p, start, log10p.length);
+    }
+
+    public static double log10sumLog10(double[] log10values) {
+        return log10sumLog10(log10values, 0);
     }
 
     public static double approximateLog10SumLog10(double small, double big) {
