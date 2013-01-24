@@ -79,7 +79,7 @@ public class RunTest {
                 List<Double> results = new LinkedList<Double>();
                 byte[] currentHaplotype = {};
                 int X_METRIC_LENGTH = 0;
-                int Y_METRIC_LENGTH;
+                int Y_METRIC_LENGTH = 0;
 
                 while(testCache.hasNext()){
                     TestRow currentTest = testCache.next();
@@ -94,7 +94,9 @@ public class RunTest {
 
                     // check if new haplotype
                     if(currentTest.getHaplotypeStart() == 0 & !Arrays.equals(currentHaplotype, currentTest.getHaplotypeBases()) ) {
-                        Y_METRIC_LENGTH = currentHaplotype.length;
+                        if(Y_METRIC_LENGTH < currentHaplotype.length){
+                          Y_METRIC_LENGTH = currentHaplotype.length;
+                        }
                         pairHMM.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
 
                         runTestsHelper(results, debug);
@@ -116,7 +118,7 @@ public class RunTest {
                 bw.close();
 
                 System.out.printf("%d - First run-through complete.%n", System.currentTimeMillis() - startTime);
-            } catch (Exception e) {//Catch exception if any
+            } catch (Exception e) {//Catch exception if any  
                 throw new RuntimeException(e);
             }
         } else {
