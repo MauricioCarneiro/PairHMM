@@ -2,6 +2,7 @@ package org.broadinstitute;
 
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.util.*;
 
@@ -70,7 +71,7 @@ public class RunTest {
         return true;
     }
 
-    private static boolean runTests(LinkedList<Map<String, TestRow>> testCache, boolean debug, boolean write) {
+    private static boolean runTests(Iterator<TestRow> testCache, boolean debug, boolean write) {
 
         if (write) {
             try {
@@ -80,8 +81,8 @@ public class RunTest {
                 int X_METRIC_LENGTH = 0;
                 int Y_METRIC_LENGTH;
 
-                for (Map<String, TestRow> test : testCache) {
-                    TestRow currentTest = test.get("testInstance");
+                while(testCache.hasNext()){
+                    TestRow currentTest = testCache.next();
 
                     if (X_METRIC_LENGTH < currentTest.getReadBases().length)   {
                         X_METRIC_LENGTH = currentTest.getReadBases().length;
@@ -119,8 +120,8 @@ public class RunTest {
                 throw new RuntimeException(e);
             }
         } else {
-            for (Map<String, TestRow> test : testCache) {
-                TestRow currentTest = test.get("testInstance");
+            while(testCache.hasNext()){
+                TestRow currentTest = testCache.next();
                 double result = hmm(currentTest.getHaplotypeBases(), currentTest.getReadBases(),
                         currentTest.getReadQuals(), currentTest.getReadInsQuals(),
                         currentTest.getReadDelQuals(), currentTest.getOverallGCP(),
@@ -141,60 +142,19 @@ public class RunTest {
         return true;
     }
 
-    private static LinkedList<Map<String, TestRow>> parseFile(String filePath, boolean debug) {
-        LinkedList<Map<String, TestRow>> testCache = new LinkedList<Map<String, TestRow>>();
-        try {
-            for (String line : new XReadLines(new File(filePath))) {
-                String[] p = line.split(" ");
-
-                if (debug) {
-                    System.out.println("Haplotype Bases:" + p[0]);
-                    System.out.println("Read Bases:" + p[1]);
-                    System.out.println("Read Quals: " + p[2]);
-                    System.out.println("Read Ins Quals: " + p[3]);
-                    System.out.println("Read Del Quals: " + p[4]);
-                    System.out.println("Overall GCP:" + p[5]);
-                    System.out.println("Haplotype start:" + p[6]);
-                    System.out.println("Boolean (reached read values):" + p[7]);
-                    System.out.println("result, likelihood:" + p[8]);
-                }
-                boolean reachedRead;
-                if (p[7].trim().equals("true")) {
-                    reachedRead = true;
-                } else {
-                    reachedRead = false;
-                }
-
-                Map<String, TestRow> test = new HashMap<String, TestRow>();
-                TestRow testRow = new TestRow(p[0].getBytes(), p[1].getBytes(),
-                        convertToByteArray(p[2]), convertToByteArray(p[3]),
-                        convertToByteArray(p[4]), convertToByteArray(p[5]),
-                        Integer.parseInt(p[6]), reachedRead,
-                        Double.parseDouble(p[8]));
-
-                test.put("testInstance", testRow);
-                testCache.add(test);
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-
-        return testCache;
-    }
-
-    static byte[] convertToByteArray(String quals) {
-        byte[] output = quals.getBytes();
-
-        for (int i = 0; i < output.length; i++) {
-            output[i] -= 33;
-        }
-
-        return output;
+    private static Iterator<TestRow> parseFile(String filePath, boolean debug) {
+      try {
+        ParserIterator ret = new ParserIterator(filePath, debug);
+        return ret;
+      } catch(FileNotFoundException ex){
+        ex.printStackTrace(System.out);
+        System.exit(0);
+        return null;
+      }
     }
 
     public static void main(String[] argv) {
         boolean debug = false;
-
 
         List<String> args = new LinkedList<String>(Arrays.asList(argv));
         if (args.contains("-debug")) {
@@ -206,17 +166,15 @@ public class RunTest {
                     "hap ref basequals insquals delquals gcp\n ----------------------------\n" +
                     "Run with -debug for debug output");
         } else {
-            System.out.printf("%d - Loading input data ...%n", System.currentTimeMillis() - startTime);
-            LinkedList<Map<String, TestRow>> testCache = new LinkedList<Map<String, TestRow>>();
-            for (String arg : args) {
-                testCache.addAll(parseFile(arg, debug));
-            }
-            System.out.printf("%d - DONE loading input data! Now calculating%n", System.currentTimeMillis() - startTime);
-            if(runTests(testCache, debug, true)) {
-                System.out.println("Tests successful");
+          for(String arg : args){
+            System.out.println("testing file: "+arg);
+            Iterator<TestRow> iter = parseFile(arg, debug);
+            if(runTests(iter, debug, true)) {
+              System.out.println("Tests successful");
             } else {
-                System.out.println("Tests unsuccessful");
+              System.out.println("Tests unsuccessful");
             }
+          }      
         }
 
     }
