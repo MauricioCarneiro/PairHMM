@@ -1,4 +1,3 @@
-package org.broadinstitute;
 
 import java.io.*;
 import java.util.Iterator;
