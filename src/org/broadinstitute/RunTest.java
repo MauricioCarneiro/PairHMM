@@ -67,7 +67,7 @@ public class RunTest {
                         System.out.printf(" Result:%4.3f%n" +
                                 "==========================================================%n", result);
                     }
-                    if ((currentTest.getLikelihood() - result) > PRECISION) {
+                    if (Math.abs(currentTest.getLikelihood() - result) > PRECISION) {
                         System.out.println("Wrong result. Expected " + currentTest.getLikelihood() + " , actual: " + result);
                         return false;
                     }
