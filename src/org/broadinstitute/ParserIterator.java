@@ -1,3 +1,4 @@
+package org.broadinstitute;
 
 /*
  * Copyright (c) 2012, The Broad Institute
