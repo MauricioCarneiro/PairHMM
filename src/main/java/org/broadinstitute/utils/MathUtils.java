@@ -1,4 +1,4 @@
-package org.broadinstitute;
+package org.broadinstitute.utils;
 
 /**
  * @author Mauricio Carneiro

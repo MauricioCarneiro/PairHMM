@@ -1,6 +1,3 @@
-
-package org.broadinstitute;
-
 /*
 * Copyright (c) 2012 The Broad Institute
 * 
@@ -25,7 +22,9 @@ package org.broadinstitute;
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
 * THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
+package org.broadinstitute.pairhmm;
 
+import org.broadinstitute.utils.MathUtils;
 
 /**
  * Util class for performing the pair HMM for local alignment. Figure 4.3 in Durbin 1998 book.

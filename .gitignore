@@ -2,3 +2,7 @@ test_data/verificationTest.txt
 build/
 dist/
 private/
+.gradle/
+.idea/
+*.iml
+atlassian-ide-plugin.xml

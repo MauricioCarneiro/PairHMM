@@ -1,0 +1,18 @@
+apply plugin: 'java'
+
+version = '0.1'
+jar {
+    manifest {
+        attributes 'Main-Class': 'org.broadinstitute.Evaluate',
+                   'Implementation-Title': 'PairHMM',
+                   'Implemetation-Version': version
+    }
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	compile 'log4j:log4j:latest.integration'
+}

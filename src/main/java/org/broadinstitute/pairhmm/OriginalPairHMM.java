@@ -1,4 +1,4 @@
-package org.broadinstitute;
+package org.broadinstitute.pairhmm;
 
 /*
  * Copyright (c) 2012, The Broad Institute
@@ -25,16 +25,19 @@ package org.broadinstitute;
  */
 
 
+import org.broadinstitute.utils.MathUtils;
+import org.broadinstitute.utils.QualityUtils;
+
 /**
  * Util class for performing the pair HMM for local alignment. Figure 4.3 in Durbin 1998 book.
  * User: rpoplin
  * Date: 3/1/12
  */
 
-public class OriginalPairHMM extends ExactPairHMM {
+public class OriginalPairHMM extends PairHMM {
 
     @Override
-    public double computeReadLikelihoodGivenHaplotypeLog10( final byte[] haplotypeBases,
+    public double subComputeReadLikelihoodGivenHaplotypeLog10( final byte[] haplotypeBases,
                                                             final byte[] readBases,
                                                             final byte[] readQuals,
                                                             final byte[] insertionGOP,
