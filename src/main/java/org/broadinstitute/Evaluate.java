@@ -1,5 +1,9 @@
 package org.broadinstitute;
 
+import org.apache.log4j.BasicConfigurator;
+import org.apache.log4j.Level;
+import org.apache.log4j.Logger;
+import org.apache.log4j.PatternLayout;
 import org.broadinstitute.pairhmm.LoglessCachingPairHMM;
 import org.broadinstitute.pairhmm.PairHMM;
 import org.broadinstitute.utils.QualityUtils;
@@ -10,12 +14,13 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 
+
 /**
-  * Evaluating routine for the PairHMM
-  *
-  * @author Mauricio Carneiro
-  * @since 8/15/12
-  */
+ * Evaluating routine for the PairHMM
+ *
+ * @author Mauricio Carneiro
+ * @since 8/15/12
+ */
 public class Evaluate {
 
     private static final long startTime = System.currentTimeMillis();
@@ -24,41 +29,51 @@ public class Evaluate {
 
     private static final int X_METRIC_LENGTH = 10000;
     private static final int Y_METRIC_LENGTH = 10000;
+    private static final String outputFilename = "output.txt";
+
+    private static Logger logger = Logger.getLogger("Main");
 
     public Evaluate() {
+        logger.setLevel(Level.DEBUG);
+        BasicConfigurator.configure();
     }
 
     /**
-      * Initializes and computes the Pair HMM matrix.
-      *
-      * Use this method if you're calculating the entire matrix from scratch.
-      *
-      * @param haplotypeBases reference sequence bases
-      * @param readBases      comparison haplotype bases
-      * @param readQuals      comparison haplotype base quals (phred-scaled)
-      * @param insertionGOP   comparison haplotype insertion quals (phred-scaled)
-      * @param deletionGOP    comparison haplotype deletion quals (phred-scaled)
-      * @param overallGCP     comparison haplotype gap continuation quals (phred-scaled)
-      * @return the likelihood of the alignment between read and haplotype
-      */
-    public static double hmm(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP,
-                              final byte[] deletionGOP, final byte[] overallGCP,
-                              final int hapStartIndex, final boolean recacheReadValues) {
-        // ensure that all the qual scores have valid values
+     * Initializes and computes the Pair HMM matrix.
+     * <p/>
+     * Use this method if you're calculating the entire matrix from scratch.
+     *
+     * @param haplotypeBases reference sequence bases
+     * @param readBases      comparison haplotype bases
+     * @param readQuals      comparison haplotype base quals (phred-scaled)
+     * @param insertionGOP   comparison haplotype insertion quals (phred-scaled)
+     * @param deletionGOP    comparison haplotype deletion quals (phred-scaled)
+     * @param overallGCP     comparison haplotype gap continuation quals (phred-scaled)
+     * @return the likelihood of the alignment between read and haplotype
+     */
+    public double hmm(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex, final boolean recacheReadValues) {
+        return pairHMM.computeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
+    }
+
+    /**
+     * Ensures that all the qual scores have valid values
+     *
+     * @param readQuals read qualities array (modified in place)
+     * @return the readQuals array for convenience
+     */
+    private byte[] cleanupQualityScores(byte[] readQuals) {
         for (int i = 0; i < readQuals.length; i++) {
             readQuals[i] = (readQuals[i] < QualityUtils.MIN_USABLE_Q_SCORE ? QualityUtils.MIN_USABLE_Q_SCORE : (readQuals[i] > Byte.MAX_VALUE ? Byte.MAX_VALUE : readQuals[i]));
         }
-
-        return pairHMM.computeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
+        return readQuals;
     }
 
-    private static boolean runTests(Iterator<TestRow> testCache, boolean debug, boolean write) {
-
+    private boolean runTests(Iterator<TestRow> testCache, boolean write) {
         pairHMM.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
 
         if (write) {
             try {
-                BufferedWriter bw = new BufferedWriter(new FileWriter(new File("output.txt"), false));
+                BufferedWriter bw = new BufferedWriter(new FileWriter(new File(outputFilename), false));
                 while (testCache.hasNext()) {
                     TestRow currentTest = testCache.next();
 
@@ -67,24 +82,21 @@ public class Evaluate {
                             currentTest.getReadDelQuals(), currentTest.getOverallGCP(),
                             currentTest.getHaplotypeStart(), currentTest.getReachedReadValye());
 
-                    if (debug) {
-                        System.out.printf(" Result:%4.3f%n" +
-                                "==========================================================%n", result);
-                    }
+                    logger.debug(String.format("Result:%4.3f%n" + "==========================================================%n", result));
                     if (Math.abs(currentTest.getLikelihood() - result) > PRECISION) {
-                        System.out.println("Wrong result. Expected " + currentTest.getLikelihood() + " , actual: " + result);
+                        logger.error(String.format("Wrong result. Expected " + currentTest.getLikelihood() + " , actual: " + result));
                         return false;
                     }
                     bw.write(String.format("%f", result));
                     bw.newLine();
                 }
                 bw.close();
-                System.out.printf("%d - First run-through complete.%n", System.currentTimeMillis() - startTime);
+                logger.info(String.format("Tests completed in %d ms", System.currentTimeMillis() - startTime));
 
-            }  catch (Exception e) {//Catch exception if any
-                throw new RuntimeException(e);
-                }
-        }    else   {
+            } catch (IOException e) {
+                throw new RuntimeException("Could not open file" + outputFilename, e);
+            }
+        } else {
             while (testCache.hasNext()) {
                 TestRow currentTest = testCache.next();
 
@@ -93,35 +105,26 @@ public class Evaluate {
                         currentTest.getReadDelQuals(), currentTest.getOverallGCP(),
                         currentTest.getHaplotypeStart(), currentTest.getReachedReadValye());
 
-                if (debug) {
-                    System.out.printf(" Result:%4.3f%n" +
-                            "==========================================================%n", result);
-                }
+                logger.debug(String.format(" Result:%4.3f%n" + "==========================================================%n", result));
                 if ((currentTest.getLikelihood() - result) > PRECISION) {
-                    System.out.println("Wrong result. Expected " + currentTest.getLikelihood() + " , actual: " + result);
+                    logger.error("Wrong result. Expected " + currentTest.getLikelihood() + " , actual: " + result);
                     return false;
                 }
             }
-            System.out.printf("%d - No I/O run-through complete.%n", System.currentTimeMillis() - startTime);
+            logger.info(String.format("%d - No I/O run-through complete.%n", System.currentTimeMillis() - startTime));
         }
+
         return true;
     }
 
 
-    private static Iterator<TestRow> parseFile(String filePath, boolean debug) {
-        try {
-            ParserIterator ret = new ParserIterator(filePath, debug);
-            return ret;
-        } catch (FileNotFoundException ex) {
-            ex.printStackTrace(System.out);
-            System.exit(0);
-            return null;
-        }
+    private static Iterator<TestRow> parseFile(String filePath, boolean debug) throws FileNotFoundException {
+        return new ParserIterator(filePath, debug);
     }
 
-    public static void main(String[] argv) {
+    public static void main(String[] argv) throws FileNotFoundException {
         boolean debug = false;
-
+        Evaluate evaluate = new Evaluate();
 
         List<String> args = new LinkedList<String>(Arrays.asList(argv));
         if (args.contains("-debug")) {
@@ -129,96 +132,80 @@ public class Evaluate {
             args.remove("-debug");
         }
         if (args.size() < 1) {
-            throw new RuntimeException("\r\nYou must specify a file name for input.Format below:\n" +
-                    "filename \n ----------------------------\n" +
-                    "Run with -debug for debug output");
+            throw new RuntimeException("\r\nYou must specify a file name for input.\n" + "filename \n ----------------------------\n" + "Run with -debug for debug output");
         } else {
             for (String arg : args) {
-                System.out.println("testing file: " + arg);
+                logger.info("testing file " + arg);
                 Iterator<TestRow> iter = parseFile(arg, debug);
-                if (runTests(iter, debug, true)) {
-                    System.out.println("Tests successful");
+                if (evaluate.runTests(iter, true)) {
+                    logger.info("Tests successful");
                 } else {
-                    System.out.println("Tests unsuccessful");
+                    logger.info("Tests unsuccessful");
                 }
             }
         }
 
     }
 
-    /*************************************************************************
+    /**
      * Classes and Functions used to parse and apply the tests to the
      * PairHMM class
-     ************************************************************************/
+     */
 
     static class ParserIterator implements Iterator<TestRow> {
+        private XReadLines m_reader;
+        private TestRow m_nextEntry;
 
-      private XReadLines m_reader;
-      private TestRow m_nextEntry;
-      private boolean m_debug;
-
-      public ParserIterator(String filePath, boolean debug) throws FileNotFoundException {
-        m_reader = new XReadLines(new File(filePath));
-        m_debug = debug;
-      }
-
-      @Override
-      public boolean hasNext() {
-        if(m_reader.hasNext() == false){
-          return false;
+        public ParserIterator(String filePath, boolean debug) throws FileNotFoundException {
+            m_reader = new XReadLines(new File(filePath));
+            if (debug) {
+                logger.setLevel(Level.DEBUG);
+            }
         }
 
-        String line = m_reader.next();
-        String[] p = line.split(" ");
-        boolean reachedRead;
-        if (p[7].trim().equals("true")) {
-          reachedRead = true;
-        } else {
-          reachedRead = false;
+        @Override
+        public boolean hasNext() {
+            if (!m_reader.hasNext()) {
+                return false;
+            }
+
+            String line = m_reader.next();
+            String[] p = line.split(" ");
+            final boolean reachedRead = p[7].trim().equals("true");
+            m_nextEntry = new TestRow(p[0].getBytes(), p[1].getBytes(), convertToByteArray(p[2]), convertToByteArray(p[3]), convertToByteArray(p[4]), convertToByteArray(p[5]), Integer.parseInt(p[6]), reachedRead, Double.parseDouble(p[8]));
+
+            logger.debug("Haplotype Bases:" + p[0]);
+            logger.debug("Read Bases:" + p[1]);
+            logger.debug("Read Quals: " + p[2]);
+            logger.debug("Read Ins Quals: " + p[3]);
+            logger.debug("Read Del Quals: " + p[4]);
+            logger.debug("Overall GCP:" + p[5]);
+            logger.debug("Haplotype start:" + p[6]);
+            logger.debug("Boolean (reached read values):" + p[7]);
+            logger.debug("result, likelihood:" + p[8]);
+
+            return true;
         }
 
-        TestRow testRow = new TestRow(p[0].getBytes(), p[1].getBytes(),
-          convertToByteArray(p[2]), convertToByteArray(p[3]),
-          convertToByteArray(p[4]), convertToByteArray(p[5]),
-          Integer.parseInt(p[6]), reachedRead,
-          Double.parseDouble(p[8]));
+        private byte[] convertToByteArray(String quals) {
+            byte[] output = quals.getBytes();
 
-        m_nextEntry = testRow;
+            for (int i = 0; i < output.length; i++) {
+                output[i] -= 33;
+            }
 
-        if (m_debug) {
-          System.out.println("Haplotype Bases:" + p[0]);
-          System.out.println("Read Bases:" + p[1]);
-          System.out.println("Read Quals: " + p[2]);
-          System.out.println("Read Ins Quals: " + p[3]);
-          System.out.println("Read Del Quals: " + p[4]);
-          System.out.println("Overall GCP:" + p[5]);
-          System.out.println("Haplotype start:" + p[6]);
-          System.out.println("Boolean (reached read values):" + p[7]);
-          System.out.println("result, likelihood:" + p[8]);
-        }
-        return true;
-      }
-
-      private byte[] convertToByteArray(String quals) {
-        byte[] output = quals.getBytes();
-
-        for (int i = 0; i < output.length; i++) {
-          output[i] -= 33;
+            return output;
         }
 
-        return output;
-      }
+        @Override
+        public TestRow next() {
+            return m_nextEntry;
+        }
 
-      @Override
-      public TestRow next() {
-        return m_nextEntry;
-      }
-
-      @Override
-      public void remove() {
-        throw new UnsupportedOperationException("Not supported yet.");
-      }
-
+        @Override
+        public void remove() {
+            throw new UnsupportedOperationException("Not supported yet.");
+        }
     }
 
     static class TestRow {
