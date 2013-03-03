@@ -1,74 +1,166 @@
+/*
+* Copyright (c) 2012 The Broad Institute
+* 
+* Permission is hereby granted, free of charge, to any person
+* obtaining a copy of this software and associated documentation
+* files (the "Software"), to deal in the Software without
+* restriction, including without limitation the rights to use,
+* copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the Software, and to permit persons to whom the
+* Software is furnished to do so, subject to the following
+* conditions:
+* 
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+* 
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+* OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+* NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+* HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
+* THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
+
 package org.broadinstitute.utils;
 
 /**
- * @author Mauricio Carneiro
- * @since 8/20/12
+ * QualityUtils is a static class (no instantiation allowed!) with some utility methods for manipulating
+ * quality scores.
+ *
+ * @author Kiran Garimella, Mark DePristo
+ * @since Way back
  */
 public class QualityUtils {
-    private static final int MAXN = 50000;
-    private static double[] qualToErrorProbLog10Cache = new double[256];
-    private static double[] qualToProbLog10Cache = new double[256];
-    private static final double[] log10Cache;
-    private static final double[] log10FactorialCache;
-    private static final int LOG10_CACHE_SIZE = 4 * MAXN;  // we need to be able to go up to 2*(2N) when calculating some of the coefficients
+
+    /**
+     * The lowest quality score for a base that is considered reasonable for statistical analysis.  This is
+     * because Q 6 => you stand a 25% of being right, which means all bases are equally likely
+     */
     public final static byte MIN_USABLE_Q_SCORE = 6;
 
+    /**
+     * Cached values for qual as byte calculations so they are very fast
+     */
+    private static double qualToErrorProbCache[] = new double[256];
+    private static double qualToProbLog10Cache[] = new double[256];
+
     static {
-        for (int i = 0; i < 256; i++)
-            qualToErrorProbLog10Cache[i] = qualToErrorProbLog10Raw(i);
-        for (int i = 0; i < 256; i++)
-            qualToProbLog10Cache[i] = qualToProbLog10Raw(i);
-
-        log10Cache = new double[LOG10_CACHE_SIZE];
-        log10FactorialCache = new double[LOG10_CACHE_SIZE];
-
-        log10Cache[0] = Double.NEGATIVE_INFINITY;
-        for (int k = 1; k < LOG10_CACHE_SIZE; k++) {
-            log10Cache[k] = Math.log10(k);
-            log10FactorialCache[k] = log10FactorialCache[k - 1] + log10Cache[k];
+        for (int i = 0; i < 256; i++) {
+            qualToErrorProbCache[i] = qualToErrorProb((double) i);
+            qualToProbLog10Cache[i] = Math.log10(1.0 - qualToErrorProbCache[i]);
         }
-
     }
 
     /**
-     * Convert a quality score to a probability.  This is the Phred-style
-     * conversion, *not* the Illumina-style conversion (though asymptotically, they're the same).
+     * Private constructor.  No instantiating this class!
+     */
+    private QualityUtils() {}
+
+    // ----------------------------------------------------------------------
+    //
+    // These are all functions to convert a phred-scaled quality score to a probability
+    //
+    // ----------------------------------------------------------------------
+
+    /**
+     * Convert a phred-scaled quality score to its probability of being true (Q30 => 0.999)
+     *
+     * This is the Phred-style conversion, *not* the Illumina-style conversion.
+     *
+     * Because the input is a discretized byte value, this function uses a cache so is very efficient
+     *
+     * WARNING -- because this function takes a byte for maxQual, you must be careful in converting
+     * integers to byte.  The appropriate way to do this is ((byte)(myInt & 0xFF))
      *
      * @param qual a quality score (0-255)
      * @return a probability (0.0-1.0)
      */
-    static public double qualToProb(byte qual) {
+    public static double qualToProb(final byte qual) {
         return 1.0 - qualToErrorProb(qual);
     }
 
-    static private double qualToProbLog10Raw(int qual) {
-        return Math.log10(1.0 - qualToErrorProbRaw(qual));
-    }
-
-    static public double qualToProbLog10(byte qual) {
-        return qualToProbLog10Cache[(int) qual & 0xff]; // Map: 127 -> 127; -128 -> 128; -1 -> 255; etc.
+    /**
+     * Convert a phred-scaled quality score to its log10 probability of being true (Q30 => log10(0.999))
+     *
+     * This is the Phred-style conversion, *not* the Illumina-style conversion.
+     *
+     * Because the input is a double value, this function must call Math.pow so can be quite expensive
+     *
+     * WARNING -- because this function takes a byte for maxQual, you must be careful in converting
+     * integers to byte.  The appropriate way to do this is ((byte)(myInt & 0xFF))
+     *
+     * @param qual a phred-scaled quality score encoded as a double.  Can be non-integer values (30.5)
+     * @return a probability (0.0-1.0)
+     */
+    public static double qualToProbLog10(final byte qual) {
+        return qualToProbLog10Cache[(int)qual & 0xff]; // Map: 127 -> 127; -128 -> 128; -1 -> 255; etc.
     }
 
     /**
-     * Convert a quality score to a probability of error.  This is the Phred-style conversion, *not* the Illumina-style
-     * conversion (though asymptotically, they're the same).
+     * Convert a phred-scaled quality score to its probability of being wrong (Q30 => 0.001)
      *
-     * @param qual a quality score (0 - 255)
-     * @return a probability (0.0 - 1.0)
+     * This is the Phred-style conversion, *not* the Illumina-style conversion.
+     *
+     * Because the input is a double value, this function must call Math.pow so can be quite expensive
+     *
+     * @param qual a phred-scaled quality score encoded as a double.  Can be non-integer values (30.5)
+     * @return a probability (0.0-1.0)
      */
-    static private double qualToErrorProbRaw(int qual) {
-        return qualToErrorProb((double) qual);
-    }
-
     public static double qualToErrorProb(final double qual) {
-        return Math.pow(10.0, (qual) / -10.0);
+        if ( qual < 0.0 ) throw new IllegalArgumentException("qual must be >= 0.0 but got " + qual);
+        return Math.pow(10.0, qual / -10.0);
     }
 
-    static private double qualToErrorProbLog10Raw(int qual) {
-        return ((double) qual) / -10.0;
+    /**
+     * Convert a phred-scaled quality score to its probability of being wrong (Q30 => 0.001)
+     *
+     * This is the Phred-style conversion, *not* the Illumina-style conversion.
+     *
+     * Because the input is a byte value, this function uses a cache so is very efficient
+     *
+     * WARNING -- because this function takes a byte for maxQual, you must be careful in converting
+     * integers to byte.  The appropriate way to do this is ((byte)(myInt & 0xFF))
+     *
+     * @param qual a phred-scaled quality score encoded as a byte
+     * @return a probability (0.0-1.0)
+     */
+    public static double qualToErrorProb(final byte qual) {
+        return qualToErrorProbCache[(int)qual & 0xff]; // Map: 127 -> 127; -128 -> 128; -1 -> 255; etc.
     }
 
-    static public double qualToErrorProbLog10(byte qual) {
-        return qualToErrorProbLog10Cache[(int) qual & 0xff]; // Map: 127 -> 127; -128 -> 128; -1 -> 255; etc.
+
+    /**
+     * Convert a phred-scaled quality score to its log10 probability of being wrong (Q30 => log10(0.001))
+     *
+     * This is the Phred-style conversion, *not* the Illumina-style conversion.
+     *
+     * The calculation is extremely efficient
+     *
+     * WARNING -- because this function takes a byte for maxQual, you must be careful in converting
+     * integers to byte.  The appropriate way to do this is ((byte)(myInt & 0xFF))
+     *
+     * @param qual a phred-scaled quality score encoded as a byte
+     * @return a probability (0.0-1.0)
+     */
+    public static double qualToErrorProbLog10(final byte qual) {
+        return qualToErrorProbLog10((double)(qual & 0xFF));
+    }
+
+    /**
+     * Convert a phred-scaled quality score to its log10 probability of being wrong (Q30 => log10(0.001))
+     *
+     * This is the Phred-style conversion, *not* the Illumina-style conversion.
+     *
+     * The calculation is extremely efficient
+     *
+     * @param qual a phred-scaled quality score encoded as a double
+     * @return a probability (0.0-1.0)
+     */
+    public static double qualToErrorProbLog10(final double qual) {
+        if ( qual < 0.0 ) throw new IllegalArgumentException("qual must be >= 0.0 but got " + qual);
+        return qual / -10.0;
     }
 }
+
