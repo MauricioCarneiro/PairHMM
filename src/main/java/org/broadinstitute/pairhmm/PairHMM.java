@@ -123,13 +123,12 @@ public abstract class PairHMM {
             return result;
         else
             throw new IllegalStateException("Bad likelihoods detected: " + result);
-//            return result;
     }
 
     /**
      * To be overloaded by subclasses to actually do calculation for #computeReadLikelihoodGivenHaplotypeLog10
      */
-    protected abstract double subComputeReadLikelihoodGivenHaplotypeLog10( final byte[] haplotypeBases,
+    public abstract double subComputeReadLikelihoodGivenHaplotypeLog10( final byte[] haplotypeBases,
                                                                            final byte[] readBases,
                                                                            final byte[] readQuals,
                                                                            final byte[] insertionGOP,

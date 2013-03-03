@@ -3,16 +3,11 @@ package org.broadinstitute;
 import org.apache.log4j.BasicConfigurator;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
-import org.apache.log4j.PatternLayout;
-import org.broadinstitute.pairhmm.LoglessCachingPairHMM;
-import org.broadinstitute.pairhmm.PairHMM;
+import org.broadinstitute.pairhmm.*;
 import org.broadinstitute.utils.QualityUtils;
 
 import java.io.*;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 
 
 /**
@@ -23,19 +18,34 @@ import java.util.List;
  */
 public class Evaluate {
 
-    private static final long startTime = System.currentTimeMillis();
-    private static final PairHMM pairHMM = new LoglessCachingPairHMM();
+    private static PairHMM pairHMM;
     private static final double PRECISION = 0.001;
 
     private static final int X_METRIC_LENGTH = 10000;
     private static final int Y_METRIC_LENGTH = 10000;
-    private static final String outputFilename = "output.txt";
 
     private static Logger logger = Logger.getLogger("Main");
 
-    public Evaluate() {
-        logger.setLevel(Level.DEBUG);
+    public Evaluate(Set<String> args) {
+        final boolean debug = args.contains("-d") || args.contains("--debug");
+        logger.setLevel(debug ? Level.DEBUG : Level.INFO);
         BasicConfigurator.configure();
+        if (args.contains("--caching")) {
+            logger.info("Using CachingPairHMM");
+            pairHMM = new CachingPairHMM();
+        }
+        else if (args.contains("--original")) {
+            logger.info("Using OriginalPairHMM");
+            pairHMM = new OriginalPairHMM();
+        }
+        else if (args.contains("--exact")) {
+            logger.info("Using ExactPairHMM");
+            pairHMM = new ExactPairHMM();
+        }
+        else {
+            logger.info("Using LoglessCachingPairHMM");
+            pairHMM = new LoglessCachingPairHMM();
+        }
     }
 
     /**
@@ -52,7 +62,7 @@ public class Evaluate {
      * @return the likelihood of the alignment between read and haplotype
      */
     public double hmm(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex, final boolean recacheReadValues) {
-        return pairHMM.computeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
+        return pairHMM.subComputeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
     }
 
     /**
@@ -68,79 +78,49 @@ public class Evaluate {
         return readQuals;
     }
 
-    private boolean runTests(Iterator<TestRow> testCache, boolean write) {
+    private void runTests(Iterator<TestRow> testCache) {
+        final long startTime = System.currentTimeMillis();
+
+        boolean testsPassed = true;
         pairHMM.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
 
-        if (write) {
-            try {
-                BufferedWriter bw = new BufferedWriter(new FileWriter(new File(outputFilename), false));
-                while (testCache.hasNext()) {
-                    TestRow currentTest = testCache.next();
+        while (testCache.hasNext()) {
+            TestRow currentTest = testCache.next();
 
-                    Double result = hmm(currentTest.getHaplotypeBases(), currentTest.getReadBases(),
-                            currentTest.getReadQuals(), currentTest.getReadInsQuals(),
-                            currentTest.getReadDelQuals(), currentTest.getOverallGCP(),
-                            currentTest.getHaplotypeStart(), currentTest.getReachedReadValye());
+            Double result = hmm(currentTest.getHaplotypeBases(), currentTest.getReadBases(),
+                    currentTest.getReadQuals(), currentTest.getReadInsQuals(),
+                    currentTest.getReadDelQuals(), currentTest.getOverallGCP(),
+                    currentTest.getHaplotypeStart(), currentTest.getReachedReadValye());
 
-                    logger.debug(String.format("Result:%4.3f%n" + "==========================================================%n", result));
-                    if (Math.abs(currentTest.getLikelihood() - result) > PRECISION) {
-                        logger.error(String.format("Wrong result. Expected " + currentTest.getLikelihood() + " , actual: " + result));
-                        return false;
-                    }
-                    bw.write(String.format("%f", result));
-                    bw.newLine();
-                }
-                bw.close();
-                logger.info(String.format("Tests completed in %d ms", System.currentTimeMillis() - startTime));
-
-            } catch (IOException e) {
-                throw new RuntimeException("Could not open file" + outputFilename, e);
+            logger.debug(String.format(" Result:%4.3f",result));
+            logger.debug("==========================================================%n");
+            if ((currentTest.getLikelihood() - result) > PRECISION) {
+                logger.error("Wrong result. Expected " + currentTest.getLikelihood() + " , actual: " + result);
+                testsPassed = false;
             }
-        } else {
-            while (testCache.hasNext()) {
-                TestRow currentTest = testCache.next();
-
-                Double result = hmm(currentTest.getHaplotypeBases(), currentTest.getReadBases(),
-                        currentTest.getReadQuals(), currentTest.getReadInsQuals(),
-                        currentTest.getReadDelQuals(), currentTest.getOverallGCP(),
-                        currentTest.getHaplotypeStart(), currentTest.getReachedReadValye());
-
-                logger.debug(String.format(" Result:%4.3f%n" + "==========================================================%n", result));
-                if ((currentTest.getLikelihood() - result) > PRECISION) {
-                    logger.error("Wrong result. Expected " + currentTest.getLikelihood() + " , actual: " + result);
-                    return false;
-                }
-            }
-            logger.info(String.format("%d - No I/O run-through complete.%n", System.currentTimeMillis() - startTime));
         }
-
-        return true;
+        if (testsPassed)
+            logger.info(String.format("All tests PASSED in %.3f secs", (double) (System.currentTimeMillis() - startTime)/1000));
     }
 
 
-    private static Iterator<TestRow> parseFile(String filePath, boolean debug) throws FileNotFoundException {
-        return new ParserIterator(filePath, debug);
+    private static Iterator<TestRow> parseFile(String filePath) throws FileNotFoundException {
+        return new ParserIterator(filePath);
     }
 
     public static void main(String[] argv) throws FileNotFoundException {
-        boolean debug = false;
-        Evaluate evaluate = new Evaluate();
-
-        List<String> args = new LinkedList<String>(Arrays.asList(argv));
-        if (args.contains("-debug")) {
-            debug = true;
-            args.remove("-debug");
-        }
+        Set<String> args = new HashSet<String>(Arrays.asList(argv));
         if (args.size() < 1) {
-            throw new RuntimeException("\r\nYou must specify a file name for input.\n" + "filename \n ----------------------------\n" + "Run with -debug for debug output");
+            throw new RuntimeException("\r\nYou must specify a file name for input.\n" + "filename \n ----------------------------\n" + "Run with -d or --debug for debug output");
         } else {
+            Evaluate evaluate = new Evaluate(args);
+
             for (String arg : args) {
-                logger.info("testing file " + arg);
-                Iterator<TestRow> iter = parseFile(arg, debug);
-                if (evaluate.runTests(iter, true)) {
-                    logger.info("Tests successful");
-                } else {
-                    logger.info("Tests unsuccessful");
+                if (!arg.startsWith("-")) {
+                    logger.info("parsing file " + arg);
+                    Iterator<TestRow> iter = parseFile(arg);
+                    logger.info("running tests");
+                    evaluate.runTests(iter);
                 }
             }
         }
@@ -156,11 +136,8 @@ public class Evaluate {
         private XReadLines m_reader;
         private TestRow m_nextEntry;
 
-        public ParserIterator(String filePath, boolean debug) throws FileNotFoundException {
+        public ParserIterator(String filePath) throws FileNotFoundException {
             m_reader = new XReadLines(new File(filePath));
-            if (debug) {
-                logger.setLevel(Level.DEBUG);
-            }
         }
 
         @Override
