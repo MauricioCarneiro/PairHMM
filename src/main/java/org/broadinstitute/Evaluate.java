@@ -18,33 +18,40 @@ import java.util.*;
  */
 public class Evaluate {
 
-    private static PairHMM pairHMM;
-    private static final double PRECISION = 0.001;
+    public final List<PairHMM> pairHMM = new ArrayList<PairHMM>(10);
 
+    private static final double PRECISION = 0.001;
     private static final int X_METRIC_LENGTH = 10000;
     private static final int Y_METRIC_LENGTH = 10000;
 
     private static Logger logger = Logger.getLogger("Main");
 
     public Evaluate(Set<String> args) {
+        boolean addedHMMs = false;
+
+        // Setup the logger
         final boolean debug = args.contains("-d") || args.contains("--debug");
         logger.setLevel(debug ? Level.DEBUG : Level.INFO);
         BasicConfigurator.configure();
-        if (args.contains("--caching")) {
-            logger.info("Using CachingPairHMM");
-            pairHMM = new CachingPairHMM();
+
+        if (args.contains("--all") || args.contains("--caching")) {
+            logger.info("Including CachingPairHMM");
+            pairHMM.add(new CachingPairHMM());
+            addedHMMs = true;
         }
-        else if (args.contains("--original")) {
-            logger.info("Using OriginalPairHMM");
-            pairHMM = new OriginalPairHMM();
+        if (args.contains("--all") || args.contains("--original")) {
+            logger.info("Including OriginalPairHMM");
+            pairHMM.add(new OriginalPairHMM());
+            addedHMMs = true;
         }
-        else if (args.contains("--exact")) {
-            logger.info("Using ExactPairHMM");
-            pairHMM = new ExactPairHMM();
+        if (args.contains("--all") || args.contains("--exact")) {
+            logger.info("Including ExactPairHMM");
+            pairHMM.add(new ExactPairHMM());
+            addedHMMs = true;
         }
-        else {
-            logger.info("Using LoglessCachingPairHMM");
-            pairHMM = new LoglessCachingPairHMM();
+        if (!addedHMMs || args.contains("--all") || args.contains("--logless")) {
+            logger.info("Including LoglessCachingPairHMM");
+            pairHMM.add(new LoglessCachingPairHMM());
         }
     }
 
@@ -61,8 +68,8 @@ public class Evaluate {
      * @param overallGCP     comparison haplotype gap continuation quals (phred-scaled)
      * @return the likelihood of the alignment between read and haplotype
      */
-    public double hmm(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex, final boolean recacheReadValues) {
-        return pairHMM.subComputeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
+    public double runhmm(PairHMM hmm, final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex, final boolean recacheReadValues) {
+        return hmm.subComputeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
     }
 
     /**
@@ -78,19 +85,16 @@ public class Evaluate {
         return readQuals;
     }
 
-    private void runTests(Iterator<TestRow> testCache) {
+    private void runTests(final PairHMM hmm, final Iterator<TestRow> testCache) {
         final long startTime = System.currentTimeMillis();
 
         boolean testsPassed = true;
-        pairHMM.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
+        hmm.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
 
         while (testCache.hasNext()) {
             TestRow currentTest = testCache.next();
 
-            Double result = hmm(currentTest.getHaplotypeBases(), currentTest.getReadBases(),
-                    currentTest.getReadQuals(), currentTest.getReadInsQuals(),
-                    currentTest.getReadDelQuals(), currentTest.getOverallGCP(),
-                    currentTest.getHaplotypeStart(), currentTest.getReachedReadValye());
+            Double result = runhmm(hmm, currentTest.getHaplotypeBases(), currentTest.getReadBases(), currentTest.getReadQuals(), currentTest.getReadInsQuals(), currentTest.getReadDelQuals(), currentTest.getOverallGCP(), currentTest.getHaplotypeStart(), currentTest.getReachedReadValye());
 
             logger.debug(String.format(" Result:%4.3f",result));
             logger.debug("==========================================================%n");
@@ -101,26 +105,35 @@ public class Evaluate {
         }
         if (testsPassed)
             logger.info(String.format("All tests PASSED in %.3f secs", (double) (System.currentTimeMillis() - startTime)/1000));
+
+        hmm.clear();
     }
 
 
-    private static Iterator<TestRow> parseFile(String filePath) throws FileNotFoundException {
+    private static Iterator<TestRow> createIteratorFor(String filePath) throws FileNotFoundException {
         return new ParserIterator(filePath);
     }
 
-    public static void main(String[] argv) throws FileNotFoundException {
+    public static void main(final String[] argv) throws FileNotFoundException {
         Set<String> args = new HashSet<String>(Arrays.asList(argv));
         if (args.size() < 1) {
             throw new RuntimeException("\r\nYou must specify a file name for input.\n" + "filename \n ----------------------------\n" + "Run with -d or --debug for debug output");
         } else {
-            Evaluate evaluate = new Evaluate(args);
+            final Evaluate evaluate = new Evaluate(args);
+            final List<String> testFiles = new LinkedList<String>();
 
             for (String arg : args) {
                 if (!arg.startsWith("-")) {
-                    logger.info("parsing file " + arg);
-                    Iterator<TestRow> iter = parseFile(arg);
-                    logger.info("running tests");
-                    evaluate.runTests(iter);
+                    logger.info("adding testset: " + arg);
+                    testFiles.add(arg);
+                }
+            }
+
+            for (final String testSet : testFiles) {
+                logger.info("RUNNING " + testSet + " tests");
+                for(final PairHMM hmm : evaluate.pairHMM) {
+                    logger.info("EVALUATING " + hmm.getClass().getSimpleName());
+                    evaluate.runTests(hmm, createIteratorFor(testSet)); // runTests will output the detailed test results
                 }
             }
         }

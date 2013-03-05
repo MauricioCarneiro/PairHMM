@@ -38,6 +38,17 @@ public abstract class PairHMM {
     protected static final byte DEFAULT_GOP = (byte) 45;
     protected static final byte DEFAULT_GCP = (byte) 10;
 
+    /**
+     * unassign all the initializations to the arrays to allow java to garbage collect
+     *
+     * only clear if you are done with the PairHMM. After clearing, you will have to initialize it to reuse.
+     */
+    public void clear() {
+        XMetricArray = null;
+        YMetricArray = null;
+        matchMetricArray = null;
+    }
+
     public enum HMM_IMPLEMENTATION {
         /* Very slow implementation which uses very accurate log10 sum functions. Only meant to be used as a reference test implementation */
         EXACT,
