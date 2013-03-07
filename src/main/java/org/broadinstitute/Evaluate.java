@@ -98,7 +98,7 @@ public class Evaluate {
 
             logger.debug(String.format(" Result:%4.3f",result));
             logger.debug("==========================================================%n");
-            if ((currentTest.getLikelihood() - result) > PRECISION) {
+            if (Math.abs(currentTest.getLikelihood() - result) > PRECISION) {
                 logger.error("Wrong result. Expected " + currentTest.getLikelihood() + " , actual: " + result);
                 testsPassed = false;
             }
