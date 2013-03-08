@@ -31,19 +31,19 @@ public class Evaluate {
         logger.setLevel(debug ? Level.DEBUG : Level.INFO);
         BasicConfigurator.configure();
         if (args.contains("--caching")) {
-            logger.info("Using CachingPairHMM");
+            /*logger.info("Using CachingPairHMM");*/
             pairHMM = new CachingPairHMM();
         }
         else if (args.contains("--original")) {
-            logger.info("Using OriginalPairHMM");
+            /*logger.info("Using OriginalPairHMM");*/
             pairHMM = new OriginalPairHMM();
         }
         else if (args.contains("--exact")) {
-            logger.info("Using ExactPairHMM");
+            /*logger.info("Using ExactPairHMM");*/
             pairHMM = new ExactPairHMM();
         }
         else {
-            logger.info("Using LoglessCachingPairHMM");
+            /*logger.info("Using LoglessCachingPairHMM");*/
             pairHMM = new LoglessCachingPairHMM();
         }
     }
@@ -76,6 +76,33 @@ public class Evaluate {
             readQuals[i] = (readQuals[i] < QualityUtils.MIN_USABLE_Q_SCORE ? QualityUtils.MIN_USABLE_Q_SCORE : (readQuals[i] > Byte.MAX_VALUE ? Byte.MAX_VALUE : readQuals[i]));
         }
         return readQuals;
+    }
+
+
+    private void runTestsImpa(Iterator<TestRow> testCache, String output_fn) {
+        final long startTime = System.currentTimeMillis();
+        long t1, comp_time = 0;
+
+        pairHMM.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
+
+        try
+        {
+            BufferedWriter bw = new BufferedWriter(new FileWriter(new File(output_fn), false));
+            while (testCache.hasNext())
+            {
+                TestRow currentTest = testCache.next();
+                t1 = System.currentTimeMillis();
+                Double result = hmm(currentTest.getHaplotypeBases(), currentTest.getReadBases(), currentTest.getReadQuals(), currentTest.getReadInsQuals(), currentTest.getReadDelQuals(), currentTest.getOverallGCP(), currentTest.getHaplotypeStart(), currentTest.getReachedReadValye());
+                comp_time += (System.currentTimeMillis() - t1);
+                bw.write(String.format("%f", result));
+                bw.newLine();
+            }
+            bw.close();
+            System.out.printf("COMPUTATION_TIME %d%n", comp_time);
+        }  catch (Exception e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
     private void runTests(Iterator<TestRow> testCache) {
@@ -115,14 +142,27 @@ public class Evaluate {
         } else {
             Evaluate evaluate = new Evaluate(args);
 
-            for (String arg : args) {
-                if (!arg.startsWith("-")) {
-                    logger.info("parsing file " + arg);
-                    Iterator<TestRow> iter = parseFile(arg);
-                    logger.info("running tests");
-                    evaluate.runTests(iter);
-                }
-            }
+			/*
+				java -Xmx4g -jar build/libs/PairHMM-0.1.jar <input path> <output path> --impa-mode
+			*/
+			if (args.contains("--impa-mode")) {
+				/*
+                System.out.printf("%s%n", argv[0]);
+                System.out.printf("%s%n", argv[1]);
+                return;
+				*/
+				Iterator<TestRow> iter = parseFile(argv[0]);
+				evaluate.runTestsImpa(iter, argv[1]);
+			} else {
+				for (String arg : args) {
+					if (!arg.startsWith("-")) {
+						logger.info("parsing file " + arg);
+						Iterator<TestRow> iter = parseFile(arg);
+						logger.info("running tests");
+						evaluate.runTests(iter);
+					}
+				}
+			}
         }
 
     }
