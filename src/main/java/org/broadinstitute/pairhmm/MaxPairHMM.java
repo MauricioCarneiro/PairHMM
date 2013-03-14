@@ -46,38 +46,23 @@
 
 package org.broadinstitute.pairhmm;
 
-/*
- * Copyright (c) 2012, The Broad Institute
- *
- * Permission is hereby granted, free of charge, to any person
- * obtaining a copy of this software and associated documentation
- * files (the "Software"), to deal in the Software without
- * restriction, including without limitation the rights to use,
- * copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following
- * conditions:
- *
- * The above copyright notice and this permission notice shall be
- * included in all copies or substantial portions of the Software.
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
- * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
- * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
- * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
- * OTHER DEALINGS IN THE SOFTWARE.
- */
-
 import org.broadinstitute.utils.QualityUtils;
 
 /**
+ * Features of this implementation over standard:
+ *
+ *  -- caching constants
+ *  -- no logs throughout the routine (only the result)
+ *  -- does not recalculate matrix for similar incoming haplotypes (uses hapStartIndex)
+ *  -- only calculates most likely path, does not sum over all possible paths
+ *
+ *  warning: this implementation has not yet been validated, but seems like a very promising candidate.
+ *
  * Created with IntelliJ IDEA.
- * User: rpoplin, carneiro
+ * User: carneiro
  * Date: 10/16/12
  */
-public class LoglessCachingPairHMM extends PairHMM {
+public class MaxPairHMM extends PairHMM {
     protected static final double SCALE_FACTOR_LOG10 = 300.0;
 
     double[][] constantMatrix = null; // The cache
@@ -100,8 +85,8 @@ public class LoglessCachingPairHMM extends PairHMM {
      * {@inheritDoc}
      */
     @Override
-    public void initialize( final int readMaxLength, final int haplotypeMaxLength) {
-        super.initialize(readMaxLength, haplotypeMaxLength);
+    public void initialize( final int haplotypeMaxLength, final int readMaxLength) {
+        super.initialize(haplotypeMaxLength, readMaxLength);
 
         constantMatrix = new double[X_METRIC_MAX_LENGTH][6];
         distanceMatrix = new double[X_METRIC_MAX_LENGTH][Y_METRIC_MAX_LENGTH];
@@ -184,7 +169,7 @@ public class LoglessCachingPairHMM extends PairHMM {
                                       final byte[] deletionGOP,
                                       final byte[] overallGCP ) {
         // the initial condition -- must be here because it needs that actual read and haplotypes, not the maximum in init
-        matchMetricArray[1][1] = Math.pow(10.0, SCALE_FACTOR_LOG10) / getNPotentialXStarts(haplotypeSize, readSize);
+        matchMetricArray[1][1] = Math.pow(10.0, SCALE_FACTOR_LOG10);
 
         // fill in the first row
         for( int jjj = 2; jjj < Y_METRIC_MAX_LENGTH; jjj++ ) {
@@ -226,10 +211,8 @@ public class LoglessCachingPairHMM extends PairHMM {
     private void updateCell( final int indI, final int indJ, final double prior, final double[] constants,
                              final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray ) {
 
-        matchMetricArray[indI][indJ] = prior * ( matchMetricArray[indI - 1][indJ - 1] * constants[0] +
-                XMetricArray[indI - 1][indJ - 1] * constants[1] +
-                YMetricArray[indI - 1][indJ - 1] * constants[1] );
-        XMetricArray[indI][indJ] = matchMetricArray[indI - 1][indJ] * constants[2] + XMetricArray[indI - 1][indJ] * constants[3];
-        YMetricArray[indI][indJ] = matchMetricArray[indI][indJ - 1] * constants[4] + YMetricArray[indI][indJ - 1] * constants[5];
+        matchMetricArray[indI][indJ] = prior * Math.max(Math.max(matchMetricArray[indI - 1][indJ - 1] * constants[0], XMetricArray[indI - 1][indJ - 1] * constants[1]), YMetricArray[indI - 1][indJ - 1] * constants[1]);
+        XMetricArray[indI][indJ] = Math.max(matchMetricArray[indI - 1][indJ] * constants[2], XMetricArray[indI - 1][indJ] * constants[3]);
+        YMetricArray[indI][indJ] = Math.max(matchMetricArray[indI][indJ - 1] * constants[4], YMetricArray[indI][indJ - 1] * constants[5]);
     }
 }
