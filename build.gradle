@@ -19,7 +19,8 @@ repositories {
 }
 
 dependencies {
-    compile 'log4j:log4j:1.2.17'
+    compile 'log4j:log4j:1.2.17', fileTree(dir: 'lib/', includes: ['Rootbeer.jar'])
 }
+
 
 defaultTasks 'build'

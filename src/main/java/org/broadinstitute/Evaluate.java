@@ -19,6 +19,7 @@ import java.util.*;
 public class Evaluate {
 
     public final List<PairHMM> pairHMM = new ArrayList<PairHMM>(10);
+    public static boolean useRootbeer;
 
     private static final double PRECISION = 0.001;
     private static final int X_METRIC_LENGTH = 10000;
@@ -28,6 +29,7 @@ public class Evaluate {
 
     public Evaluate(Set<String> args) {
         boolean addedHMMs = false;
+        useRootbeer = false;
 
         // Setup the logger
         final boolean debug = args.contains("-d") || args.contains("--debug");
@@ -52,6 +54,9 @@ public class Evaluate {
         if (!addedHMMs || args.contains("--all") || args.contains("--logless")) {
             logger.info("Including LoglessCachingPairHMM");
             pairHMM.add(new LoglessCachingPairHMM());
+        }
+        if(args.contains("--all") || args.contains("--rootbeer")){
+            useRootbeer = true;
         }
     }
 
@@ -135,6 +140,11 @@ public class Evaluate {
                     logger.info("EVALUATING " + hmm.getClass().getSimpleName());
                     evaluate.runTests(hmm, createIteratorFor(testSet)); // runTests will output the detailed test results
                 }
+                if(useRootbeer){
+                    logger.info("EVALUATING Rootbeer");
+                    RootbeerEvaluate rb_evaluator = new RootbeerEvaluate(PRECISION);
+                    rb_evaluator.runTests(createIteratorFor(testSet));
+                }
             }
         }
 
@@ -198,7 +208,7 @@ public class Evaluate {
         }
     }
 
-    static class TestRow {
+    public static class TestRow {
         private byte[] haplotypeBases;
         private byte[] readBases;
         private byte[] readQuals;

@@ -1,0 +1,4 @@
+#!/bin/sh
+
+ant jar
+java -jar lib/Rootbeer.jar dist/PairHMM.jar PairHMM-GPU.jar -maxrregcount 32 -nemu

@@ -10,3 +10,4 @@ output.txt
 test_data/
 /*.ipr
 /*.iws
+test_files/smallTest.out

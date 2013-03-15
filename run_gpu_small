@@ -1,0 +1,3 @@
+#!/bin/sh
+
+java -Xmx10g -jar build/libs/PairHMM-0.1.jar --rootbeer --logless test_files/smallTest.out

@@ -1,0 +1,7 @@
+#!/bin/sh
+
+wget https://dl.dropbox.com/u/1035515/mediumTest.out.bz2
+wget https://dl.dropbox.com/u/1035515/smallTest.out.bz2
+
+bzip2 -d mediumTest.out.bz2
+bzip2 -d smallTest.out.bz2

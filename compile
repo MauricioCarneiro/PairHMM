@@ -1,0 +1,4 @@
+#!/bin/sh
+
+PATH="/usr/share/gradle-1.4/bin:$PATH"
+gradle -q jar
