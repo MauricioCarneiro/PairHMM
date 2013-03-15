@@ -4,7 +4,6 @@ import edu.syr.pcpratts.rootbeer.runtime.Kernel;
 
 public class HmmKernel implements Kernel {
 
-    private double result;
     private double likelihood;
 
     private byte[] haplotypeBases;
@@ -19,8 +18,7 @@ public class HmmKernel implements Kernel {
     public HmmKernel(final byte[] haplotypeBases, final byte[] readBases, 
       final byte[] readQuals, final byte[] insertionGOP, 
       final byte[] deletionGOP, final byte[] overallGCP, 
-      final int hapStartIndex, final boolean recacheReadValues,
-      final double likelihood) {
+      final int hapStartIndex, final boolean recacheReadValues) {
 
         this.haplotypeBases = haplotypeBases;
         this.readBases = readBases;
@@ -34,13 +32,9 @@ public class HmmKernel implements Kernel {
     }
 
     public void gpuMethod(){
-      result = likelihood;
+      likelihood = 0;
     }
-
-    public double getResult(){
-      return result;
-    }
-                        
+  
     public double getLikelihood(){
       return likelihood;
     }

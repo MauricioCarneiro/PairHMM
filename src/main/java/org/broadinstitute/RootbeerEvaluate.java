@@ -8,19 +8,22 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import org.apache.log4j.Logger;
 
+import java.io.FileWriter;
+import java.io.IOException;
+
 public class RootbeerEvaluate {
 
-    private final double PRECISION;
     private static Logger logger = Logger.getLogger("Main");
 
-    public RootbeerEvaluate(final double PRECISION){
-        this.PRECISION = PRECISION;
+    public RootbeerEvaluate(){
     }
 
-    public void runTests(final Iterator<Evaluate.TestRow> testCache) {
+    public void runTests(final Iterator<Evaluate.TestRow> testCache, String hmmName, String testSet, String filename) throws IOException {
+        long totalTime = 0L;
         final long startTime = System.currentTimeMillis();
 
-        boolean testsPassed = true;
+        final String runName = hmmName + "." + testSet;
+        final FileWriter out = new FileWriter(filename);
 
         List<Kernel> kernels = new ArrayList<Kernel>();
         int thread_counter = 0;
@@ -31,11 +34,11 @@ public class RootbeerEvaluate {
         while (testCache.hasNext()) {
             Evaluate.TestRow currentTest = testCache.next();
 
-            HmmKernel kernel = new HmmKernel(currentTest.getHaplotypeBases(), 
-              currentTest.getReadBases(), currentTest.getReadQuals(), 
-              currentTest.getReadInsQuals(), currentTest.getReadDelQuals(), 
-              currentTest.getOverallGCP(), currentTest.getHaplotypeStart(), 
-              currentTest.getReachedReadValye(), currentTest.getLikelihood());
+            HmmKernel kernel = new HmmKernel(currentTest.haplotypeBases, 
+              currentTest.readBases, currentTest.readQuals, 
+              currentTest.readInsQuals, currentTest.readDelQuals, 
+              currentTest.overallGCP, currentTest.haplotypeStart, 
+              currentTest.reachedReadValue);
 
             kernels.add(kernel);
 
@@ -51,22 +54,18 @@ public class RootbeerEvaluate {
 
                     for(Kernel result_kernel : kernels){
                         HmmKernel result_hmm_kernel = (HmmKernel) result_kernel;
-                        double result = result_hmm_kernel.getResult();
                         double likelihood = result_hmm_kernel.getLikelihood();
-
-                        logger.debug(String.format(" Result:%4.3f",result));
-                        logger.debug("==========================================================%n");
-                        if (Math.abs(likelihood - result) > PRECISION) {
-                            logger.error("Wrong result. Expected " + likelihood + " , actual: " + result);
-                            testsPassed = false;
-                        }
+                        out.write("" + likelihood + "\n");
                     }
                     kernels.clear();
                 }
             }
         }
-        if (testsPassed) {
-            logger.info(String.format("All tests PASSED in %.3f secs", (double) (System.currentTimeMillis() - startTime)/1000));
-        }
+
+        long stopTime = System.currentTimeMillis();
+        totalTime = stopTime - startTime;
+
+        logger.info(String.format("%s test completed in %.3f secs, results written to: %s", hmmName, totalTime/1000000.0, filename));
+        out.close();
     }
 }

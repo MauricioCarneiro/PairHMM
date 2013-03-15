@@ -10,5 +10,5 @@ output.txt
 test_data/
 /*.ipr
 /*.iws
-test_files/*.out
-test_files/*.in
+*.out
+*.in

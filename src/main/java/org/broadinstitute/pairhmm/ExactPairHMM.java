@@ -6,6 +6,10 @@ import org.broadinstitute.utils.QualityUtils;
 import java.util.Arrays;
 
 /**
+ * Features of this implementation over standard:
+ *
+ *  -- does not recalculate matrix for similar incoming haplotypes (uses hapStartIndex)
+ *
  * Created with IntelliJ IDEA.
  * User: rpoplin
  * Date: 10/16/12

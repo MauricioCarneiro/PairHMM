@@ -21,39 +21,49 @@ public class Evaluate {
     public final List<PairHMM> pairHMM = new ArrayList<PairHMM>(10);
     public static boolean useRootbeer;
 
-    private static final double PRECISION = 0.001;
     private static final int X_METRIC_LENGTH = 10000;
     private static final int Y_METRIC_LENGTH = 10000;
 
     private static Logger logger = Logger.getLogger("Main");
 
     public Evaluate(Set<String> args) {
-        boolean addedHMMs = false;
         useRootbeer = false;
-
-        // Setup the logger
         final boolean debug = args.contains("-d") || args.contains("--debug");
         logger.setLevel(debug ? Level.DEBUG : Level.INFO);
         BasicConfigurator.configure();
+    }
 
-        if (args.contains("--all") || args.contains("--caching")) {
-            logger.info("Including CachingPairHMM");
-            pairHMM.add(new CachingPairHMM());
+    public void initializeHMMs(Set<String> args) {
+        boolean addedHMMs = false;
+
+        if (args.contains("--all") || args.contains("--approximate")) {
+            logger.info("Initializing ApproximatePairHMM");
+            pairHMM.add(new ApproximatePairHMM());
             addedHMMs = true;
         }
-        if (args.contains("--all") || args.contains("--original")) {
-            logger.info("Including OriginalPairHMM");
-            pairHMM.add(new OriginalPairHMM());
+        if (args.contains("--all") || args.contains("--standard")) {
+            logger.info("Initializing StandardPairHMM");
+            pairHMM.add(new StandardPairHMM());
             addedHMMs = true;
         }
         if (args.contains("--all") || args.contains("--exact")) {
-            logger.info("Including ExactPairHMM");
+            logger.info("Initializing ExactPairHMM");
             pairHMM.add(new ExactPairHMM());
             addedHMMs = true;
         }
+        if (args.contains("--all") || args.contains("--max")) {
+            logger.info("Initializing MaxPairHMM");
+            pairHMM.add(new MaxPairHMM());
+            addedHMMs = true;
+        }
+        if (args.contains("--all") || args.contains("--experimental")) {
+            logger.info("Initializing ExperimentalPairHMM");
+            pairHMM.add(new ExperimentalPairHMM());
+            addedHMMs = true;
+        }
         if (!addedHMMs || args.contains("--all") || args.contains("--logless")) {
-            logger.info("Including LoglessCachingPairHMM");
-            pairHMM.add(new LoglessCachingPairHMM());
+            logger.info("Initializing LoglessPairHMM");
+            pairHMM.add(new LoglessPairHMM());
         }
         if(args.contains("--all") || args.contains("--rootbeer")){
             useRootbeer = true;
@@ -77,6 +87,18 @@ public class Evaluate {
         return hmm.subComputeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
     }
 
+    private static String createFileName(String hmmName) throws IOException {
+        int runNumber = 0;
+        String filename;
+        File testFileName;
+        do {
+            runNumber++;
+            filename = hmmName + "." + runNumber + ".out";
+            testFileName = new File(filename);
+        } while (testFileName.exists());
+        return filename;
+    }
+
     /**
      * Ensures that all the qual scores have valid values
      *
@@ -90,28 +112,21 @@ public class Evaluate {
         return readQuals;
     }
 
-    private void runTests(final PairHMM hmm, final Iterator<TestRow> testCache) {
-        final long startTime = System.currentTimeMillis();
-
-        boolean testsPassed = true;
+    private void runTests(final PairHMM hmm, final Iterator<TestRow> testCache, String hmmName, String testSet) throws IOException {
+        long totalTime = 0L;
+        final String runName = hmmName + "." + testSet;
+        final String filename = createFileName(runName);
+        final FileWriter out = new FileWriter(filename);
         hmm.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
-
         while (testCache.hasNext()) {
-            TestRow currentTest = testCache.next();
-
-            Double result = runhmm(hmm, currentTest.getHaplotypeBases(), currentTest.getReadBases(), currentTest.getReadQuals(), currentTest.getReadInsQuals(), currentTest.getReadDelQuals(), currentTest.getOverallGCP(), currentTest.getHaplotypeStart(), currentTest.getReachedReadValye());
-
-            logger.debug(String.format(" Result:%4.3f",result));
-            logger.debug("==========================================================%n");
-            if (Math.abs(currentTest.getLikelihood() - result) > PRECISION) {
-                logger.error("Wrong result. Expected " + currentTest.getLikelihood() + " , actual: " + result);
-                testsPassed = false;
-            }
+            final TestRow currentTest = testCache.next();
+            final long startTime = System.nanoTime();
+            final double likelihood = runhmm(hmm, currentTest.haplotypeBases, currentTest.readBases, currentTest.readQuals, currentTest.readInsQuals, currentTest.readDelQuals, currentTest.overallGCP, currentTest.haplotypeStart, currentTest.reachedReadValue);
+            totalTime += System.nanoTime() - startTime;
+            out.write("" + likelihood + "\n");
         }
-        if (testsPassed)
-            logger.info(String.format("All tests PASSED in %.3f secs", (double) (System.currentTimeMillis() - startTime)/1000));
-
-        hmm.clear();
+        logger.info(String.format("%s test completed in %.3f secs, results written to: %s", hmmName, totalTime/1000000000.0, filename));
+        out.close();
     }
 
 
@@ -119,7 +134,8 @@ public class Evaluate {
         return new ParserIterator(filePath);
     }
 
-    public static void main(final String[] argv) throws FileNotFoundException {
+    public static void main(final String[] argv) throws IOException {
+
         Set<String> args = new HashSet<String>(Arrays.asList(argv));
         if (args.size() < 1) {
             throw new RuntimeException("\r\nYou must specify a file name for input.\n" + "filename \n ----------------------------\n" + "Run with -d or --debug for debug output");
@@ -129,22 +145,36 @@ public class Evaluate {
 
             for (String arg : args) {
                 if (!arg.startsWith("-")) {
-                    logger.info("adding testset: " + arg);
+                    logger.info("Adding test dataset: " + arg);
                     testFiles.add(arg);
                 }
             }
 
             for (final String testSet : testFiles) {
-                logger.info("RUNNING " + testSet + " tests");
-                for(final PairHMM hmm : evaluate.pairHMM) {
-                    logger.info("EVALUATING " + hmm.getClass().getSimpleName());
-                    evaluate.runTests(hmm, createIteratorFor(testSet)); // runTests will output the detailed test results
+                logger.info("Using " + testSet + " tests");
+
+                final String[] testSplit = testSet.split("/");                           // get rid of the file path (if any)
+                final String testName = testSplit[testSplit.length - 1].split("\\.")[0]; // get rid of the file extension
+                    
+                evaluate.initializeHMMs(args);
+                final Iterator<PairHMM> pairHMMIterator = evaluate.pairHMM.iterator();
+                while(pairHMMIterator.hasNext()) {
+                    final PairHMM hmm = pairHMMIterator.next();
+                    final String hmmName = hmm.getClass().getSimpleName();
+                    logger.info("Running " + hmmName);
+                    evaluate.runTests(hmm, createIteratorFor(testSet), hmmName, testName);
+                    pairHMMIterator.remove();
                 }
+
                 if(useRootbeer){
-                    logger.info("EVALUATING Rootbeer");
-                    RootbeerEvaluate rb_evaluator = new RootbeerEvaluate(PRECISION);
-                    rb_evaluator.runTests(createIteratorFor(testSet));
+                    logger.info("Running Rootbeer");
+                    RootbeerEvaluate rb_evaluator = new RootbeerEvaluate();
+                    final String hmmName = "RootbeerHmm";
+                    final String runName = hmmName + "." + testSet;
+                    rb_evaluator.runTests(createIteratorFor(testSet), hmmName, testName, createFileName(runName));
                 }
+
+                logger.info("Finished all HMMs for " + testSet + " tests");
             }
         }
 
@@ -172,7 +202,7 @@ public class Evaluate {
             String line = m_reader.next();
             String[] p = line.split(" ");
             final boolean reachedRead = p[7].trim().equals("true");
-            m_nextEntry = new TestRow(p[0].getBytes(), p[1].getBytes(), convertToByteArray(p[2]), convertToByteArray(p[3]), convertToByteArray(p[4]), convertToByteArray(p[5]), Integer.parseInt(p[6]), reachedRead, Double.parseDouble(p[8]));
+            m_nextEntry = new TestRow(p[0].getBytes(), p[1].getBytes(), convertToByteArray(p[2]), convertToByteArray(p[3]), convertToByteArray(p[4]), convertToByteArray(p[5]), Integer.parseInt(p[6]), reachedRead);
 
             logger.debug("Haplotype Bases:" + p[0]);
             logger.debug("Read Bases:" + p[1]);
@@ -182,7 +212,6 @@ public class Evaluate {
             logger.debug("Overall GCP:" + p[5]);
             logger.debug("Haplotype start:" + p[6]);
             logger.debug("Boolean (reached read values):" + p[7]);
-            logger.debug("result, likelihood:" + p[8]);
 
             return true;
         }
@@ -208,23 +237,17 @@ public class Evaluate {
         }
     }
 
-    public static class TestRow {
-        private byte[] haplotypeBases;
-        private byte[] readBases;
-        private byte[] readQuals;
-        private byte[] readInsQuals;
-        private byte[] readDelQuals;
-        private byte[] overallGCP;
-        private int haplotypeStart;
-        private boolean reachedReadValue;
-        private Double likelihood;
+    static class TestRow {
+        byte[] haplotypeBases;
+        byte[] readBases;
+        byte[] readQuals;
+        byte[] readInsQuals;
+        byte[] readDelQuals;
+        byte[] overallGCP;
+        int haplotypeStart;
+        boolean reachedReadValue;
 
-        TestRow(byte[] haplotypeBases, byte[] readBases,
-                byte[] readQuals, byte[] readInsQuals,
-                byte[] readDelQuals, byte[] overallGCP,
-                int haplotypeStart, boolean reachedReadValue,
-                Double likelihood) {
-
+        TestRow(byte[] haplotypeBases, byte[] readBases, byte[] readQuals, byte[] readInsQuals, byte[] readDelQuals, byte[] overallGCP, int haplotypeStart, boolean reachedReadValue) {
             this.haplotypeBases = haplotypeBases;
             this.readBases = readBases;
             this.readQuals = readQuals;
@@ -233,45 +256,7 @@ public class Evaluate {
             this.overallGCP = overallGCP;
             this.haplotypeStart = haplotypeStart;
             this.reachedReadValue = reachedReadValue;
-            this.likelihood = likelihood;
         }
-
-        public byte[] getHaplotypeBases() {
-            return this.haplotypeBases;
-        }
-
-        public byte[] getReadBases() {
-            return this.readBases;
-        }
-
-        public byte[] getReadQuals() {
-            return this.readQuals;
-        }
-
-        public byte[] getReadInsQuals() {
-            return this.readInsQuals;
-        }
-
-        public byte[] getReadDelQuals() {
-            return this.readDelQuals;
-        }
-
-        public byte[] getOverallGCP() {
-            return this.overallGCP;
-        }
-
-        public int getHaplotypeStart() {
-            return this.haplotypeStart;
-        }
-
-        public boolean getReachedReadValye() {
-            return this.reachedReadValue;
-        }
-
-        public double getLikelihood() {
-            return this.likelihood;
-        }
-
     }
 
     static class XReadLines implements Iterator<String>, Iterable<String> {
