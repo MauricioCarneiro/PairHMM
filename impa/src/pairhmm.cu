@@ -15,119 +15,200 @@
 #define MAX_R 256
 #define MAX_H 640
 
-__global__ void go2(Memory mem)
+#define PRECOMPUTED_CONSTANTS
+
+typedef unsigned long ul;
+typedef unsigned char uc;
+typedef double dbl;
+
+__device__ inline dbl __m(dbl mp, dbl xp, dbl yp, dbl MM, dbl GapM, uc r, uc h, dbl Q)
 {
-	__shared__ double p[MAX_R][6];
-	__shared__ double m1[MAX_R], m2[MAX_R], m3[MAX_R];
-	__shared__ double x1[MAX_R], x2[MAX_R], x3[MAX_R];
-	__shared__ double y1[MAX_R], y2[MAX_R], y3[MAX_R];
-	__shared__ double ph2pr[256];
-	__shared__ char h[MAX_H];
-	__shared__ char r[MAX_R], qual[MAX_R], ins[MAX_R], del[MAX_R], cont[MAX_R];
+	return ((r==h || r=='N' || h=='N') ? 1.0-Q : Q) * (mp*MM+xp*GapM+yp*GapM);
+}
 
-	unsigned long tx = threadIdx.x;
-	unsigned long ty = threadIdx.y;
-	unsigned long nThreads = 128;
-	unsigned long i = (unsigned long) blockIdx.x + (unsigned long) 65000 * (unsigned long) blockIdx.y;
-	unsigned long row, col, diag, i1, R, H, hIndex, rIndex;
-	double *m = m1, *mp = m2, *mpp = m3;
-	double *y = y1, *yp = y2, *ypp = y3;
-	double *x = x1, *xp = x2, *xpp = x3;
-	double *swapper;
+__device__ inline dbl __x(dbl mp, dbl xp, dbl MX, dbl XX)
+{
+	return mp * MX + xp * XX;
+}
 
-	if (i >= mem.nres)
+__device__ inline dbl __y(dbl mp, dbl yp, dbl MY, dbl YY)
+{
+	return mp * MY + yp * YY;
+}
+
+__global__ void go(Memory mem)
+{
+	ul tx = threadIdx.x;
+	ul ty = threadIdx.y;
+	ul tt = tx + blockDim.x * ty;
+	ul nthx = blockDim.x;
+	ul nth = blockDim.x * blockDim.y;
+	ul compIndex = (ul) (blockIdx.x + gridDim.x * blockIdx.y);
+
+	if (compIndex >= mem.nres)
 		return;
 
-	hIndex = mem.cmpH[i];
-	rIndex = mem.cmpR[i];
-	H = mem.h[hIndex].H;
-	R = mem.r[rIndex].R;
+	#ifdef PRECOMPUTED_CONSTANTS
+	__shared__ dbl MM[MAX_R];
+	__shared__ dbl MX[MAX_R];
+	__shared__ dbl MY[MAX_R];
+	__shared__ dbl GapM[MAX_R];
+	__shared__ dbl XX[MAX_R];
+	__shared__ dbl YY[MAX_R];
+	__shared__ dbl Qual[MAX_R];
+	#else
+    /*dbl MM, MX, MY, GapM, XX, YY, Qual;*/
+	#endif
+	__shared__ dbl m1[MAX_R], m2[MAX_R], m3[MAX_R];
+	__shared__ dbl x1[MAX_R], x2[MAX_R], x3[MAX_R];
+	__shared__ dbl y1[MAX_R], y2[MAX_R], y3[MAX_R];
+	__shared__ dbl ph2pr[128];
+	__shared__ char _h[MAX_H], _r[MAX_R];
+	__shared__ uc _q[MAX_R], _i[MAX_R], _d[MAX_R], _c[MAX_R];
 
-	/* Collaborative Memory Inicialization -- BEGIN */
+	ul r, c, d, rfrom, rto, cfrom, cto;
+	ul i, R, H, cmph, cmpr;
+	dbl *sw;
+	dbl *m, *mp, *mpp, *y, *yp, *ypp, *x, *xp, *xpp;
+	ReadSequence rs;
+	Haplotype hap;
 
-	/* read sequence, qual, ins, del, cont */
-	for (i1 = tx + ty * 128; i1 < R; i1+=nThreads * 3)
+	m = m1; mp = m2; mpp = m3;
+	x = x1; xp = x2; xpp = x3;
+	y = y1; yp = y2; ypp = y3;
+	cmph = mem.cmpH[compIndex];
+	cmpr = mem.cmpR[compIndex];
+	rs = mem.r[cmpr];
+	hap = mem.h[cmph];
+	H = hap.H;
+	R = rs.R;
+
+	for (i = tt; i < R; i+=nth)
 	{
-		r[i1] = mem.chunk[mem.r[rIndex].r + i1];
-		qual[i1] = mem.chunk[mem.r[rIndex].qual + i1];
-		ins[i1] = mem.chunk[mem.r[rIndex].ins + i1];
-		del[i1] = mem.chunk[mem.r[rIndex].del + i1];
-		cont[i1] = mem.chunk[mem.r[rIndex].cont + i1];
+		_r[i] = mem.chunk[rs.r + i];
+		_q[i] = mem.chunk[rs.qual + i];
+		_i[i] = mem.chunk[rs.ins + i];
+		_d[i] = mem.chunk[rs.del + i];
+		_c[i] = mem.chunk[rs.cont + i];
 	}
 
-	/* haplotype */
-	for (i1 = tx + ty * 128; i1 < H; i1+=nThreads * 3)
-		h[i1] = mem.chunk[mem.h[hIndex].h + i1];
+	for (i = tt; i < H; i+=nth)
+		_h[i] = mem.chunk[hap.h + i];
 
-	/* ph2pr */
-	for (i1 = tx + ty * 128; i1 < 256; i1+=nThreads * 3)
-		ph2pr[i1] = pow(10.0, -((double) i1) / 10.0);
+	for (i = tt; i < 128; i+=nth)
+		ph2pr[i] = pow(10.0, -((double) i) / 10.0);
 
 	__syncthreads();
 
-	/* transitions */
-	for (i1 = tx + ty * 128; i1 < R+1; i1+=nThreads * 3)
-		if (i1 == 0)
-		{
-			p[i1][MtoM] = 1.0 - ph2pr[90];
-			p[i1][GapToM] = 1.0 - ph2pr[10];
-			p[i1][MtoX] = ph2pr[45];
-			p[i1][XtoX] = ph2pr[10];
-			p[i1][MtoY] = 1.0;
-			p[i1][YtoY] = 1.0;
-		}
-		else
-		{
-			p[i1][MtoM] = 1.0 - ph2pr[(ins[i1-1] & 127) + (del[i1-1] & 127)];
-			p[i1][GapToM] = 1.0 - ph2pr[cont[i1-1] & 127];
-			p[i1][MtoX] = ph2pr[ins[i1-1] & 127];
-			p[i1][XtoX] = ph2pr[cont[i1-1] & 127];
-			p[i1][MtoY] = (i1 == R) ? 1.0 : ph2pr[del[i1-1] & 127];
-			p[i1][YtoY] = (i1 == R) ? 1.0 : ph2pr[cont[i1-1] & 127];
-		}
-
-	/* Collaborative Memory Inicialization -- END */
-
-	/* Collaborative Computation -- BEGIN */
-
-	/* diagonal 0 */
-	/*m[0] = 1.0;*/
-	if ((tx == 0) && (ty ==0))
+	#ifdef PRECOMPUTED_CONSTANTS
+	for (i = tt; i < R; i+=nth)
 	{
-		m[0] = exp10(300.0) / (H > R ? H - R + 1 : 1);
+		MM[i+1] = 1.0 - ph2pr[(_i[i] + _d[i]) & 127];
+		MX[i+1] = ph2pr[_i[i]];
+		MY[i+1] = ph2pr[_d[i]];
+		GapM[i+1] = 1.0 - ph2pr[_c[i]];
+		XX[i+1] = ph2pr[_c[i]];
+		YY[i+1] = ph2pr[_c[i]];
+		Qual[i+1] = ph2pr[_q[i]];
+	}
+	if (tt == 0)
+	{
+		MM[0] = 1.0 - ph2pr[90];
+		MX[0] = ph2pr[45];
+		MY[0] = 1.0;
+		GapM[0] = 1.0 - ph2pr[10];
+		XX[0] = ph2pr[10];
+		YY[0] = 1.0;
+		Qual[0] = 0.0; //does not matter...
+		MY[R] = 1.0;
+		YY[R] = 1.0;
+	}
+	#endif
+
+
+	// d = 0
+	if (tt == 0)
+	{
+		/*m[0] = 1.0;*/
+		m[0] = 1.0e300 / (H > R ? H - R + 1 : 1);
 		x[0] = 0.0;
 		y[0] = 0.0;
 	}
 
-	/* diagonal diag */
-	for (diag = 1; diag < R+H+1; diag++)
+	for (d=1; d < R+H+1; d++)
 	{
 		__syncthreads();
 
-		swapper = mpp; mpp = mp; mp = m; m = swapper;
-		swapper = xpp; xpp = xp; xp = x; x = swapper;
-		swapper = ypp; ypp = yp; yp = y; y = swapper;
+		sw=mpp; mpp=mp; mp=m; m=sw; 
+		sw=xpp; xpp=xp; xp=x; x=sw;
+		sw=ypp; ypp=yp; yp=y; y=sw;
 
-		for (row = tx; row <= R; row+=nThreads)
-			if ((diag <= H + row) && (diag >= row))
+		rfrom = (d < H) ? 0 : d - H;
+		rto = (d > R) ? R : d;
+		cfrom = (d < H) ? d : H;
+		cto = (d > R) ? d - R : 0;
+
+		if (rfrom == 0) 
+		{
+			if (tt == 0)
 			{
-				col = diag - row;
-				if (ty==0)
-					m[row] = ((row == 0) || (col == 0)) ? 0.0 : ( (r[row-1] == h[col-1] || r[row-1] == 'N' || h[col-1] == 'N') ? 1.0 - ph2pr[qual[row-1] & 127] : ph2pr[qual[row-1] & 127] ) * (mpp[row-1] * p[row][MtoM] + xpp[row-1] * p[row][GapToM] + ypp[row-1] * p[row][GapToM]);
-				else if (ty==1)
-					x[row] = (row == 0) ? 0.0 : mp[row-1] * p[row][MtoX] + xp[row-1] * p[row][XtoX];
-				else if (ty==2)
-					y[row] = (col == 0) ? 0.0 : mp[row] * p[row][MtoY] + yp[row] * p[row][YtoY];
+				m[0] = 0.0;
+				x[0] = 0.0;
+				y[0] = mp[0] + yp[0];
+			}
+			rfrom++;
+			cfrom--;
+		}
+
+		if (cto == 0)
+		{
+			if (tt == 0)
+			{
+				m[d] = 0.0;
+				x[d] = mp[rto-1]*ph2pr[_i[rto-1]] + xp[rto-1]*ph2pr[_c[rto-1]];
+				y[d] = 0.0;
+			}
+			cto++;
+			rto--;
+		}
+
+		for (r=rfrom+tx, c=cfrom-tx; r <= rto && c >= cto; r+=nthx, c-=nthx)
+			if (ty == 0)
+			{
+				#ifdef PRECOMPUTED_CONSTANTS
+				m[r] = __m(mpp[r-1], xpp[r-1], ypp[r-1], MM[r], GapM[r], _r[r-1], _h[c-1], Qual[r]);
+				#else
+				//MM = 1.0 - ph2pr[(_i[r-1] + _d[r-1]) & 127];
+				//GapM = 1.0 - ph2pr[_c[r-1]];
+				//Qual = ph2pr[_q[r-1]];
+				m[r] = __m(mpp[r-1], xpp[r-1], ypp[r-1], 1.0 - ph2pr[(_i[r-1] + _d[r-1]) & 127], 1.0 - ph2pr[_c[r-1]], _r[r-1], _h[c-1], ph2pr[_q[r-1]]);
+				#endif
+			}
+			else if (ty == 1)
+			{
+				#ifdef PRECOMPUTED_CONSTANTS
+				x[r] = __x(mp[r-1], xp[r-1], MX[r], XX[r]);
+				#else
+				//MX = ph2pr[_i[r-1]];
+				//XX = ph2pr[_c[r-1]];
+				x[r] = __x(mp[r-1], xp[r-1], ph2pr[_i[r-1]], ph2pr[_c[r-1]]);
+				#endif
+			}
+			else if (ty == 2)
+			{
+				#ifdef PRECOMPUTED_CONSTANTS
+				y[r] = __y(mp[r], yp[r], MY[r], YY[r]);
+				#else
+				//MY = (r == R) ? 1.0 : ph2pr[_d[r-1]];
+				//YY = (r == R) ? 1.0 : ph2pr[_c[r-1]];
+				y[r] = (r == R) ? __y(mp[r], yp[r], 1.0, 1.0) : __y(mp[r], yp[r], ph2pr[_d[r-1]], ph2pr[_c[r-1]]);
+				#endif
 			}
 	}
 	__syncthreads();
-	/* Collaborative Computation -- END */
 
-	if (tx == 0)
-	{
-		/*mem.res[i] = log10(m[R] + x[R] + y[R]);*/
-		mem.res[i] = log10(m[R] + x[R] + y[R]) - 300.0;
-	}
+	if (tt == 0)
+		mem.res[compIndex] = log10(m[R] + x[R] + y[R]) - 300.0;
 
 	return;
 }
@@ -270,7 +351,7 @@ int main(int argc, char **argv)
 		t3 = right_now();
 		dim3 gridDim(65000, (dev.nres + 65000 - 1) / 65000);
 		dim3 blockDim(128,3);
-		go2<<<gridDim, blockDim>>>(dev);
+		go<<<gridDim, blockDim>>>(dev);
 		cudaThreadSynchronize();
 		t4 = right_now();
 		cudaMemcpy(hbig.res + already, dev.res, dev.nres * sizeof(double), cudaMemcpyDeviceToHost);

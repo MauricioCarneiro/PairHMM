@@ -46,6 +46,7 @@ int read_numbers(const char *str, int n, char *dest)
     {
         sscanf(str + pos, ",%d", &temp);
         dest[x] = (char)temp;
+		dest[x] = ((dest[x]) & 127);
         pos += ndigs(dest[x]) + 1;
     }
     return pos;
