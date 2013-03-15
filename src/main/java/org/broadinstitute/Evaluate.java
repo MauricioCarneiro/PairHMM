@@ -110,22 +110,19 @@ public class Evaluate {
 
     private void runTests(final PairHMM hmm, final Iterator<TestRow> testCache, String hmmName, String testSet) throws IOException {
         long totalTime = 0L;
-
         final String runName = hmmName + "." + testSet;
         final String filename = createFileName(runName);
         final FileWriter out = new FileWriter(filename);
         hmm.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
         while (testCache.hasNext()) {
             final TestRow currentTest = testCache.next();
-            final StringBuilder result = new StringBuilder(20);
             final long startTime = System.nanoTime();
             final double likelihood = runhmm(hmm, currentTest.haplotypeBases, currentTest.readBases, currentTest.readQuals, currentTest.readInsQuals, currentTest.readDelQuals, currentTest.overallGCP, currentTest.haplotypeStart, currentTest.reachedReadValue);
             totalTime += System.nanoTime() - startTime;
-            result.append(likelihood);
-            result.append("\n");
-            out.write(result.toString());
+            out.write("" + likelihood + "\n");
         }
         logger.info(String.format("%s test completed in %.3f secs, results written to: %s", hmmName, totalTime/1000000000.0, filename));
+        out.close();
     }
 
 
@@ -156,13 +153,13 @@ public class Evaluate {
                 while(pairHMMIterator.hasNext()) {
                     final PairHMM hmm = pairHMMIterator.next();
                     final String hmmName = hmm.getClass().getSimpleName();
-                    final String[] testSplit = testSet.split("/");                         // get rid of the file path (if any)
+                    final String[] testSplit = testSet.split("/");                           // get rid of the file path (if any)
                     final String testName = testSplit[testSplit.length - 1].split("\\.")[0]; // get rid of the file extension
                     logger.info("Running " + hmmName);
                     evaluate.runTests(hmm, createIteratorFor(testSet), hmmName, testName);
                     pairHMMIterator.remove();
                 }
-                logger.info("Finished all HMMs for " + testSet + "tests");
+                logger.info("Finished all HMMs for " + testSet + " tests");
             }
         }
 
