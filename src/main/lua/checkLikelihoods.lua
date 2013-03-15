@@ -5,7 +5,7 @@
 
 if table.maxn(arg) < 2 then
     print("You must provide the two files to compare")
-    print("lua checkLikelihoods.lua <expected.out> <actual.out>")
+    print("lua checkLikelihoods.lua <expected.out> <actual.out> [sensitivity]")
     os.exit(1);
 end
 
