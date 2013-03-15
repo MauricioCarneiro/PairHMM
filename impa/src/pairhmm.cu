@@ -26,6 +26,7 @@ __global__ void go2(Memory mem)
 	__shared__ char r[MAX_R], qual[MAX_R], ins[MAX_R], del[MAX_R], cont[MAX_R];
 
     unsigned long tx = threadIdx.x;
+	unsigned long nThreads = 128;
     unsigned long i = (unsigned long) blockIdx.x + (unsigned long) 65000 * (unsigned long) blockIdx.y;
 	unsigned long row, col, diag, i1, R, H, hIndex, rIndex;
 	double *m = m1, *mp = m2, *mpp = m3;
@@ -44,7 +45,7 @@ __global__ void go2(Memory mem)
     /* Collaborative Memory Inicialization -- BEGIN */
 
     /* read sequence, qual, ins, del, cont */
-    for (i1 = tx; i1 < R; i1+=32)
+    for (i1 = tx; i1 < R; i1+=nThreads)
     {
         r[i1] = mem.chunk[mem.r[rIndex].r + i1];
         qual[i1] = mem.chunk[mem.r[rIndex].qual + i1];
@@ -54,15 +55,17 @@ __global__ void go2(Memory mem)
     }
 
     /* haplotype */
-    for (i1 = tx; i1 < H; i1+=32)
+    for (i1 = tx; i1 < H; i1+=nThreads)
         h[i1] = mem.chunk[mem.h[hIndex].h + i1];
 
     /* ph2pr */
-    for (i1 = tx; i1 < 256; i1+=32)
+    for (i1 = tx; i1 < 256; i1+=nThreads)
         ph2pr[i1] = pow(10.0, -((double) i1) / 10.0);
 
+	__syncthreads();
+
     /* transitions */
-    for (i1 = tx; i1 < R+1; i1+=32)
+    for (i1 = tx; i1 < R+1; i1+=nThreads)
         if (i1 == 0)
         {
             p[i1][MtoM] = 1.0 - ph2pr[90];
@@ -88,18 +91,22 @@ __global__ void go2(Memory mem)
 
     /* diagonal 0 */
     /*m[0] = 1.0;*/
+if (tx == 0)
+{
 	m[0] = exp10(300.0) / (H > R ? H - R + 1 : 1); 
     x[0] = 0.0;
     y[0] = 0.0;
+}
 
     /* diagonal diag */
     for (diag = 1; diag < R+H+1; diag++)
     {
+	__syncthreads();
         swapper = mpp; mpp = mp; mp = m; m = swapper;
         swapper = xpp; xpp = xp; xp = x; x = swapper;
         swapper = ypp; ypp = yp; yp = y; y = swapper;
 
-        for (row = tx; row <= R; row+=32)
+        for (row = tx; row <= R; row+=nThreads)
             if ((diag <= H + row) && (diag >= row))
             {
 				col = diag - row;
@@ -108,7 +115,7 @@ __global__ void go2(Memory mem)
                 y[row] = (col == 0) ? 0.0 : mp[row] * p[row][MtoY] + yp[row] * p[row][YtoY];
             }
     }
-
+	__syncthreads();
     /* Collaborative Computation -- END */
 
 	if (tx == 0)
@@ -257,7 +264,7 @@ int main(int argc, char **argv)
 		init_cuda_memory(&hsmall, &dev);
 		t3 = right_now();
 		dim3 gridDim(65000, (dev.nres + 65000 - 1) / 65000);
-		go2<<<gridDim, 32>>>(dev);
+		go2<<<gridDim, 128>>>(dev);
 		cudaThreadSynchronize();
 		t4 = right_now();
 		cudaMemcpy(hbig.res + already, dev.res, dev.nres * sizeof(double), cudaMemcpyDeviceToHost);

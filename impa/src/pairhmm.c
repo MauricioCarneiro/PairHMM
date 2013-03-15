@@ -103,7 +103,7 @@ int main(int argc, char **argv)
 	t1 = right_now();
     init_memory(argv[1], &m);
 	t2 = right_now();
-/* #pragma omp parallel for schedule(dynamic) */
+ #pragma omp parallel for schedule(dynamic) 
 	for (x = 0; x < m.nres; x++)
 		go1(&m, x);
 	t3 = right_now();
