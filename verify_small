@@ -1,0 +1,3 @@
+#!/bin/sh
+
+lua src/main/lua/checkLikelihoods.lua LoglessPairHMM.smallTest.3.out RootbeerHmm.smallTest.in.2.out
