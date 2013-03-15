@@ -7,6 +7,7 @@ void statistics(Memory *m)
 {
 	unsigned long g, h, r, R, H, mem, maxmem = 0, maxmemR, maxmemH, maxR = 0, maxH = 0;
 	unsigned long maxcomps = 0, maxcompsnh, maxcompsnr;
+	unsigned long totR = 0, totAccR = 0;
 	for (g = 0; g < m->ng; g++)
 	{
 		if (m->g[g].nH * m->g[g].nR > maxcomps)
@@ -20,6 +21,8 @@ void statistics(Memory *m)
 			{
 				R = m->r[r].R;
 				H = m->h[h].H;
+				totR++;
+				totAccR += R;
 				mem = ((R+1) * 15 + 256) * 8 + (H+1) + (R+1) * 5;
 				if (mem > maxmem)
 				{
@@ -39,6 +42,7 @@ void statistics(Memory *m)
 	printf("Maximum number of comparisons in a group: %lu\n", maxcomps);
 	printf("   nR: %lu\n", maxcompsnr);
 	printf("   nH: %lu\n", maxcompsnh);
+	printf("Average R: %f\n", (double)totAccR / (double)totR);
 }
 
 int main(int argc, char **argv)

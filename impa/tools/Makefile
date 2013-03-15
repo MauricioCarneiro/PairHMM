@@ -1,4 +1,4 @@
-all:	matcmp statistics curr2cuda extract_answers
+all:	matcmp statistics curr2cuda extract_answers timeformatter
 
 matcmp:	.FORCE
 	g++ matcmp.cc -O2 -W -Wall -fopenmp -pedantic -o matcmp -lgomp -lm
@@ -16,7 +16,7 @@ timeformatter:	.FORCE
 	gcc timeformatter.c -O2 -W -Wall -fopenmp -pedantic -o timeformatter -lgomp -lm
 
 clean:
-	rm -f matcmp statistics curr2cuda extract_answers
+	rm -f matcmp statistics curr2cuda extract_answers timeformatter
 
 .FORCE:
 
