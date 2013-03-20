@@ -67,11 +67,13 @@ public class LoglessPairHMM extends PairHMM {
         final int hapYMetricLength = haplotypeBases.length + 2;
 
         for (int i = 2; i < readXMetricLength; i++) {
-            // +1 here is because hapStartIndex is 0-based, but our matrices are 1 based
+//            dumpMatrices();
             for (int j = hapStartIndex+1; j < hapYMetricLength; j++) {
                 updateCell(i, j, distanceMatrix[i][j], constantMatrix[i], matchMetricArray, XMetricArray, YMetricArray);
             }
         }
+//        dumpMatrices();
+
 
         // final probability is the log10 sum of the last element in all three state arrays
         final int endI = readXMetricLength - 1;

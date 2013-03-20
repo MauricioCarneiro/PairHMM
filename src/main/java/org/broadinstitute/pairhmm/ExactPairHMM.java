@@ -52,11 +52,6 @@ public class ExactPairHMM extends PairHMM {
         final int X_METRIC_LENGTH = readBases.length + 2;
         final int Y_METRIC_LENGTH = haplotypeBases.length + 2;
 
-        // ensure that all the qual scores have valid values
-        for( int iii = 0; iii < readQuals.length; iii++ ) {
-            readQuals[iii] = ( readQuals[iii] < QualityUtils.MIN_USABLE_Q_SCORE ? QualityUtils.MIN_USABLE_Q_SCORE : (readQuals[iii] > MAX_CACHED_QUAL ? MAX_CACHED_QUAL : readQuals[iii]) );
-        }
-
         // simple rectangular version of update loop, slow
         for( int iii = 1; iii < X_METRIC_LENGTH; iii++ ) {
             for( int jjj = hapStartIndex + 1; jjj < Y_METRIC_LENGTH; jjj++ ) {

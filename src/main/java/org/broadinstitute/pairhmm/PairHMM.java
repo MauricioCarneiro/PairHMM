@@ -103,7 +103,7 @@ public abstract class PairHMM {
      * @param name the name of this matrix
      * @param matrix the matrix of values
      */
-    private void dumpMatrix(final String name, final double[][] matrix) {
+    protected void dumpMatrix(final String name, final double[][] matrix) {
         System.out.printf("%s%n", name);
         for ( int i = 0; i < matrix.length; i++) {
             System.out.printf("\t%s[%d]", name, i);

@@ -38,17 +38,19 @@ local function checkMostLikelyHaplotypes(t)
 		matches = 1
 	else 
 		print("MISMATCH")
-		print("actual: ".. a)
+		print("actual:   " .. a)
 		print("expected: " .. e)
-		print(t[a].actual, t[e].actual)
-		print(t[a].expected, t[e].expected)
+		print("P/H     ", "actual\t\t", "expected")
+        print("actual  ", t[a].actual, t[e].actual)
+		print("expected", t[a].expected, t[e].expected)
+        print()
 		mismatches = 1
 	end
 	return matches, mismatches
 end
 
 
-local function initLEA(pl, pe, pa) 
+local function readLEA(pl, pe, pa)
 	local l = pl or testData:read()
 	local e = pe or expected:read("*n")
 	local a = pa or actual:read("*n")
@@ -58,26 +60,26 @@ end
 -- find all haplotypes while reading the first block
 -- todo: special case a block with only 1 read and 1 haplotype
 local function findAllHaplotypes(hapHash, pl, pa, pe)
-	local l, e, a = initLEA(pl, pe, pa)
-	local hap, read = l:match("(%w+)%s(%w+)")
+	local l, e, a = readLEA(pl, pe, pa)
+	local hap = l:match("(%w+)%s(%w+)")
 	while hapHash[hap] == nil do
 		hapHash[hap] = {hap = hap, actual = a, expected = e}
-		l = testData:read()
-		hap, read = l:match("(%w+)%s(%w+)")
-		a, e = actual:read("*n"), expected:read("*n")
+        l, e, a = readLEA()
+        if l == nil then break end
+        hap = l:match("(%w+)%s(%w+)")
 	end
 	return l, e, a
 end
 
 local function addLikelihoods(hapHash, pl, pe, pa)
-	local l, e, a = initLEA(pl, pe, pa)
-	local hap = l:match("(%w+)%s(%w+)")
-	while hapHash[hap] ~= nil do
+    local l, e, a = readLEA(pl, pe, pa)
+    local hap = l:match("(%w+)%s(%w+)")
+    while hapHash[hap] ~= nil do
 		hapHash[hap].actual = hapHash[hap].actual + a
 		hapHash[hap].expected = hapHash[hap].expected + e
-		l = testData:read()
-		hap, read = l:match("(%w+)%s(%w+)")
-		a, e = actual:read("*n"), expected:read("*n")
+        l, e, a = readLEA()
+        if l == nil then break end
+        hap = l:match("(%w+)%s(%w+)")
 	end
 	return l, e, a
 end

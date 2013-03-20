@@ -29,7 +29,7 @@ public class ExperimentalPairHMM extends PairHMM {
      * {@inheritDoc}
      */
     @Override
-    public void initialize( final int haplotypeMaxLength, final int readMaxLength) {
+    public void initialize( final int readMaxLength, final int haplotypeMaxLength) {
         // X and Y are size of read and haplotype + 1 because of an extra row and column for initial conditions (all 1's)
         X_METRIC_MAX_LENGTH = readMaxLength + 1;
         Y_METRIC_MAX_LENGTH = haplotypeMaxLength + 1;
@@ -131,17 +131,18 @@ public class ExperimentalPairHMM extends PairHMM {
         final int readXMetricLength = readBases.length + 1;
         final int hapYMetricLength = haplotypeBases.length + 1;
 
+        double maxLikelihood = -1.0;
         for (int i = 1; i < readXMetricLength; i++) {
-            // +1 here is because hapStartIndex is 0-based, but our matrices are 1 based
+//            dumpMatrices();
             for (int j = hapStartIndex + 1; j < hapYMetricLength; j++) {
-                updateCell(i, j);
+                matchMetricArray[i][j] = updateCell(i, j);
+                maxLikelihood = maxLikelihood > matchMetricArray[i][j] ? maxLikelihood : matchMetricArray[i][j];
             }
         }
+//        dumpMatrices();
 
-        // final probability is the log10 sum of the last element in all three state arrays
-        final int endI = readXMetricLength - 1;
-        final int endJ = hapYMetricLength - 1;
-        return Math.log10( matchMetricArray[endI][endJ]);
+        // final probability could be anywhere in the matrix
+        return Math.log10(maxLikelihood);
     }
 
 
@@ -155,7 +156,7 @@ public class ExperimentalPairHMM extends PairHMM {
      * @param i row index in the matrices to update
      * @param j column index in the matrices to update
      */
-    private void updateCell(final int i, final int j) {
+    private double updateCell(final int i, final int j) {
         final double match = prior[i][j] * matchMetricArray[i-1][j-1] * transition[i][0];           // prior * prob_getting_here * prob_of_(mis)match
 
         final int insertionPathIndex = (path[i][j-1] == 1 || path[i][j-1] == 2) ? 2 : 1;            // check if the path leading up to here was already an insertion, if it is, apply GCP for all other paths apply GOP.
@@ -175,6 +176,11 @@ public class ExperimentalPairHMM extends PairHMM {
             path[i][j] = deletionPathIndex;
             result = deletion;
         }
-        matchMetricArray[i][j] = result;
+        return result;
+    }
+
+    @Override
+    protected void dumpMatrices() {
+        dumpMatrix("matchMetricArray", matchMetricArray);
     }
 }

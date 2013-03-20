@@ -114,11 +114,12 @@ public class MaxPairHMM extends PairHMM {
         final int hapYMetricLength = haplotypeBases.length + 2;
 
         for (int i = 2; i < readXMetricLength; i++) {
-            // +1 here is because hapStartIndex is 0-based, but our matrices are 1 based
+//            dumpMatrices();
             for (int j = hapStartIndex+1; j < hapYMetricLength; j++) {
                 updateCell(i, j, distanceMatrix[i][j], constantMatrix[i], matchMetricArray, XMetricArray, YMetricArray);
             }
         }
+//        dumpMatrices();
 
         // final probability is the log10 sum of the last element in all three state arrays
         final int endI = readXMetricLength - 1;
@@ -211,8 +212,18 @@ public class MaxPairHMM extends PairHMM {
     private void updateCell( final int indI, final int indJ, final double prior, final double[] constants,
                              final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray ) {
 
-        matchMetricArray[indI][indJ] = prior * Math.max(Math.max(matchMetricArray[indI - 1][indJ - 1] * constants[0], XMetricArray[indI - 1][indJ - 1] * constants[1]), YMetricArray[indI - 1][indJ - 1] * constants[1]);
-        XMetricArray[indI][indJ] = Math.max(matchMetricArray[indI - 1][indJ] * constants[2], XMetricArray[indI - 1][indJ] * constants[3]);
-        YMetricArray[indI][indJ] = Math.max(matchMetricArray[indI][indJ - 1] * constants[4], YMetricArray[indI][indJ - 1] * constants[5]);
+        matchMetricArray[indI][indJ] = prior * max3(matchMetricArray[indI - 1][indJ - 1] * constants[0], XMetricArray[indI - 1][indJ - 1] * constants[1], YMetricArray[indI - 1][indJ - 1] * constants[1]);
+        XMetricArray[indI][indJ] = max2(matchMetricArray[indI - 1][indJ] * constants[2], XMetricArray[indI - 1][indJ] * constants[3]);
+        YMetricArray[indI][indJ] = max2(matchMetricArray[indI][indJ - 1] * constants[4], YMetricArray[indI][indJ - 1] * constants[5]);
     }
+
+    private static double max3 (double a, double b, double c) {
+        final double x = (a >= b) ? a : b;
+        return x >= c ? x : c;
+    }
+
+    private static double max2 (double a, double b) {
+        return a > b ? a : b;
+    }
+
 }
