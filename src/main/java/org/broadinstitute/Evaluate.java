@@ -18,7 +18,7 @@ import java.util.*;
  */
 public class Evaluate {
 
-    public final List<PairHMM> pairHMM = new ArrayList<>(10);
+    public final List<PairHMM> pairHMM = new ArrayList<PairHMM>(20);
 
     private static final int X_METRIC_LENGTH = 10000;
     private static final int Y_METRIC_LENGTH = 10000;
@@ -58,6 +58,11 @@ public class Evaluate {
         if (args.contains("--all") || args.contains("--experimental")) {
             logger.info("Initializing ExperimentalPairHMM");
             pairHMM.add(new ExperimentalPairHMM());
+            addedHMMs = true;
+        }
+        if (args.contains("--all") || args.contains("--four")) {
+            logger.info("Initializing FourMatricesPairHMM");
+            pairHMM.add(new FourMatricesPairHMM());
             addedHMMs = true;
         }
         if (!addedHMMs || args.contains("--all") || args.contains("--logless")) {
@@ -132,12 +137,12 @@ public class Evaluate {
 
     public static void main(final String[] argv) throws IOException {
 
-        Set<String> args = new HashSet<>(Arrays.asList(argv));
+        Set<String> args = new HashSet<String>(Arrays.asList(argv));
         if (args.size() < 1) {
             throw new RuntimeException("\r\nYou must specify a file name for input.\n" + "filename \n ----------------------------\n" + "Run with -d or --debug for debug output");
         } else {
             final Evaluate evaluate = new Evaluate(args);
-            final List<String> testFiles = new LinkedList<>();
+            final List<String> testFiles = new LinkedList<String>();
 
             for (String arg : args) {
                 if (!arg.startsWith("-")) {
