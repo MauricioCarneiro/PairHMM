@@ -43,10 +43,6 @@ public class ExperimentalPairHMM extends PairHMM {
         prior = new double[X_METRIC_MAX_LENGTH][Y_METRIC_MAX_LENGTH];            // will be initialized by every haplotype and read (from the point where they first differ from the previous one)
         matchMetricArray = new double[X_METRIC_MAX_LENGTH][Y_METRIC_MAX_LENGTH]; // initialized here with a cusion row/column to give alignments starting in any position the same probability
 
-        // create a cushion row and column to generalize the calculation of every column (without any special cases)
-        for (int i = 0; i < X_METRIC_MAX_LENGTH; i++) {
-            matchMetricArray[i][0] = 1.0;
-        }
         for (int j = 0; j < Y_METRIC_MAX_LENGTH; j++) {
             matchMetricArray[0][j] = 1.0;
         }
@@ -139,7 +135,7 @@ public class ExperimentalPairHMM extends PairHMM {
                 maxLikelihood = maxLikelihood > matchMetricArray[i][j] ? maxLikelihood : matchMetricArray[i][j];
             }
         }
-//        dumpMatrices();
+        dumpMatrices();
 
         // final probability could be anywhere in the matrix
         return Math.log10(maxLikelihood);
@@ -150,8 +146,8 @@ public class ExperimentalPairHMM extends PairHMM {
      * Updates a cell in the HMM matrix
      *
      *  match :    i-1 , j-1
-     *  insertion: i   , j-1
-     *  deletion:  i-1 , j
+     *  insertion: i-1 , j
+     *  deletion:  i   , j-1
      *
      * @param i row index in the matrices to update
      * @param j column index in the matrices to update
@@ -159,11 +155,11 @@ public class ExperimentalPairHMM extends PairHMM {
     private double updateCell(final int i, final int j) {
         final double match = prior[i][j] * matchMetricArray[i-1][j-1] * transition[i][0];           // prior * prob_getting_here * prob_of_(mis)match
 
-        final int insertionPathIndex = (path[i][j-1] == 1 || path[i][j-1] == 2) ? 2 : 1;            // check if the path leading up to here was already an insertion, if it is, apply GCP for all other paths apply GOP.
-        final double insertion = matchMetricArray[i][j-1] * transition[i][insertionPathIndex];      // prob_getting_here * prob_of_insertion/prob_of_ins_continuation
+        final int insertionPathIndex = (path[i-1][j] == 1 || path[i-1][j] == 2) ? 2 : 1;            // check if the path leading up to here was already an insertion, if it is, apply GCP for all other paths apply GOP.
+        final double insertion = matchMetricArray[i-1][j] * transition[i][insertionPathIndex];      // prob_getting_here * prob_of_insertion/prob_of_ins_continuation
 
-        final int deletionPathIndex = (path[i-1][j] == 3 || path[i-1][j] == 4) ? 4 : 3;             // check if the path leading up to here was already a deletion, if it is, apply GCP for all other paths apply GOP.
-        final double deletion = matchMetricArray[i-1][j] * transition[i][deletionPathIndex];        // prob_getting_here * prob_of_deletion/prob_of_del_continuation
+        final int deletionPathIndex = (path[i][j-1] == 3 || path[i][j-1] == 4) ? 4 : 3;             // check if the path leading up to here was already a deletion, if it is, apply GCP for all other paths apply GOP.
+        final double deletion = matchMetricArray[i][j-1] * transition[i][deletionPathIndex];        // prob_getting_here * prob_of_deletion/prob_of_del_continuation
 
         double result;
         if (match >= insertion && match >= deletion) {
