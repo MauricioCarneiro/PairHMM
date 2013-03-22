@@ -57,18 +57,20 @@ import org.broadinstitute.utils.QualityUtils;
 public class FourMatricesPairHMM extends PairHMM {
     protected static final double SCALE_FACTOR_LOG10 = 300.0;
 
+    double[][] endStateMatrix = null;
     Constant[] constantMatrix = null; // The cache
     double[][] distanceMatrix = null; // The cache
+    double[] penaltyForDiscardingBase = null;
     boolean constantsAreInitialized = false;
 
     /**
      * Cached data structure that describes the first row's edge condition in the HMM
      */
     final Constant firstRowConstantMatrix = new Constant(
-            QualityUtils.qualToProb((byte) (DEFAULT_GOP + DEFAULT_GOP)),
-            QualityUtils.qualToProb(DEFAULT_GCP),
-            QualityUtils.qualToErrorProb(DEFAULT_GOP),
-            QualityUtils.qualToErrorProb(DEFAULT_GCP),
+            0.0,
+            0.5,
+            0.0,
+            0.5,
             1.0,
             1.0);
 
@@ -79,8 +81,10 @@ public class FourMatricesPairHMM extends PairHMM {
     public void initialize( final int haplotypeMaxLength, final int readMaxLength) {
         super.initialize(haplotypeMaxLength, readMaxLength);
 
+        endStateMatrix = new double[X_METRIC_MAX_LENGTH][Y_METRIC_MAX_LENGTH];
         constantMatrix = new Constant[X_METRIC_MAX_LENGTH];
         distanceMatrix = new double[X_METRIC_MAX_LENGTH][Y_METRIC_MAX_LENGTH];
+        penaltyForDiscardingBase = new double[X_METRIC_MAX_LENGTH];
     }
 
     /**
@@ -96,7 +100,7 @@ public class FourMatricesPairHMM extends PairHMM {
                                                                final int hapStartIndex,
                                                                final boolean recacheReadValues ) {
         if ( ! constantsAreInitialized || recacheReadValues )
-            initializeConstants( haplotypeBases.length, readBases.length, insertionGOP, deletionGOP, overallGCP );
+            initializeConstants( insertionGOP, deletionGOP, overallGCP );
         initializeDistanceMatrix( haplotypeBases, readBases, readQuals, hapStartIndex );
 
         // NOTE NOTE NOTE -- because of caching we need to only operate over X and Y according to this
@@ -114,7 +118,7 @@ public class FourMatricesPairHMM extends PairHMM {
         // final probability is the log10 sum of the last element in all three state arrays
         final int endI = readXMetricLength - 1;
         final int endJ = hapYMetricLength - 1;
-        return Math.log10( matchMetricArray[endI][endJ] + XMetricArray[endI][endJ] + YMetricArray[endI][endJ] ) - SCALE_FACTOR_LOG10;
+        return Math.log10( matchMetricArray[endI][endJ] + XMetricArray[endI][endJ] + YMetricArray[endI][endJ] + endStateMatrix[endI][endJ] ) - SCALE_FACTOR_LOG10;
     }
 
     /**
@@ -137,6 +141,7 @@ public class FourMatricesPairHMM extends PairHMM {
         for (int i = 0; i < readBases.length; i++) {
             final byte x = readBases[i];
             final byte qual = readQuals[i];
+            penaltyForDiscardingBase[i+2] = QualityUtils.qualToProb(qual);
             for (int j = startIndex; j < haplotypeBases.length; j++) {
                 final byte y = haplotypeBases[j];
                 distanceMatrix[i+2][j+2] = ( x == y || x == (byte) 'N' || y == (byte) 'N' ?
@@ -148,15 +153,11 @@ public class FourMatricesPairHMM extends PairHMM {
     /**
      * Initializes the matrix that holds all the constants related to quality scores.
      *
-     * @param haplotypeSize the number of bases in the haplotype we are testing
-     * @param readSize the number of bases in the read we are testing
      * @param insertionGOP   insertion quality scores of the read
      * @param deletionGOP    deletion quality scores of the read
      * @param overallGCP     overall gap continuation penalty
      */
-    private void initializeConstants( final int haplotypeSize,
-                                      final int readSize,
-                                      final byte[] insertionGOP,
+    private void initializeConstants( final byte[] insertionGOP,
                                       final byte[] deletionGOP,
                                       final byte[] overallGCP ) {
         // the initial condition -- must be here because it needs that actual read and haplotypes, not the maximum in init
@@ -174,9 +175,6 @@ public class FourMatricesPairHMM extends PairHMM {
         for (int i = 0; i < l; i++) {
             constantMatrix[i+2] = new Constant(insertionGOP[i], deletionGOP[i], overallGCP[i]);
         }
-        // special hack that is WRONG!
-        constantMatrix[l+1].tpMtoD = 1.0;
-        constantMatrix[l+1].tpDtoD = 1.0;
 
         // note that we initialized the constants
         constantsAreInitialized = true;
@@ -200,27 +198,47 @@ public class FourMatricesPairHMM extends PairHMM {
                              final double[][] matchMetricArray, final double[][] XMetricArray, final double[][] YMetricArray ) {
 
         matchMetricArray[indI][indJ] = prior * ( matchMetricArray[indI - 1][indJ - 1] * constants.tpMtoM +
-                XMetricArray[indI - 1][indJ - 1] * constants.tpItoM +
-                YMetricArray[indI - 1][indJ - 1] * constants.tpDtoM );
+                                                 XMetricArray[indI - 1][indJ - 1] * constants.tpItoM +
+                                                 YMetricArray[indI - 1][indJ - 1] * constants.tpDtoM);
         XMetricArray[indI][indJ] = matchMetricArray[indI - 1][indJ] * constants.tpMtoI + XMetricArray[indI - 1][indJ] * constants.tpItoI;
         YMetricArray[indI][indJ] = matchMetricArray[indI][indJ - 1] * constants.tpMtoD + YMetricArray[indI][indJ - 1] * constants.tpDtoD;
+        endStateMatrix[indI][indJ] = matchMetricArray[indI][indJ] * constants.tpMtoE +
+                                     XMetricArray[indI][indJ] * constants.tpItoE +
+                                     penaltyForDiscardingBase[indI] * endStateMatrix[indI-1][indJ] * constants.tpEtoEv +
+                                     endStateMatrix[indI][indJ -1] * constants.tpEtoEh;
     }
 
     private class Constant {
         // tp stands for transition probability from X to Y (M = matches, I = insertion, D = deletion)
-        double tpMtoI, tpMtoD, tpMtoM;
-        double tpItoI, tpItoM;
-        double tpDtoD, tpDtoM;
+        double tpMtoI, tpMtoD, tpMtoM, tpMtoE; // match     state outgoing transition probabilities (these have to add up to 1)
+        double tpItoI, tpItoM, tpItoE;         // insertion state outgoing transition probabilities (these have to add up to 1)
+        double tpDtoD, tpDtoM;                 // deletion  state outgoing transition probabilities (these have to add up to 1)
+        double tpEtoEh, tpEtoEv;               // end       state outgoing transition probabilities (these have to add up to 1) -- horizontal and vertical
 
         public Constant(byte insertionGOP, byte deletionGOP, byte overallGCP) {
             final int qualIndexGOP = Math.min(insertionGOP + deletionGOP, Byte.MAX_VALUE);
+
+            // Match state outgoing transition probabilities (adding up to 1)
             tpMtoM = QualityUtils.qualToProb((byte) qualIndexGOP);
-            tpDtoM = tpItoM = QualityUtils.qualToProb(overallGCP);
             tpMtoI = QualityUtils.qualToErrorProb(insertionGOP);
-            tpDtoD = tpItoI = QualityUtils.qualToErrorProb(overallGCP);
             tpMtoD = QualityUtils.qualToErrorProb(deletionGOP);
+            tpMtoE = 1.0;
+
+            // Insertion state outgoing transition probabilities (adding up to 1)
+            tpItoM = QualityUtils.qualToProb(overallGCP);
+            tpItoI = QualityUtils.qualToErrorProb(overallGCP);
+            tpItoE = 1.0;
+
+            // Deletion state outgoing transition probabilities (adding up to 1)
+            tpDtoM = tpItoM;
+            tpDtoD = tpItoI;
+
+            // End state outgoing transition probabilities (adding up to 1)
+            tpEtoEh = 0.5;
+            tpEtoEv = 0.5;
         }
 
+        // hack to keep compatibility!
         public Constant(final double mm, double im, double mi, double ii, double md, double dd) {
             tpMtoM = mm;
             tpItoM = tpDtoM = im;
