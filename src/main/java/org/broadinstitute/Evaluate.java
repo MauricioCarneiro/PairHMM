@@ -65,6 +65,11 @@ public class Evaluate {
             pairHMM.add(new FourMatricesPairHMM());
             addedHMMs = true;
         }
+        if (args.contains("--all") || args.contains("--del")) {
+            logger.info("Initializing NoDelPairHMM");
+            pairHMM.add(new NoDelPairHMM());
+            addedHMMs = true;
+        }
         if (!addedHMMs || args.contains("--all") || args.contains("--logless")) {
             logger.info("Initializing LoglessPairHMM");
             pairHMM.add(new LoglessPairHMM());
