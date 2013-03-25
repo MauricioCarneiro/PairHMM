@@ -37,37 +37,12 @@ public class Evaluate {
 
         if (args.contains("--all") || args.contains("--approximate")) {
             logger.info("Initializing ApproximatePairHMM");
-            pairHMM.add(new ApproximatePairHMM());
-            addedHMMs = true;
-        }
-        if (args.contains("--all") || args.contains("--standard")) {
-            logger.info("Initializing StandardPairHMM");
-            pairHMM.add(new StandardPairHMM());
+            pairHMM.add(new Log10PairHMM(false));
             addedHMMs = true;
         }
         if (args.contains("--all") || args.contains("--exact")) {
-            logger.info("Initializing ExactPairHMM");
-            pairHMM.add(new ExactPairHMM());
-            addedHMMs = true;
-        }
-        if (args.contains("--all") || args.contains("--max")) {
-            logger.info("Initializing MaxPairHMM");
-            pairHMM.add(new MaxPairHMM());
-            addedHMMs = true;
-        }
-        if (args.contains("--all") || args.contains("--experimental")) {
-            logger.info("Initializing ExperimentalPairHMM");
-            pairHMM.add(new ExperimentalPairHMM());
-            addedHMMs = true;
-        }
-        if (args.contains("--all") || args.contains("--four")) {
-            logger.info("Initializing FourMatricesPairHMM");
-            pairHMM.add(new FourMatricesPairHMM());
-            addedHMMs = true;
-        }
-        if (args.contains("--all") || args.contains("--del")) {
-            logger.info("Initializing NoDelPairHMM");
-            pairHMM.add(new NoDelPairHMM());
+            logger.info("Initializing Log10PairHMM");
+            pairHMM.add(new Log10PairHMM(true));
             addedHMMs = true;
         }
         if (!addedHMMs || args.contains("--all") || args.contains("--logless")) {
@@ -90,7 +65,7 @@ public class Evaluate {
      * @return the likelihood of the alignment between read and haplotype
      */
     public double runhmm(PairHMM hmm, final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex, final boolean recacheReadValues) {
-        return hmm.subComputeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
+        return hmm.computeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
     }
 
     private static String createFileName(String hmmName) throws IOException {
@@ -123,7 +98,7 @@ public class Evaluate {
         final String runName = hmmName + "." + testSet;
         final String filename = createFileName(runName);
         final FileWriter out = new FileWriter(filename);
-        hmm.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
+        hmm.initialize(Y_METRIC_LENGTH + 2, X_METRIC_LENGTH + 2);
         while (testCache.hasNext()) {
             final TestRow currentTest = testCache.next();
             final long startTime = System.nanoTime();

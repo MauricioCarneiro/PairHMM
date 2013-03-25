@@ -15,7 +15,7 @@ end
 
 local expected = io.open(arg[1])
 local actual   = io.open(arg[2])
-local sensitivity = arg[3] or 0.001
+local sensitivity = tonumber(arg[3]) or 0.001
 
 local e, a = getValues(expected, actual)
 local fail = 0

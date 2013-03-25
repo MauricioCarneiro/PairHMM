@@ -85,8 +85,28 @@ public class MathUtils {
         return Math.log10(sum) + maxValue;
     }
 
-    public static double approximateLog10SumLog10(double a, double b, double c) {
-        return approximateLog10SumLog10(a, approximateLog10SumLog10(b, c));
+    public static double approximateLog10SumLog10(final double[] vals) {
+        return approximateLog10SumLog10(vals, vals.length);
+    }
+
+    public static double approximateLog10SumLog10(final double[] vals, final int endIndex) {
+
+        final int maxElementIndex = MathUtils.maxElementIndex(vals, endIndex);
+        double approxSum = vals[maxElementIndex];
+
+        for (int i = 0; i < endIndex; i++) {
+            if (i == maxElementIndex || vals[i] == Double.NEGATIVE_INFINITY)
+                continue;
+
+            final double diff = approxSum - vals[i];
+            if (diff < MathUtils.MAX_JACOBIAN_TOLERANCE) {
+                // See notes from the 2-inout implementation below
+                final int ind = fastRound(diff * MathUtils.JACOBIAN_LOG_TABLE_INV_STEP); // hard rounding
+                approxSum += MathUtils.jacobianLogTable[ind];
+            }
+        }
+
+        return approxSum;
     }
 
     public static double log10sumLog10(double[] log10p, int start) {
