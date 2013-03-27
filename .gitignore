@@ -12,3 +12,5 @@ test_data/
 /*.iws
 *.out
 *.in
+PairHMM-GPU.jar
+PairHMM.jar

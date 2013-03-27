@@ -1,0 +1,3 @@
+#!/bin/sh
+
+java -jar pack.jar -mainjar PairHMM.jar -directory lib -destjar PairHMM-packed.jar

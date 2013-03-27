@@ -6,14 +6,13 @@ import edu.syr.pcpratts.rootbeer.runtime.Kernel;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Iterator;
-import org.apache.log4j.Logger;
 
 import java.io.FileWriter;
 import java.io.IOException;
 
 public class RootbeerEvaluate {
 
-    private static Logger logger = Logger.getLogger("Main");
+    private static Logger logger = new Logger();
 
     public RootbeerEvaluate(){
     }

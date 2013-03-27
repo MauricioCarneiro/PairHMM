@@ -1,8 +1,5 @@
 package org.broadinstitute;
 
-import org.apache.log4j.BasicConfigurator;
-import org.apache.log4j.Level;
-import org.apache.log4j.Logger;
 import org.broadinstitute.pairhmm.*;
 import org.broadinstitute.utils.QualityUtils;
 
@@ -24,13 +21,12 @@ public class Evaluate {
     private static final int X_METRIC_LENGTH = 10000;
     private static final int Y_METRIC_LENGTH = 10000;
 
-    private static Logger logger = Logger.getLogger("Main");
+    private static Logger logger = new Logger();
 
     public Evaluate(Set<String> args) {
         useRootbeer = false;
         final boolean debug = args.contains("-d") || args.contains("--debug");
         logger.setLevel(debug ? Level.DEBUG : Level.INFO);
-        BasicConfigurator.configure();
     }
 
     public void initializeHMMs(Set<String> args) {

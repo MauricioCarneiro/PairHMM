@@ -1,7 +1,7 @@
 package org.broadinstitute;
 
 import edu.syr.pcpratts.rootbeer.runtime.Kernel;
-import org.broadinstitute.pairhmm.StandardPairHMM;
+import org.broadinstitute.pairhmm.LoglessPairHMM;
 import org.broadinstitute.utils.QualityUtils;
 
 public class HmmKernel implements Kernel {
@@ -37,7 +37,7 @@ public class HmmKernel implements Kernel {
     }
 
     public void gpuMethod(){
-      StandardPairHMM hmm = new StandardPairHMM();
+      LoglessPairHMM hmm = new LoglessPairHMM();
       hmm.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
       likelihood = hmm.subComputeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, 
         readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, 
