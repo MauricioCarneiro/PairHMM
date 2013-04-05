@@ -3,7 +3,9 @@ package org.broadinstitute;
 import org.apache.log4j.BasicConfigurator;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
-import org.broadinstitute.pairhmm.*;
+import org.broadinstitute.pairhmm.Log10PairHMM;
+import org.broadinstitute.pairhmm.LoglessPairHMM;
+import org.broadinstitute.pairhmm.PairHMM;
 import org.broadinstitute.utils.QualityUtils;
 
 import java.io.*;
@@ -93,14 +95,16 @@ public class Evaluate {
         return readQuals;
     }
 
-    private void runTests(final PairHMM hmm, final Iterator<TestRow> testCache, String hmmName, String testSet) throws IOException {
+    private void runTests(final PairHMM hmm, final Iterator<TestRow> testCache, String hmmName, String testSet, boolean noCaching) throws IOException {
         long totalTime = 0L;
         final String runName = hmmName + "." + testSet;
         final String filename = createFileName(runName);
         final FileWriter out = new FileWriter(filename);
-        hmm.initialize(Y_METRIC_LENGTH + 2, X_METRIC_LENGTH + 2);
+        hmm.initialize(X_METRIC_LENGTH, Y_METRIC_LENGTH);
         while (testCache.hasNext()) {
             final TestRow currentTest = testCache.next();
+            if (noCaching)
+                currentTest.haplotypeStart = 0;
             final long startTime = System.nanoTime();
             final double likelihood = runhmm(hmm, currentTest.haplotypeBases, currentTest.readBases, currentTest.readQuals, currentTest.readInsQuals, currentTest.readDelQuals, currentTest.overallGCP, currentTest.haplotypeStart, currentTest.reachedReadValue);
             totalTime += System.nanoTime() - startTime;
@@ -124,6 +128,8 @@ public class Evaluate {
             final Evaluate evaluate = new Evaluate(args);
             final List<String> testFiles = new LinkedList<String>();
 
+            final boolean noCaching = args.contains("--nocache");
+
             for (String arg : args) {
                 if (!arg.startsWith("-")) {
                     logger.info("Adding test dataset: " + arg);
@@ -141,7 +147,7 @@ public class Evaluate {
                     final String[] testSplit = testSet.split("/");                           // get rid of the file path (if any)
                     final String testName = testSplit[testSplit.length - 1].split("\\.")[0]; // get rid of the file extension
                     logger.info("Running " + hmmName);
-                    evaluate.runTests(hmm, createIteratorFor(testSet), hmmName, testName);
+                    evaluate.runTests(hmm, createIteratorFor(testSet), hmmName, testName, noCaching);
                     pairHMMIterator.remove();
                 }
                 logger.info("Finished all HMMs for " + testSet + " tests");

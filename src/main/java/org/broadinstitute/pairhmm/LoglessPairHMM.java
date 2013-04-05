@@ -57,28 +57,12 @@ public class LoglessPairHMM extends PairHMM {
     protected static final double SCALE_FACTOR_LOG10 = 300.0;
     protected static final double INITIAL_CONDITION = Math.pow(10, SCALE_FACTOR_LOG10);
 
-    double[][] transition = null; // The cache
-    double[][] prior = null; // The cache
-    boolean constantsAreInitialized = false;
-
-    /**
-     * Cached data structure that describes the first row's edge condition in the HMM
-     */
-    protected static final double [] firstRowConstantMatrix = {
-            QualityUtils.qualToProb((byte) (DEFAULT_GOP + DEFAULT_GOP)),
-            QualityUtils.qualToProb(DEFAULT_GCP),
-            QualityUtils.qualToErrorProb(DEFAULT_GOP),
-            QualityUtils.qualToErrorProb(DEFAULT_GCP),
-            1.0,
-            1.0
-    };
-
     /**
      * {@inheritDoc}
      */
     @Override
-    public void initialize( final int haplotypeMaxLength, final int readMaxLength) {
-        super.initialize(haplotypeMaxLength, readMaxLength);
+    public void initialize(final int readMaxLength, final int haplotypeMaxLength ) {
+        super.initialize(readMaxLength, haplotypeMaxLength);
 
         transition = new double[paddedMaxReadLength][6];
         prior = new double[paddedMaxReadLength][paddedMaxHaplotypeLength];
@@ -97,17 +81,12 @@ public class LoglessPairHMM extends PairHMM {
                                                                final int hapStartIndex,
                                                                final boolean recacheReadValues ) {
         if ( ! constantsAreInitialized || recacheReadValues )
-            initializeProbabilities(haplotypeBases.length, insertionGOP, deletionGOP, overallGCP);
+            initializeProbabilities(INITIAL_CONDITION / haplotypeBases.length, insertionGOP, deletionGOP, overallGCP);
         initializePriors(haplotypeBases, readBases, readQuals, hapStartIndex);
 
-        // NOTE NOTE NOTE -- because of caching we need to only operate over X and Y according to this
-        // read and haplotype lengths, not the max lengths
-        final int readXMetricLength = readBases.length + 2;
-        final int hapYMetricLength = haplotypeBases.length + 2;
-
-        for (int i = 2; i < readXMetricLength; i++) {
+        for (int i = 1; i < paddedReadLength; i++) {
             // +1 here is because hapStartIndex is 0-based, but our matrices are 1 based
-            for (int j = hapStartIndex+1; j < hapYMetricLength; j++) {
+            for (int j = hapStartIndex+1; j < paddedHaplotypeLength; j++) {
                 updateCell(i, j, prior[i][j], transition[i]);
             }
         }
@@ -115,9 +94,9 @@ public class LoglessPairHMM extends PairHMM {
         // final probability is the log10 sum of the last element in the Match and Insertion state arrays
         // this way we ignore all paths that ended in deletions! (huge)
         // but we have to sum all the paths ending in the M and I matrices, because they're no longer extended.
-        final int endI = readXMetricLength - 1;
+        final int endI = paddedReadLength - 1;
         double finalSumProbabilities = 0.0;
-        for (int j = 1; j < hapYMetricLength; j++) {
+        for (int j = 1; j < paddedHaplotypeLength; j++) {
             finalSumProbabilities += matchMatrix[endI][j] + insertionMatrix[endI][j];
         }
         return Math.log10(finalSumProbabilities) - SCALE_FACTOR_LOG10;
@@ -142,7 +121,7 @@ public class LoglessPairHMM extends PairHMM {
             final byte qual = readQuals[i];
             for (int j = startIndex; j < haplotypeBases.length; j++) {
                 final byte y = haplotypeBases[j];
-                prior[i+2][j+2] = ( x == y || x == (byte) 'N' || y == (byte) 'N' ?
+                prior[i+1][j+1] = ( x == y || x == (byte) 'N' || y == (byte) 'N' ?
                         QualityUtils.qualToProb(qual) : QualityUtils.qualToErrorProb(qual) );
             }
         }
@@ -155,25 +134,20 @@ public class LoglessPairHMM extends PairHMM {
      * @param deletionGOP    deletion quality scores of the read
      * @param overallGCP     overall gap continuation penalty
      */
-    private void initializeProbabilities(final int haplotypeLength, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP) {
-        // the initial condition -- must be here because it needs that actual read and haplotypes, not the maximum in init
-        final double initialValue = INITIAL_CONDITION/haplotypeLength;
-        matchMatrix[1][1] = initialValue;
-
-        // fill in the first row
-        for( int jjj = 2; jjj < paddedMaxHaplotypeLength; jjj++ ) {
-            deletionMatrix[1][jjj] = initialValue;
+    private void initializeProbabilities(final double initialValue, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP) {
+        // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
+        for( int j = 0; j < paddedHaplotypeLength; j++ ) {
+            deletionMatrix[0][j] = initialValue;
         }
 
-        final int l = insertionGOP.length;
-        for (int i = 0; i < l; i++) {
+        for (int i = 0; i < insertionGOP.length; i++) {
             final int qualIndexGOP = Math.min(insertionGOP[i] + deletionGOP[i], Byte.MAX_VALUE);
-            transition[i+2][0] = QualityUtils.qualToProb((byte) qualIndexGOP);
-            transition[i+2][1] = QualityUtils.qualToProb(overallGCP[i]);
-            transition[i+2][2] = QualityUtils.qualToErrorProb(insertionGOP[i]);
-            transition[i+2][3] = QualityUtils.qualToErrorProb(overallGCP[i]);
-            transition[i+2][4] = QualityUtils.qualToErrorProb(deletionGOP[i]);
-            transition[i+2][5] = QualityUtils.qualToErrorProb(overallGCP[i]);
+            transition[i+1][0] = QualityUtils.qualToProb((byte) qualIndexGOP);
+            transition[i+1][1] = QualityUtils.qualToProb(overallGCP[i]);
+            transition[i+1][2] = QualityUtils.qualToErrorProb(insertionGOP[i]);
+            transition[i+1][3] = QualityUtils.qualToErrorProb(overallGCP[i]);
+            transition[i+1][4] = QualityUtils.qualToErrorProb(deletionGOP[i]);
+            transition[i+1][5] = QualityUtils.qualToErrorProb(overallGCP[i]);
         }
 
         // note that we initialized the constants
@@ -194,8 +168,8 @@ public class LoglessPairHMM extends PairHMM {
     private void updateCell( final int indI, final int indJ, final double prior, final double[] transitition) {
 
         matchMatrix[indI][indJ] = prior * ( matchMatrix[indI - 1][indJ - 1] * transitition[0] +
-                insertionMatrix[indI - 1][indJ - 1] * transitition[1] +
-                deletionMatrix[indI - 1][indJ - 1] * transitition[1] );
+                                                 insertionMatrix[indI - 1][indJ - 1] * transitition[1] +
+                                                 deletionMatrix[indI - 1][indJ - 1] * transitition[1] );
         insertionMatrix[indI][indJ] = matchMatrix[indI - 1][indJ] * transitition[2] + insertionMatrix[indI - 1][indJ] * transitition[3];
         deletionMatrix[indI][indJ] = matchMatrix[indI][indJ - 1] * transitition[4] + deletionMatrix[indI][indJ - 1] * transitition[5];
     }

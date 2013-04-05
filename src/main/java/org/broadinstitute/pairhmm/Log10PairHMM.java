@@ -36,12 +36,11 @@ import java.util.Arrays;
  * User: rpoplin
  * Date: 3/1/12
  */
-public class Log10PairHMM extends PairHMM {
+public final class Log10PairHMM extends PairHMM {
     /**
      * Should we use exact log10 calculation (true), or an approximation (false)?
      */
     private final boolean doExactLog10;
-
     /**
      * Create an uninitialized PairHMM
      *
@@ -63,14 +62,17 @@ public class Log10PairHMM extends PairHMM {
      * {@inheritDoc}
      */
     @Override
-    public void initialize( final int haplotypeMaxLength, final int readMaxLength) {
-        super.initialize(haplotypeMaxLength, readMaxLength);
+    public void initialize(final int readMaxLength,  final int haplotypeMaxLength) {
+        super.initialize(readMaxLength, haplotypeMaxLength);
 
         for( int iii=0; iii < paddedMaxReadLength; iii++ ) {
             Arrays.fill(matchMatrix[iii], Double.NEGATIVE_INFINITY);
             Arrays.fill(insertionMatrix[iii], Double.NEGATIVE_INFINITY);
             Arrays.fill(deletionMatrix[iii], Double.NEGATIVE_INFINITY);
         }
+
+        transition = new double[paddedMaxReadLength][6];
+        prior = new double[paddedMaxReadLength][paddedMaxHaplotypeLength];
     }
 
     /**
@@ -85,37 +87,75 @@ public class Log10PairHMM extends PairHMM {
                                                                final byte[] overallGCP,
                                                                final int hapStartIndex,
                                                                final boolean recacheReadValues ) {
-        // the initial condition -- must be in subComputeReadLikelihoodGivenHaplotypeLog10 because it needs that actual
-        // read and haplotypes, not the maximum
-        final double initialValue = Math.log10((double) 1/haplotypeBases.length);
-        matchMatrix[1][1] = initialValue;
 
-        // M, X, and Y arrays are of size read and haplotype + 1 because of an extra column for initial conditions and + 1 to consider the final base in a non-global alignment
-        final int X_METRIC_LENGTH = readBases.length + 2;
-        final int Y_METRIC_LENGTH = haplotypeBases.length + 2;
-
-        // ensure that all the qual scores have valid values
-        for( int iii = 0; iii < readQuals.length; iii++ ) {
-            readQuals[iii] = ( readQuals[iii] < QualityUtils.MIN_USABLE_Q_SCORE ? QualityUtils.MIN_USABLE_Q_SCORE : (readQuals[iii] > MAX_CACHED_QUAL ? MAX_CACHED_QUAL : readQuals[iii]) );
-        }
+        // don't have to initialize every time... revise this!
+        initializePriors(haplotypeBases, readBases, readQuals, hapStartIndex);
+        initializeProbabilities(Math.log10(1.0/haplotypeBases.length), insertionGOP, deletionGOP, overallGCP);
 
         // simple rectangular version of update loop, slow
-        for( int iii = 1; iii < X_METRIC_LENGTH; iii++ ) {
-            for( int jjj = hapStartIndex + 1; jjj < Y_METRIC_LENGTH; jjj++ ) {
-                if( (iii == 1 && jjj == 1) ) { continue; }
-                updateCell(iii, jjj, haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP,
-                        matchMatrix, insertionMatrix, deletionMatrix);
+        for( int i = 1; i < paddedReadLength; i++ ) {
+            for( int j = hapStartIndex + 1; j < paddedHaplotypeLength; j++ ) {
+                updateCell(i, j, prior[i][j], transition[i]);
             }
         }
 
         // final probability is the log10 sum of the last element in all three state arrays
-        final int endI = X_METRIC_LENGTH - 1;
+        final int endI = paddedReadLength - 1;
         double result = myLog10SumLog10(new double[]{matchMatrix[endI][1], insertionMatrix[endI][1]});
-        for (int j = 2; j < Y_METRIC_LENGTH; j++)
+        for (int j = 2; j < paddedHaplotypeLength; j++)
             result = myLog10SumLog10(new double[]{result, matchMatrix[endI][j], insertionMatrix[endI][j]});
 
         return result;
     }
+
+    /**
+     * Initializes the matrix that holds all the constants related to the editing
+     * distance between the read and the haplotype.
+     *
+     * @param haplotypeBases the bases of the haplotype
+     * @param readBases      the bases of the read
+     * @param readQuals      the base quality scores of the read
+     * @param startIndex     where to start updating the distanceMatrix (in case this read is similar to the previous read)
+     */
+    public void initializePriors(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final int startIndex) {
+        for (int i = 0; i < readBases.length; i++) {
+            final byte x = readBases[i];
+            final byte qual = readQuals[i];
+            for (int j = startIndex; j < haplotypeBases.length; j++) {
+                final byte y = haplotypeBases[j];
+                prior[i+1][j+1] = ( x == y || x == (byte) 'N' || y == (byte) 'N' ?
+                        QualityUtils.qualToProbLog10(qual) : QualityUtils.qualToErrorProbLog10(qual) );
+            }
+        }
+    }
+
+    /**
+     * Initializes the matrix that holds all the constants related to quality scores.
+     *
+     * @param insertionGOP   insertion quality scores of the read
+     * @param deletionGOP    deletion quality scores of the read
+     * @param overallGCP     overall gap continuation penalty
+     */
+    private void initializeProbabilities(final double initialValue, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP) {
+        // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
+        for (int j = 0; j < paddedHaplotypeLength; j++) {
+            deletionMatrix[0][j] = initialValue;
+        }
+
+        for (int i = 0; i < insertionGOP.length; i++) {
+            final int qualIndexGOP = Math.min(insertionGOP[i] + deletionGOP[i], Byte.MAX_VALUE);
+            transition[i+1][0] = QualityUtils.qualToProbLog10((byte) qualIndexGOP);
+            transition[i+1][1] = QualityUtils.qualToProbLog10(overallGCP[i]);
+            transition[i+1][2] = QualityUtils.qualToErrorProbLog10(insertionGOP[i]);
+            transition[i+1][3] = QualityUtils.qualToErrorProbLog10(overallGCP[i]);
+            transition[i+1][4] = QualityUtils.qualToErrorProbLog10(deletionGOP[i]);
+            transition[i+1][5] = QualityUtils.qualToErrorProbLog10(overallGCP[i]);
+        }
+
+        // note that we initialized the constants
+        constantsAreInitialized = true;
+    }
+
 
     /**
      * Compute the log10SumLog10 of the values
@@ -134,37 +174,24 @@ public class Log10PairHMM extends PairHMM {
         return doExactLog10 ? MathUtils.log10sumLog10(values) : MathUtils.approximateLog10SumLog10(values);
     }
 
-    private void updateCell( final int indI, final int indJ, final byte[] haplotypeBases, final byte[] readBases,
-                             final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP,
-                             final double[][] matchMatrix, final double[][] insertionMatrix, final double[][] deletionMatrix ) {
+    /**
+     * Updates a cell in the HMM matrix
+     *
+     * The read and haplotype indices are offset by one because the state arrays have an extra column to hold the
+     * initial conditions
 
-        // the read and haplotype indices are offset by one because the state arrays have an extra column to hold the initial conditions
-        final int im1 = indI - 1;
-        final int jm1 = indJ - 1;
+     * @param indI             row index in the matrices to update
+     * @param indJ             column index in the matrices to update
+     * @param prior            the likelihood editing distance matrix for the read x haplotype
+     * @param transitition        an array with the six transitition relevant to this location
+     */
+    private void updateCell( final int indI, final int indJ, final double prior, final double[] transitition) {
 
-        // update the match array
-        double pBaseReadLog10 = 0.0; // Math.log10(1.0);
-        if( im1 > 0 && jm1 > 0 ) { // the emission probability is applied when leaving the state
-            final byte x = readBases[im1-1];
-            final byte y = haplotypeBases[jm1-1];
-            final byte qual = readQuals[im1-1];
-            pBaseReadLog10 = ( x == y || x == (byte) 'N' || y == (byte) 'N' ? QualityUtils.qualToProbLog10(qual) : QualityUtils.qualToErrorProbLog10(qual) );
-        }
-        final int qualIndexGOP = ( im1 == 0 ? DEFAULT_GOP + DEFAULT_GOP : ( insertionGOP[im1-1] + deletionGOP[im1-1] > MAX_CACHED_QUAL ? MAX_CACHED_QUAL : insertionGOP[im1-1] + deletionGOP[im1-1]) );
-        final double d0 = QualityUtils.qualToProbLog10((byte)qualIndexGOP);
-        final double e0 = ( im1 == 0 ? QualityUtils.qualToProbLog10(DEFAULT_GCP) : QualityUtils.qualToProbLog10(overallGCP[im1-1]) );
-        matchMatrix[indI][indJ] = pBaseReadLog10 + myLog10SumLog10(new double[]{matchMatrix[indI - 1][indJ - 1] + d0, insertionMatrix[indI - 1][indJ - 1] + e0, deletionMatrix[indI - 1][indJ - 1] + e0});
-
-        // update the X (insertion) array
-        final double d1 = ( im1 == 0 ? QualityUtils.qualToErrorProbLog10(DEFAULT_GOP) : QualityUtils.qualToErrorProbLog10(insertionGOP[im1-1]) );
-        final double e1 = ( im1 == 0 ? QualityUtils.qualToErrorProbLog10(DEFAULT_GCP) : QualityUtils.qualToErrorProbLog10(overallGCP[im1-1]) );
-        final double qBaseReadLog10 = 0.0; // Math.log10(1.0) -- we don't have an estimate for this emission probability so assume q=1.0
-        insertionMatrix[indI][indJ] = qBaseReadLog10 + myLog10SumLog10(new double[]{matchMatrix[indI - 1][indJ] + d1, insertionMatrix[indI - 1][indJ] + e1});
-
-        // update the Y (deletion) array, with penalty of zero on the left and right flanks to allow for a local alignment within the haplotype
-        final double d2 = ( im1 == 0 ) ? 0.0 : QualityUtils.qualToErrorProbLog10(deletionGOP[im1-1]);
-        final double e2 = ( im1 == 0 ) ? 0.0 : QualityUtils.qualToErrorProbLog10(overallGCP[im1-1]);
-        final double qBaseRefLog10 = 0.0; // Math.log10(1.0) -- we don't have an estimate for this emission probability so assume q=1.0
-        deletionMatrix[indI][indJ] = qBaseRefLog10 + myLog10SumLog10(new double[]{matchMatrix[indI][indJ - 1] + d2, deletionMatrix[indI][indJ - 1] + e2});
+        matchMatrix[indI][indJ] = prior +
+                myLog10SumLog10(new double[]{matchMatrix[indI - 1][indJ - 1] + transitition[0],
+                        insertionMatrix[indI - 1][indJ - 1] + transitition[1],
+                        deletionMatrix[indI - 1][indJ - 1] + transitition[1]});
+        insertionMatrix[indI][indJ] = myLog10SumLog10(new double[] {matchMatrix[indI - 1][indJ] + transitition[2], insertionMatrix[indI - 1][indJ] + transitition[3]});
+        deletionMatrix[indI][indJ]  = myLog10SumLog10(new double[] {matchMatrix[indI][indJ - 1] + transitition[4],  deletionMatrix[indI][indJ - 1] + transitition[5]});
     }
 }
