@@ -3,11 +3,47 @@
 #include <stdio.h>
 #include "common.h"
 
+#define DBG_ROWS 39
+#define DBG_COLS 246
+
+double DEBUGm[DBG_ROWS][DBG_COLS];
+double DEBUGx[DBG_ROWS][DBG_COLS];
+double DEBUGy[DBG_ROWS][DBG_COLS];
+
+void DEBUG_PRINT_MATRICES()
+{
+	FILE *fm, *fx, *fy;
+	int r, c;
+
+	fm = fopen("M.txt", "w");
+	fx = fopen("X.txt", "w");
+	fy = fopen("Y.txt", "w");
+
+	for (r = 0; r < DBG_ROWS; r++)
+	{
+		for (c = 0; c < DBG_COLS; c++)
+		{
+			fprintf(fm, "%e ", DEBUGm[r][c]);
+			fprintf(fx, "%e ", DEBUGx[r][c]);
+			fprintf(fy, "%e ", DEBUGy[r][c]);
+		}
+		fprintf(fm, "\n");
+		fprintf(fx, "\n");
+		fprintf(fy, "\n");
+	}
+
+	fclose(fm);
+	fclose(fx);
+	fclose(fy);
+}
+
 void go1(Memory *mem, unsigned long i)
 {
 	unsigned long row, col, diag, R, H;
     double *p, *m, *mp, *mpp, *x, *xp, *xpp, *y, *yp, *ypp, *ph2pr, *swapper;
     char *ins, *del, *cont, *qual, *r, *h;
+
+int jhg;
 
     H = mem->h[mem->cmpH[i]].H;
     h = mem->chunk + mem->h[mem->cmpH[i]].h;
@@ -54,6 +90,10 @@ void go1(Memory *mem, unsigned long i)
     x[0] = 0.0;
     y[0] = 0.0;
 
+	DEBUGm[0][0] = m[0];
+	DEBUGx[0][0] = x[0];
+	DEBUGy[0][0] = y[0];
+
     for (diag = 1; diag < R+H+1; diag++)
     {
         swapper = mpp; mpp = mp; mp = m; m = swapper;
@@ -77,14 +117,47 @@ void go1(Memory *mem, unsigned long i)
 						);
                 x[row] = (row == 0) ? 0.0 : mp[row-1] * p[6*row+MtoX] + xp[row-1] * p[6*row+XtoX];
                 y[row] = (col == 0) ? 0.0 : mp[row] * p[6*row+MtoY] + yp[row] * p[6*row+YtoY];
+				DEBUGm[row][col] = m[row];
+				DEBUGx[row][col] = x[row];
+				DEBUGy[row][col] = y[row];
+/*
+if (row == 3 && col == 7)
+{
+*/
+/*
+	printf("m[%d][%d] = %e\n", row, col, m[row]);
+	printf("Cuenta: dist = %e\n", ( \
+						(r[row-1] == h[col-1] || r[row-1] == 'N' || h[col-1] == 'N') ? \
+                        	1.0 - ph2pr[qual[row-1] & 127] : \
+                        	ph2pr[qual[row-1] & 127] \
+					));
+	printf("%e * %e + %e * %e + %e * %e\n", mpp[row-1], p[6*row+MtoM], xpp[row-1], p[6*row+GapToM], ypp[row-1], p[6*row+GapToM]);
+*/
+/*
+	printf("y[%d][%d] = %e\n", row, col, y[row]);
+	printf("Cuenta: %e * %e + %e * %e\n", mp[row], p[6*row+MtoY], yp[row], p[6*row+YtoY]);
+*/
+/*
+	printf("x[%d][%d] = %e\n", row, col, x[row]);
+	printf("Cuenta: %e * %e + %e * %e\n", mp[row-1], p[6*row+MtoX], xp[row-1], p[6*row+XtoX]);
+*/
+/*
+for (jhg=0;jhg<R+1;jhg++)printf("xpp[%d]=%e\n",jhg, xpp[jhg]);
+*/
+/*
+}
+*/
             }
         }
     }
 
     /*mem->res[i] = log10(m[R] + x[R] + y[R]);*/
+printf("El resultado se calcula usando %e, %e y %e\n", m[R], x[R], y[R]);
+
     mem->res[i] = log10(m[R] + x[R] + y[R]) - 300.0;
 
     free(p);
+DEBUG_PRINT_MATRICES();
 
 	return;
 }
@@ -110,10 +183,12 @@ int main(int argc, char **argv)
 	output(m.res, m.nres, argv[2]);
 	t4 = right_now();
 
+	/*
 	printf("INIT_MEMORY_TIME %e\n", 1000.0 * (t2 - t1));
 	printf("COMPUTATION_TIME %e\n", 1000.0 * (t3 - t2));
 	printf("OUTPUT_TIME %e\n", 1000.0 * (t4 - t3));
 	printf("TOTAL_TIME %e\n", 1000.0 * (t4 - t1));
+	*/
     return 0;
 }
 

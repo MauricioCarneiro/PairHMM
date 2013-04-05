@@ -1,13 +1,6 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#define MtoM 0
-#define GapToM 1
-#define MtoX 2
-#define XtoX 3
-#define MtoY 4
-#define YtoY 5
-
 typedef struct
 {
 	unsigned long nR, nH, fstR, fstH;
