@@ -33,7 +33,7 @@ import java.util.Arrays;
 /**
  * Util class for performing the pair HMM for local alignment. Figure 4.3 in Durbin 1998 book.
  *
- * User: rpoplin
+ * User: rpoplin, carneiro
  * Date: 3/1/12
  */
 public final class Log10PairHMM extends PairHMM {
@@ -62,7 +62,7 @@ public final class Log10PairHMM extends PairHMM {
      * {@inheritDoc}
      */
     @Override
-    public void initialize(final int readMaxLength,  final int haplotypeMaxLength) {
+    public void initialize(final int readMaxLength, final int haplotypeMaxLength ) {
         super.initialize(readMaxLength, haplotypeMaxLength);
 
         for( int iii=0; iii < paddedMaxReadLength; iii++ ) {
@@ -88,24 +88,32 @@ public final class Log10PairHMM extends PairHMM {
                                                                final int hapStartIndex,
                                                                final boolean recacheReadValues ) {
 
-        // don't have to initialize every time... revise this!
-        initializePriors(haplotypeBases, readBases, readQuals, hapStartIndex);
-        initializeProbabilities(Math.log10(1.0/haplotypeBases.length), insertionGOP, deletionGOP, overallGCP);
+        // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
+        final double initialValue = Math.log10(1.0 / haplotypeBases.length);
+        for( int j = 0; j < paddedHaplotypeLength; j++ ) {
+            deletionMatrix[0][j] = initialValue;
+        }
 
-        // simple rectangular version of update loop, slow
-        for( int i = 1; i < paddedReadLength; i++ ) {
-            for( int j = hapStartIndex + 1; j < paddedHaplotypeLength; j++ ) {
+        if ( ! constantsAreInitialized || recacheReadValues )
+            initializeProbabilities(insertionGOP, deletionGOP, overallGCP);
+        initializePriors(haplotypeBases, readBases, readQuals, hapStartIndex);
+
+        for (int i = 1; i < paddedReadLength; i++) {
+            // +1 here is because hapStartIndex is 0-based, but our matrices are 1 based
+            for (int j = hapStartIndex+1; j < paddedHaplotypeLength; j++) {
                 updateCell(i, j, prior[i][j], transition[i]);
             }
         }
 
-        // final probability is the log10 sum of the last element in all three state arrays
+        // final probability is the log10 sum of the last element in the Match and Insertion state arrays
+        // this way we ignore all paths that ended in deletions! (huge)
+        // but we have to sum all the paths ending in the M and I matrices, because they're no longer extended.
         final int endI = paddedReadLength - 1;
-        double result = myLog10SumLog10(new double[]{matchMatrix[endI][1], insertionMatrix[endI][1]});
+        double finalSumProbabilities = myLog10SumLog10(new double[]{matchMatrix[endI][1], insertionMatrix[endI][1]});
         for (int j = 2; j < paddedHaplotypeLength; j++)
-            result = myLog10SumLog10(new double[]{result, matchMatrix[endI][j], insertionMatrix[endI][j]});
+            finalSumProbabilities = myLog10SumLog10(new double[]{finalSumProbabilities, matchMatrix[endI][j], insertionMatrix[endI][j]});
 
-        return result;
+        return finalSumProbabilities;
     }
 
     /**
@@ -118,6 +126,10 @@ public final class Log10PairHMM extends PairHMM {
      * @param startIndex     where to start updating the distanceMatrix (in case this read is similar to the previous read)
      */
     public void initializePriors(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final int startIndex) {
+
+        // initialize the pBaseReadLog10 matrix for all combinations of read x haplotype bases
+        // Abusing the fact that java initializes arrays with 0.0, so no need to fill in rows and columns below 2.
+
         for (int i = 0; i < readBases.length; i++) {
             final byte x = readBases[i];
             final byte qual = readQuals[i];
@@ -136,12 +148,7 @@ public final class Log10PairHMM extends PairHMM {
      * @param deletionGOP    deletion quality scores of the read
      * @param overallGCP     overall gap continuation penalty
      */
-    private void initializeProbabilities(final double initialValue, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP) {
-        // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
-        for (int j = 0; j < paddedHaplotypeLength; j++) {
-            deletionMatrix[0][j] = initialValue;
-        }
-
+    private void initializeProbabilities(final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP) {
         for (int i = 0; i < insertionGOP.length; i++) {
             final int qualIndexGOP = Math.min(insertionGOP[i] + deletionGOP[i], Byte.MAX_VALUE);
             transition[i+1][0] = QualityUtils.qualToProbLog10((byte) qualIndexGOP);
@@ -183,15 +190,15 @@ public final class Log10PairHMM extends PairHMM {
      * @param indI             row index in the matrices to update
      * @param indJ             column index in the matrices to update
      * @param prior            the likelihood editing distance matrix for the read x haplotype
-     * @param transitition        an array with the six transitition relevant to this location
+     * @param transition        an array with the six transition relevant to this location
      */
-    private void updateCell( final int indI, final int indJ, final double prior, final double[] transitition) {
+    private void updateCell( final int indI, final int indJ, final double prior, final double[] transition) {
 
         matchMatrix[indI][indJ] = prior +
-                myLog10SumLog10(new double[]{matchMatrix[indI - 1][indJ - 1] + transitition[0],
-                        insertionMatrix[indI - 1][indJ - 1] + transitition[1],
-                        deletionMatrix[indI - 1][indJ - 1] + transitition[1]});
-        insertionMatrix[indI][indJ] = myLog10SumLog10(new double[] {matchMatrix[indI - 1][indJ] + transitition[2], insertionMatrix[indI - 1][indJ] + transitition[3]});
-        deletionMatrix[indI][indJ]  = myLog10SumLog10(new double[] {matchMatrix[indI][indJ - 1] + transitition[4],  deletionMatrix[indI][indJ - 1] + transitition[5]});
+                myLog10SumLog10(new double[]{matchMatrix[indI - 1][indJ - 1] + transition[0],
+                                         insertionMatrix[indI - 1][indJ - 1] + transition[1],
+                                          deletionMatrix[indI - 1][indJ - 1] + transition[1]});
+        insertionMatrix[indI][indJ] = myLog10SumLog10(new double[] {matchMatrix[indI - 1][indJ] + transition[2], insertionMatrix[indI - 1][indJ] + transition[3]});
+        deletionMatrix[indI][indJ]  = myLog10SumLog10(new double[] {matchMatrix[indI][indJ - 1] + transition[4],  deletionMatrix[indI][indJ - 1] + transition[5]});
     }
 }

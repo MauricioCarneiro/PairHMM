@@ -80,8 +80,15 @@ public class LoglessPairHMM extends PairHMM {
                                                                final byte[] overallGCP,
                                                                final int hapStartIndex,
                                                                final boolean recacheReadValues ) {
+
+        final double initialValue = INITIAL_CONDITION / haplotypeBases.length;
+        // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
+        for( int j = 0; j < paddedHaplotypeLength; j++ ) {
+            deletionMatrix[0][j] = initialValue;
+        }
+
         if ( ! constantsAreInitialized || recacheReadValues )
-            initializeProbabilities(INITIAL_CONDITION / haplotypeBases.length, insertionGOP, deletionGOP, overallGCP);
+            initializeProbabilities(insertionGOP, deletionGOP, overallGCP);
         initializePriors(haplotypeBases, readBases, readQuals, hapStartIndex);
 
         for (int i = 1; i < paddedReadLength; i++) {
@@ -134,12 +141,7 @@ public class LoglessPairHMM extends PairHMM {
      * @param deletionGOP    deletion quality scores of the read
      * @param overallGCP     overall gap continuation penalty
      */
-    private void initializeProbabilities(final double initialValue, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP) {
-        // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
-        for( int j = 0; j < paddedHaplotypeLength; j++ ) {
-            deletionMatrix[0][j] = initialValue;
-        }
-
+    private void initializeProbabilities(final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP) {
         for (int i = 0; i < insertionGOP.length; i++) {
             final int qualIndexGOP = Math.min(insertionGOP[i] + deletionGOP[i], Byte.MAX_VALUE);
             transition[i+1][0] = QualityUtils.qualToProb((byte) qualIndexGOP);
