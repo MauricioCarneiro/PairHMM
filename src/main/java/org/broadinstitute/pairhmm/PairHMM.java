@@ -45,7 +45,7 @@ public abstract class PairHMM {
     protected double[][] prior = null;      // The prior probabilities cache
     protected boolean constantsAreInitialized = false;
 
-    private byte[] previousHaplotypeBases;
+    protected byte[] previousHaplotypeBases;
 
 
 

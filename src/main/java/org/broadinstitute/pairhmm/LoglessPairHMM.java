@@ -81,10 +81,12 @@ public class LoglessPairHMM extends PairHMM {
                                                                final int hapStartIndex,
                                                                final boolean recacheReadValues ) {
 
-        final double initialValue = INITIAL_CONDITION / haplotypeBases.length;
-        // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
-        for( int j = 0; j < paddedHaplotypeLength; j++ ) {
-            deletionMatrix[0][j] = initialValue;
+        if (previousHaplotypeBases == null || previousHaplotypeBases.length != haplotypeBases.length) {
+            final double initialValue = INITIAL_CONDITION / haplotypeBases.length;
+            // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
+            for( int j = 0; j < paddedHaplotypeLength; j++ ) {
+                deletionMatrix[0][j] = initialValue;
+            }
         }
 
         if ( ! constantsAreInitialized || recacheReadValues )
@@ -165,14 +167,14 @@ public class LoglessPairHMM extends PairHMM {
      * @param indI             row index in the matrices to update
      * @param indJ             column index in the matrices to update
      * @param prior            the likelihood editing distance matrix for the read x haplotype
-     * @param transitition        an array with the six transitition relevant to this location
+     * @param transition        an array with the six transition relevant to this location
      */
-    private void updateCell( final int indI, final int indJ, final double prior, final double[] transitition) {
+    private void updateCell( final int indI, final int indJ, final double prior, final double[] transition) {
 
-        matchMatrix[indI][indJ] = prior * ( matchMatrix[indI - 1][indJ - 1] * transitition[0] +
-                                                 insertionMatrix[indI - 1][indJ - 1] * transitition[1] +
-                                                 deletionMatrix[indI - 1][indJ - 1] * transitition[1] );
-        insertionMatrix[indI][indJ] = matchMatrix[indI - 1][indJ] * transitition[2] + insertionMatrix[indI - 1][indJ] * transitition[3];
-        deletionMatrix[indI][indJ] = matchMatrix[indI][indJ - 1] * transitition[4] + deletionMatrix[indI][indJ - 1] * transitition[5];
+        matchMatrix[indI][indJ] = prior * ( matchMatrix[indI - 1][indJ - 1] * transition[0] +
+                                                 insertionMatrix[indI - 1][indJ - 1] * transition[1] +
+                                                 deletionMatrix[indI - 1][indJ - 1] * transition[1] );
+        insertionMatrix[indI][indJ] = matchMatrix[indI - 1][indJ] * transition[2] + insertionMatrix[indI - 1][indJ] * transition[3];
+        deletionMatrix[indI][indJ] = matchMatrix[indI][indJ - 1] * transition[4] + deletionMatrix[indI][indJ - 1] * transition[5];
     }
 }

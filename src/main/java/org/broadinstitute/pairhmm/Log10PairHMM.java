@@ -88,10 +88,12 @@ public final class Log10PairHMM extends PairHMM {
                                                                final int hapStartIndex,
                                                                final boolean recacheReadValues ) {
 
-        // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
-        final double initialValue = Math.log10(1.0 / haplotypeBases.length);
-        for( int j = 0; j < paddedHaplotypeLength; j++ ) {
-            deletionMatrix[0][j] = initialValue;
+        if (previousHaplotypeBases == null || previousHaplotypeBases.length != haplotypeBases.length) {
+            // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
+            final double initialValue = Math.log10(1.0 / haplotypeBases.length);
+            for( int j = 0; j < paddedHaplotypeLength; j++ ) {
+                deletionMatrix[0][j] = initialValue;
+            }
         }
 
         if ( ! constantsAreInitialized || recacheReadValues )
