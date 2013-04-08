@@ -90,7 +90,7 @@ public abstract class PairHMM {
         deletionMatrix = new double[paddedMaxReadLength][paddedMaxHaplotypeLength];
 
         previousHaplotypeBases = null;
-
+        constantsAreInitialized = false;
         initialized = true;
     }
 
