@@ -139,8 +139,9 @@ public abstract class PairHMM {
         paddedReadLength = readBases.length + 1;
         paddedHaplotypeLength = haplotypeBases.length + 1;
 
-        if (previousHaplotypeBases != null && haplotypeBases.length != previousHaplotypeBases.length)
-            hapStartIndex =  0;
+        // override the haplotype start index in case the previous haplotype had different length or this is a new read
+        hapStartIndex =  (previousHaplotypeBases == null || haplotypeBases.length != previousHaplotypeBases.length || recacheReadValues) ? 0 : hapStartIndex;
+
 
         double result = subComputeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
 
