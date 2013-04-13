@@ -57,34 +57,28 @@ struct PubVars
 template <int ROWS, int DIAGS, int BUFFSIZE>
 __device__ inline void flush_buffer(PubVars<ROWS, DIAGS, BUFFSIZE> &pv)
 {
-	__syncthreads();
 	for (int k = TID; k < pv.buffsz; k += NTH)
 	{
 		pv.g_lastM[pv.buffstart + k] = pv.buffM[k];
 		pv.g_lastX[pv.buffstart + k] = pv.buffX[k];
 		pv.g_lastY[pv.buffstart + k] = pv.buffY[k];
 	}
-	__syncthreads();
 }
 
 template <int ROWS, int DIAGS, int BUFFSIZE>
 __device__ inline void load_previous_results(int &j, PubVars<ROWS, DIAGS, BUFFSIZE> &pv)
 {
-	__syncthreads();
 	for (int c = ((j == 0) ? 1 : 0) + TID; c < MIN(pv.H + 1 - j * DIAGS, DIAGS) + 1; c += NTH)
 	{
 		pv.lastM[c] = pv.g_lastM[j * DIAGS + c - 1];
 		pv.lastX[c] = pv.g_lastX[j * DIAGS + c - 1];
 		pv.lastY[c] = pv.g_lastY[j * DIAGS + c - 1];
 	}
-	__syncthreads();
 }
 
 template <int ROWS, int DIAGS, int BUFFSIZE>
 __device__ inline void load_hap_data(int &j, PubVars<ROWS, DIAGS, BUFFSIZE> &pv)
 {
-	__syncthreads();
-
 	if (TID < DIAGS)
 		for (int c = TID; c < ROWS - 1; c += DIAGS)
 			pv.h[c] = pv.h[c + DIAGS];
@@ -93,15 +87,11 @@ __device__ inline void load_hap_data(int &j, PubVars<ROWS, DIAGS, BUFFSIZE> &pv)
 
 	for (int c = ((j == 0) ? 1 : 0) + TID; c < MIN(DIAGS, pv.H + 1 - j * DIAGS); c += NTH)
 		pv.h[ROWS - 1 + c] = pv.chunk[pv.hap.h + j * DIAGS + c - 1];
-
-	__syncthreads();
 }
 
 template <int ROWS, int DIAGS, int BUFFSIZE>
 __device__ inline void load_read_data(int &i, PubVars<ROWS, DIAGS, BUFFSIZE> &pv)
 {
-	__syncthreads();
-
 	for (int r = ((i == 0) ? 1 : 0) + TID; r < MIN(ROWS, pv.R + 1 - i * ROWS); r += NTH)
 	{
 		pv.r[r] = pv.chunk[pv.rs.r + i * ROWS + r - 1];
@@ -110,8 +100,6 @@ __device__ inline void load_read_data(int &i, PubVars<ROWS, DIAGS, BUFFSIZE> &pv
 		pv.d[r] = pv.chunk[pv.rs.del + i * ROWS + r - 1];
 		pv.c[r] = pv.chunk[pv.rs.cont + i * ROWS + r - 1];
 	}
-
-	__syncthreads();
 }
 
 template <int ROWS, int DIAGS, int BUFFSIZE>
@@ -240,16 +228,11 @@ __device__ inline void rotatediags(PubVars<ROWS, DIAGS, BUFFSIZE> &pv)
 template <int ROWS, int DIAGS, int BUFFSIZE>
 __device__ inline void block(int &i, int &j, PubVars<ROWS, DIAGS, BUFFSIZE> &pv)
 {
-	__syncthreads();
-
 	if (i > 0)
-	{
 		load_previous_results<ROWS, DIAGS, BUFFSIZE>(j, pv);
-		__syncthreads();
-	}
 
-	__syncthreads();
 	load_hap_data<ROWS, DIAGS, BUFFSIZE>(j, pv);
+
 	__syncthreads();
 
 	int nRows = MIN(ROWS, (int)(pv.R + 1 - i * ROWS));
@@ -291,11 +274,10 @@ __device__ inline void block(int &i, int &j, PubVars<ROWS, DIAGS, BUFFSIZE> &pv)
 		}
 
 		__syncthreads();
+
 		if (pv.buffsz == BUFFSIZE)
 		{
-			__syncthreads();
 			flush_buffer<ROWS, DIAGS, BUFFSIZE>(pv);
-			__syncthreads();
 
 			if (TID == 0)
 			{
@@ -305,7 +287,6 @@ __device__ inline void block(int &i, int &j, PubVars<ROWS, DIAGS, BUFFSIZE> &pv)
 			__syncthreads();
 		}
 
-		__syncthreads();
 		if (TID == 0)
 			rotatediags<ROWS, DIAGS, BUFFSIZE>(pv);
 
@@ -321,10 +302,8 @@ __global__ void compare(Memory mem, dbl *g_lastLinesArr, int *g_lastLinesIndex, 
 	__shared__ PubVars<ROWS, DIAGS, BUFFSIZE> pv;
 	__shared__ int compIndex;
 
-	__syncthreads();
 	for (int i = TID; i < 128; i += NTH)
 		pv.ph2pr[i] = pow(10.0, -((double) i) / 10.0);
-	__syncthreads();
 
 	if (TID == 0)
 	{
@@ -339,9 +318,9 @@ __global__ void compare(Memory mem, dbl *g_lastLinesArr, int *g_lastLinesIndex, 
 
 	for (;;)
 	{
-		__syncthreads();
 		if (TID == 0)
 			compIndex = atomicAdd(g_compIndex, 1);
+
 		__syncthreads();
 
 		if (compIndex >= mem.nres)
@@ -366,23 +345,23 @@ __global__ void compare(Memory mem, dbl *g_lastLinesArr, int *g_lastLinesIndex, 
 
 		for (int i = 0; i < pv.nblockrows; i++)
 		{
-			__syncthreads();
 			load_read_data<ROWS, DIAGS, BUFFSIZE>(i, pv);
-			__syncthreads();
+
 			if (TID == 0)
 			{
 				pv.buffstart = 0;
 				pv.buffsz = 0;
 			}
+
 			__syncthreads();
+
 			for (int j = 0; j < pv.nblockcols; j++)
 			{
-				__syncthreads();
 				block<ROWS, DIAGS, BUFFSIZE>(i, j, pv);
 				__syncthreads();
 			}
-			__syncthreads();
 			flush_buffer<ROWS, DIAGS, BUFFSIZE>(pv);
+
 			__syncthreads();
 		}
 
