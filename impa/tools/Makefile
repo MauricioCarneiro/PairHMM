@@ -1,4 +1,4 @@
-all:	matcmp statistics curr2cuda extract_answers timeformatter
+all:	matcmp statistics curr2cuda extract_answers timeformatter firstnotacceptable
 
 matcmp:	.FORCE
 	g++ matcmp.cc -O2 -W -Wall -fopenmp -pedantic -o matcmp -lgomp -lm
@@ -15,8 +15,11 @@ extract_answers:	.FORCE
 timeformatter:	.FORCE
 	gcc timeformatter.c -O2 -W -Wall -fopenmp -pedantic -o timeformatter -lgomp -lm
 
+firstnotacceptable:	.FORCE
+	g++ firstnotacceptable.cc -O2 -W -Wall -fopenmp -pedantic -o firstnotacceptable -lgomp -lm
+
 clean:
-	rm -f matcmp statistics curr2cuda extract_answers timeformatter
+	rm -f matcmp statistics curr2cuda extract_answers timeformatter firstnotacceptable
 
 .FORCE:
 

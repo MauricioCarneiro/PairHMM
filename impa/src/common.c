@@ -211,4 +211,3 @@ void output(double *r, unsigned long nr, const char *filename)
     fclose(f);
 }
 
-

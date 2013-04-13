@@ -14,7 +14,7 @@ cc:	.FORCE
 	g++ pairhmm.cc common.c -O2 -W -Wall -fopenmp -pedantic -o pairhmm-cc -lgomp -lm
 
 clean:
-	rm -f pairhmm-c pairhmm-cuda pairhmm-cc *.o common.cu
+	rm -f pairhmm-cuda pairhmm-cc *.o common.cu
 
 .FORCE:
 
