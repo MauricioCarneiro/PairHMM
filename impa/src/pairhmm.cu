@@ -12,9 +12,27 @@ typedef unsigned long ul;
 typedef unsigned char uc;
 typedef double dbl;
 
+#ifndef BLOCKWIDTH
+	#define BLOCKWIDTH 96
+#endif
+
+#ifndef BLOCKHEIGHT
+	#define BLOCKHEIGHT 3
+#endif
+
+#ifndef COMPROWS
+	#define COMPROWS BLOCKWIDTH
+#endif
+
+#ifndef COMPDIAGS
+	#define COMPDIAGS 60
+#endif
+
+#ifndef COMPBUFFSIZE
+	#define COMPBUFFSIZE 30
+#endif
+
 #define MIN(a,b) (((a)<(b))?(a):(b))
-#define BLOCKWIDTH 96
-#define BLOCKHEIGHT 3
 #define PARALLELMXY (BLOCKHEIGHT == 3)
 #define TX (threadIdx.x)
 #define TY (threadIdx.y)
@@ -24,10 +42,10 @@ typedef double dbl;
 #define THREADX (threadIdx.y == 1)
 #define THREADY (threadIdx.y == 2)
 
-#define MAX_COMPARISONS_PER_SPLIT ((unsigned long) 39000)
+#define MAX_COMPARISONS_PER_SPLIT ((unsigned long) 73000)
 #define MAX_H 5120
 #define MAX_R 1536
-#define MAX_SIMULTANEOUS_BLOCKS 112
+#define MAX_SIMULTANEOUS_BLOCKS 150
 
 template<ul ROWS, ul DIAGS, ul BUFFSIZE>
 struct PubVars
@@ -460,6 +478,16 @@ int main(int argc, char **argv)
 
 	init_memory(argv[1], &h_big);
 
+	/*
+	fprintf(stderr, "\n");
+	fprintf(stderr, "BLOCKWIDTH=%d\n", BLOCKWIDTH);
+	fprintf(stderr, "BLOCKHEIGHT=%d\n", BLOCKHEIGHT);
+	fprintf(stderr, "COMPROWS=%d\n", COMPROWS);
+	fprintf(stderr, "COMPDIAGS=%d\n", COMPDIAGS);
+	fprintf(stderr, "COMPBUFFSIZE=%d\n", COMPBUFFSIZE);
+	exit(0);
+	*/
+
 	h_small.r = (ReadSequence *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(ReadSequence));
 	h_small.h = (Haplotype *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(Haplotype));
 	h_small.chunk = (char *) malloc(MAX_COMPARISONS_PER_SPLIT * (MAX_H + MAX_R * 5));
@@ -513,7 +541,7 @@ int main(int argc, char **argv)
 		cudaMemcpy(d_mem.cmpR, h_small.cmpR, h_small.nres * sizeof(ul), cudaMemcpyHostToDevice);
 		dim3 gridDim(MAX_SIMULTANEOUS_BLOCKS);
 		dim3 blockDim(BLOCKWIDTH, BLOCKHEIGHT);
-		compare<BLOCKWIDTH, 60, 30><<<gridDim, blockDim>>>(d_mem, g_lastlines, g_lastLinesIndex, g_compIndex);
+		compare<COMPROWS, COMPDIAGS, COMPBUFFSIZE><<<gridDim, blockDim>>>(d_mem, g_lastlines, g_lastLinesIndex, g_compIndex);
 		cudaMemcpy(h_big.res + already, d_mem.res, d_mem.nres * sizeof(dbl), cudaMemcpyDeviceToHost);
 		already += d_mem.nres;
 	}

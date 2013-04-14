@@ -1,0 +1,38 @@
+eric@viete:~/Desktop/PairHMM/rep/PairHMM/impa/src$ ./manytests.sh 
+Testing the case BLOCKSIZE=32x1, COMPROWS=32, COMPDIAGS=30, COMPBUFFSIZE=30
+    compiling...done
+    executing...done
+    biggest error: 2.344392
+    time: 1m 48.760s
+Testing the case BLOCKSIZE=32x3, COMPROWS=32, COMPDIAGS=30, COMPBUFFSIZE=30
+    compiling...done
+    executing...done
+    biggest error: 2.344392
+    time: 1m 45.460s
+Testing the case BLOCKSIZE=64x1, COMPROWS=64, COMPDIAGS=30, COMPBUFFSIZE=30
+    compiling...done
+    executing...done
+    biggest error: 2.344392
+    time: 1m 14.590s
+Testing the case BLOCKSIZE=64x3, COMPROWS=64, COMPDIAGS=30, COMPBUFFSIZE=30
+    compiling...done
+    executing...done
+    biggest error: 2.344392
+    time: 1m 23.890s
+Testing the case BLOCKSIZE=96x1, COMPROWS=96, COMPDIAGS=30, COMPBUFFSIZE=30
+    compiling...done
+    executing...done
+    biggest error: 2.344392
+    time: 1m 23.350s
+Testing the case BLOCKSIZE=96x3, COMPROWS=96, COMPDIAGS=30, COMPBUFFSIZE=30
+    compiling...done
+    executing...done
+    biggest error: 2.344392
+    time: 1m 18.600s
+eric@viete:~/Desktop/PairHMM/rep/PairHMM/impa/src$ ./manytests.sh 
+Testing the case BLOCKSIZE=96x3, COMPROWS=96, COMPDIAGS=60, COMPBUFFSIZE=30
+    compiling...done
+    executing...done
+    biggest error: 2.344392
+    time: 1m 17.030s
+
