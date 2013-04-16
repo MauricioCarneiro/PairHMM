@@ -54,8 +54,19 @@ import org.broadinstitute.utils.QualityUtils;
  * Date: 10/16/12
  */
 public class LoglessPairHMM extends PairHMM {
-    protected static final double INITIAL_CONDITION = Math.pow(2, 1020);
-    protected static final double INITIAL_CONDITION_LOG10 = Math.log10(INITIAL_CONDITION);
+    private static final double INITIAL_CONDITION = Math.pow(2, 1020);
+    private static final double INITIAL_CONDITION_LOG10 = Math.log10(INITIAL_CONDITION);
+
+    // array declarations for arrays implementation
+    private double[] currentMatchArray = null;
+    private double[] currentDeleteArray = null;
+    private double[] currentInsertArray = null;
+    private double[] parentMatchArray = null;
+    private double[] parentDeleteArray = null;
+    private double[] parentInsertArray = null;
+    private double[] grandparentMatchArray = null;
+    private double[] grandparentDeleteArray = null;
+    private double[] grandparentInsertArray = null;
 
     /**
      * {@inheritDoc}
@@ -81,34 +92,102 @@ public class LoglessPairHMM extends PairHMM {
                                                                final int hapStartIndex,
                                                                final boolean recacheReadValues ) {
 
-        if (previousHaplotypeBases == null || previousHaplotypeBases.length != haplotypeBases.length) {
-            final double initialValue = INITIAL_CONDITION / haplotypeBases.length;
-            // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
-            for( int j = 0; j < paddedHaplotypeLength; j++ ) {
-                deletionMatrix[0][j] = initialValue;
-            }
-        }
-
+        // There were no brackets around this if statement in master. Error?
         if ( ! constantsAreInitialized || recacheReadValues )
             initializeProbabilities(insertionGOP, deletionGOP, overallGCP);
         initializePriors(haplotypeBases, readBases, readQuals, hapStartIndex);
 
-        for (int i = 1; i < paddedReadLength; i++) {
-            // +1 here is because hapStartIndex is 0-based, but our matrices are 1 based
-            for (int j = hapStartIndex+1; j < paddedHaplotypeLength; j++) {
-                updateCell(i, j, prior[i][j], transition[i]);
-            }
-        }
+        // Array implementation. Start by initializing some array parameters
+        // Number of diagonals for a matrix  = rows + cols - 1;
+        final int maxDiagonals = readBases.length + haplotypeBases.length - 1;
+        // Size of each array.
+        final int arrayLength = Math.min(paddedReadLength,paddedHaplotypeLength);
+        // Padding value for the deletion array. Let's us have free deletions at the beginning
+        final double initialValue = INITIAL_CONDITION / haplotypeBases.length;
+        // The number of cells to fill in for the current arrays. Set dynamically.
+        int maxFill;
+        // The position of the arrays to be updated
+        int arrayIndex;
+        // The coordinate in our priors and transition matrices corresponding to a given position in the read/haplotype alignment
+        int matrixRow;
+        int matrixCol;
+        // The final answer prior to log10 correction
+        double finalArraySumProbabilities = 0.0;
 
-        // final probability is the log10 sum of the last element in the Match and Insertion state arrays
-        // this way we ignore all paths that ended in deletions! (huge)
-        // but we have to sum all the paths ending in the M and I matrices, because they're no longer extended.
-        final int endI = paddedReadLength - 1;
-        double finalSumProbabilities = 0.0;
-        for (int j = 1; j < paddedHaplotypeLength; j++) {
-            finalSumProbabilities += matchMatrix[endI][j] + insertionMatrix[endI][j];
+        // Initialize all arrays
+        // array[readBases.length] is a padding cell, initialized to zero.
+        currentMatchArray = new double[arrayLength];
+        currentDeleteArray = new double[arrayLength];
+        currentInsertArray = new double[arrayLength];
+
+        parentMatchArray = new double[arrayLength];
+        parentDeleteArray = new double[arrayLength];
+        parentInsertArray = new double[arrayLength];
+
+        grandparentMatchArray = new double[arrayLength];
+        grandparentDeleteArray = new double[arrayLength];
+        grandparentInsertArray = new double[arrayLength];
+
+        // Declare some temporary array pointers for use in rotating array references in loop
+        double[] tempMatchArray = null;
+        double[] tempDeleteArray = null;
+        double[] tempInsertArray = null;
+
+        // Pad the deletion arrays. Akin to padding the first row in the deletion matrix
+        // Insert and match arrays are padded as well, but all padding is '0', set when arrays initialized.
+        parentDeleteArray[readBases.length] = initialValue;
+        grandparentDeleteArray[readBases.length] = initialValue;
+        currentDeleteArray[readBases.length] = initialValue;
+
+        // Perform dynamic programming using arrays, as if over diagonals of a hypothetical matrix
+        for (int i = 1; i <= maxDiagonals; i++) {
+            //currentMatchArray = new double[paddedReadLength];
+            //currentDeleteArray = new double[paddedReadLength];
+            //currentInsertArray = new double[paddedReadLength];
+            // how many cells of the new arrays are we updating? Remember arrays contain 1 extra cell of terminal padding
+            maxFill = (i > haplotypeBases.length) ? (readBases.length + haplotypeBases.length - i) : Math.min(i, arrayLength - 1);
+            // fill in the cells for our new arrays
+            for (int j = 0; j < maxFill; j++) {
+                // find the array index, translate into [matrixRow][matrixCol] coordinates for our priors matrix.
+                if (i > haplotypeBases.length){
+                    arrayIndex = j;
+                    matrixRow = maxDiagonals - haplotypeBases.length - j;
+                }
+                else {
+                    arrayIndex =  readBases.length - j - 1;
+                    matrixRow = j;
+                }
+                matrixCol = i - matrixRow - 1;
+
+                // update cell for each of our new arrays. Prior, transition matrices are padded +1 row,col
+                updateArrayCell(arrayIndex, prior[matrixRow+1][matrixCol+1], transition[matrixRow+1]);
+            }
+
+            // final probability is the log10 sum of the last element in the Match and Insertion state arrays
+            // this way we ignore all paths that ended in deletions! (huge)
+            // but we have to sum all the paths ending in the M and I arrays, because they're no longer extended.
+            // Where i > readBases.length, array[0] corresponds to bottom row of a [read] x [haplotype] matrix. Otherwise is assumed to be zero (padding)
+            finalArraySumProbabilities += currentInsertArray[0] + currentMatchArray[0];
+
+            // rotate array references
+            tempMatchArray = grandparentMatchArray;
+            tempDeleteArray = grandparentDeleteArray;
+            tempInsertArray = grandparentInsertArray;
+
+            grandparentMatchArray = parentMatchArray;
+            grandparentDeleteArray = parentDeleteArray;
+            grandparentInsertArray = parentInsertArray;
+
+            parentMatchArray = currentMatchArray;
+            parentDeleteArray = currentDeleteArray;
+            parentInsertArray = currentInsertArray;
+
+            currentMatchArray = tempMatchArray;
+            currentDeleteArray = tempDeleteArray;
+            currentInsertArray = tempInsertArray;
         }
-        return Math.log10(finalSumProbabilities) - INITIAL_CONDITION_LOG10;
+        //return result
+        return Math.log10(finalArraySumProbabilities) - INITIAL_CONDITION_LOG10;
     }
 
     /**
@@ -159,22 +238,19 @@ public class LoglessPairHMM extends PairHMM {
     }
 
     /**
-     * Updates a cell in the HMM matrix
+     * Updates a cell in the HMM arrays
      *
-     * The read and haplotype indices are offset by one because the state arrays have an extra column to hold the
-     * initial conditions
-
-     * @param indI             row index in the matrices to update
-     * @param indJ             column index in the matrices to update
+     * @param indK             index in the arrays to update
      * @param prior            the likelihood editing distance matrix for the read x haplotype
-     * @param transition        an array with the six transition relevant to this location
+     * @param transition       an array with the six transition relevant to this location
      */
-    private void updateCell( final int indI, final int indJ, final double prior, final double[] transition) {
+    private void updateArrayCell( final int indK, final double prior, final double[] transition) {
 
-        matchMatrix[indI][indJ] = prior * ( matchMatrix[indI - 1][indJ - 1] * transition[0] +
-                                                 insertionMatrix[indI - 1][indJ - 1] * transition[1] +
-                                                 deletionMatrix[indI - 1][indJ - 1] * transition[1] );
-        insertionMatrix[indI][indJ] = matchMatrix[indI - 1][indJ] * transition[2] + insertionMatrix[indI - 1][indJ] * transition[3];
-        deletionMatrix[indI][indJ] = matchMatrix[indI][indJ - 1] * transition[4] + deletionMatrix[indI][indJ - 1] * transition[5];
+        currentMatchArray[indK] = prior * ( grandparentMatchArray[indK + 1] * transition[0] +
+                grandparentInsertArray[indK + 1] * transition[1] +
+                grandparentDeleteArray[indK + 1] * transition[1] );
+        currentInsertArray[indK] = parentMatchArray[indK + 1] * transition[2] + parentInsertArray[indK + 1] * transition[3];
+        currentDeleteArray[indK] = parentMatchArray[indK] * transition[4] + parentDeleteArray[indK] * transition[5];
     }
+
 }
