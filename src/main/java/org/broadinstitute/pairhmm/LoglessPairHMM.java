@@ -177,4 +177,82 @@ public class LoglessPairHMM extends PairHMM {
         insertionMatrix[indI][indJ] = matchMatrix[indI - 1][indJ] * transition[2] + insertionMatrix[indI - 1][indJ] * transition[3];
         deletionMatrix[indI][indJ] = matchMatrix[indI][indJ - 1] * transition[4] + deletionMatrix[indI][indJ - 1] * transition[5];
     }
+
+    /**
+     * Brad Taylor, 4/26/13
+     * A dummy method for playing around with looping for the arrays implementation
+     *
+     * Made this to check that I was setting i,j,k,X,Y correctly (appears so)
+     * Updates arrays in place of a 4x6 dynamic programming table. Does this correctly.
+     *
+     * Next step is to integrate this into subCompute..., fixing array allocation and padding
+     * Then:
+     *        Write array cell update computation method
+     *        Deal with the End state
+     *        Figure out how to sum up probabilities for the final result
+     */
+    private void btArrayScratch() {
+        // values for a dummy 4x6 matrix
+        int rows = 4;
+        int cols = 6;
+
+        // Number of diagonals for a matrix  = rows + cols - 1;
+        final int maxDiagonals = rows + cols - 1;
+        int maxFill = 0;
+        int k = 0;
+        int X = 0;
+        int Y = 0;
+
+        // Initialize pre-Arrays, so our updates have something to work with
+        int[] oldMatch = {0,0,0,10,10};
+        int[] oldoldMatch = {0,0,0,0,0};
+        int[] oldDelete = {0,0,0,0,0};
+        int[] oldInsert = {0,0,0,0,0};
+
+        // some dummy padding values.
+        int verticalPAD = 10;
+        int horizontalPAD = 10;
+        int matchPAD = 20;
+
+        // Perform dynamic programming using arrays, as if over diagonals of a hypothetical matrix
+        for (int i = 1; i <= maxDiagonals; i++) {
+            // allocate new arrays for this diagonal
+            int[] newMatch = {0,0,0,0,0};
+            int[] newDelete = {0,0,0,0,0};
+            int[] newInsert = {0,0,0,0,0};
+            // how many cells of the new arrays are we updating?
+            maxFill = (i > cols) ? (rows + cols - i) : Math.min(i, rows);
+            // fill in the cells for our new arrays
+            for (int j = 0; j < maxFill; j++) {
+                // find the array index, translate into coordinates for an X x Y matrix (eventually for priors)
+                if (i > cols){
+                    k = j;
+                    X = maxDiagonals - cols - j;
+                }
+                else {
+                    k =  rows - j - 1;
+                    X = j;
+                }
+                Y = i - X - 1;
+
+                // update our matrix cells. Not the real update math.
+                // just concerned for now with array index. Will write real updates after integration into HMM
+                newDelete[k] = oldDelete[k+1]+1;
+                newInsert[k] = oldInsert[k]+1;
+                newMatch[k] = oldoldMatch[k+1]+1;
+            }
+            // set array padding, so that updates work. akin to adding a pad row, column to a matrix
+            newDelete[rows] = verticalPAD;
+            newMatch[rows] = matchPAD;
+            if (k > 0 && i <= cols) {
+                newMatch[k-1] = matchPAD;
+                newInsert[k-1] = horizontalPAD;
+            }
+            // update array references
+            oldoldMatch = oldMatch;
+            oldMatch = newMatch;
+            oldDelete = newDelete;
+            oldInsert = newInsert;
+        }
+    }
 }
