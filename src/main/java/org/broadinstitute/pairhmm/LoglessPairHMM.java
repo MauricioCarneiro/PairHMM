@@ -57,6 +57,15 @@ public class LoglessPairHMM extends PairHMM {
     protected static final double INITIAL_CONDITION = Math.pow(2, 1020);
     protected static final double INITIAL_CONDITION_LOG10 = Math.log10(INITIAL_CONDITION);
 
+    // array declarations for arrays implementation
+    double[] newMatch = null;
+    double[] newDelete = null;
+    double[] newInsert = null;
+    double[] oldMatch = null;
+    double[] oldoldMatch = null;
+    double[] oldDelete = null;
+    double[] oldInsert = null;
+
     /**
      * {@inheritDoc}
      */
@@ -108,6 +117,70 @@ public class LoglessPairHMM extends PairHMM {
         for (int j = 1; j < paddedHaplotypeLength; j++) {
             finalSumProbabilities += matchMatrix[endI][j] + insertionMatrix[endI][j];
         }
+
+        // Array implementation.  Leaving original in for now, for comparison testing.
+        // initialize some array parameters
+        // Number of diagonals for a matrix  = rows + cols - 1;
+        int maxDiagonals = readBases.length + haplotypeBases.length - 1;
+        int maxFill;
+        int k;
+        int X;
+        int Y;
+        //double finalSumProbabilities = 0.0;
+
+        // Initialize pre-Arrays, so our updates have something to work with
+        // arrays are 1 longer than min(readBases.length, haplotypeBases.length) == paddedReadLength
+        // array[readBases.length] is a padding cell, initialized to zero.
+        oldMatch= new double[paddedReadLength];
+        oldoldMatch = new double[paddedReadLength];
+        oldDelete = new double[paddedReadLength];
+        oldInsert = new double[paddedReadLength];
+
+        // Padding value for the deletion array. Let's us have free deletions at the beginning
+        final double initialValue = INITIAL_CONDITION / haplotypeBases.length;
+
+        // Perform dynamic programming using arrays, as if over diagonals of a hypothetical matrix
+        for (int i = 1; i <= maxDiagonals; i++) {
+            // allocate new arrays for this diagonal
+            newMatch = new double[paddedReadLength];
+            newDelete = new double[paddedReadLength];
+            newInsert = new double[paddedReadLength];
+            // how many cells of the new arrays are we updating? Note- this assumes readBases.length always < haploypeBases.length
+            maxFill = (i > haplotypeBases.length) ? (readBases.length + haplotypeBases.length - i) : Math.min(i, readBases.length);
+            // fill in the cells for our new arrays
+            for (int j = 0; j < maxFill; j++) {
+                // find the array index, translate into X,Y coordinates for our priors matrix.
+                // TODO- priors matrix is padded. Will probably have to +1 both X and Y
+                if (i > haplotypeBases.length){
+                    k = j;
+                    X = maxDiagonals - haplotypeBases.length - j;
+                }
+                else {
+                    k =  readBases.length - j - 1;
+                    X = j;
+                }
+                Y = i - X - 1;
+
+                // update cell for each of our new arrays
+                updateArrayCell(k, prior[X][Y], transition[X]);
+            }
+            // Pad the deletion array. Akin to padding the first row in the deletion matrix
+            // Insert and match arrays are padded as well, but all padding is '0', set when arrays initialized.
+            newDelete[readBases.length] = initialValue;
+
+            // final probability is the log10 sum of the last element in the Match and Insertion state arrays
+            // this way we ignore all paths that ended in deletions! (huge)
+            // but we have to sum all the paths ending in the M and I arrays, because they're no longer extended.
+            // Where i > readBases.length, array[0] corresponds to bottom row of a [read] x [haplotype] matrix. Otherwise is assumed to be zero (padding)
+            //finalSumProbabilities += newInsert[0] + newMatch[0];
+
+            // update array references
+            oldoldMatch = oldMatch;
+            oldMatch = newMatch;
+            oldDelete = newDelete;
+            oldInsert = newInsert;
+        }
+
         return Math.log10(finalSumProbabilities) - INITIAL_CONDITION_LOG10;
     }
 
@@ -178,81 +251,21 @@ public class LoglessPairHMM extends PairHMM {
         deletionMatrix[indI][indJ] = matchMatrix[indI][indJ - 1] * transition[4] + deletionMatrix[indI][indJ - 1] * transition[5];
     }
 
+
     /**
-     * Brad Taylor, 4/26/13
-     * A dummy method for playing around with looping for the arrays implementation
+     * Updates a cell in the HMM arrays
      *
-     * Made this to check that I was setting i,j,k,X,Y correctly (appears so)
-     * Updates arrays in place of a 4x6 dynamic programming table. Does this correctly.
-     *
-     * Next step is to integrate this into subCompute..., fixing array allocation and padding
-     * Then:
-     *        Write array cell update computation method
-     *        Deal with the End state
-     *        Figure out how to sum up probabilities for the final result
+     * @param indK             index in the arrays to update
+     * @param prior            the likelihood editing distance matrix for the read x haplotype
+     * @param transition       an array with the six transition relevant to this location
      */
-    private void btArrayScratch() {
-        // values for a dummy 4x6 matrix
-        int rows = 4;
-        int cols = 6;
+    private void updateArrayCell( final int indK, final double prior, final double[] transition) {
 
-        // Number of diagonals for a matrix  = rows + cols - 1;
-        final int maxDiagonals = rows + cols - 1;
-        int maxFill = 0;
-        int k = 0;
-        int X = 0;
-        int Y = 0;
-
-        // Initialize pre-Arrays, so our updates have something to work with
-        int[] oldMatch = {0,0,0,10,10};
-        int[] oldoldMatch = {0,0,0,0,0};
-        int[] oldDelete = {0,0,0,0,0};
-        int[] oldInsert = {0,0,0,0,0};
-
-        // some dummy padding values.
-        int verticalPAD = 10;
-        int horizontalPAD = 10;
-        int matchPAD = 20;
-
-        // Perform dynamic programming using arrays, as if over diagonals of a hypothetical matrix
-        for (int i = 1; i <= maxDiagonals; i++) {
-            // allocate new arrays for this diagonal
-            int[] newMatch = {0,0,0,0,0};
-            int[] newDelete = {0,0,0,0,0};
-            int[] newInsert = {0,0,0,0,0};
-            // how many cells of the new arrays are we updating?
-            maxFill = (i > cols) ? (rows + cols - i) : Math.min(i, rows);
-            // fill in the cells for our new arrays
-            for (int j = 0; j < maxFill; j++) {
-                // find the array index, translate into coordinates for an X x Y matrix (eventually for priors)
-                if (i > cols){
-                    k = j;
-                    X = maxDiagonals - cols - j;
-                }
-                else {
-                    k =  rows - j - 1;
-                    X = j;
-                }
-                Y = i - X - 1;
-
-                // update our matrix cells. Not the real update math.
-                // just concerned for now with array index. Will write real updates after integration into HMM
-                newDelete[k] = oldDelete[k+1]+1;
-                newInsert[k] = oldInsert[k]+1;
-                newMatch[k] = oldoldMatch[k+1]+1;
-            }
-            // set array padding, so that updates work. akin to adding a pad row, column to a matrix
-            newDelete[rows] = verticalPAD;
-            newMatch[rows] = matchPAD;
-            if (k > 0 && i <= cols) {
-                newMatch[k-1] = matchPAD;
-                newInsert[k-1] = horizontalPAD;
-            }
-            // update array references
-            oldoldMatch = oldMatch;
-            oldMatch = newMatch;
-            oldDelete = newDelete;
-            oldInsert = newInsert;
-        }
+        newMatch[indK] = prior * ( oldoldMatch[indK + 1] * transition[0] +
+                oldInsert[indK + 1] * transition[1] +
+                oldDelete[indK + 1] * transition[1] );
+        newInsert[indK] = oldMatch[indK + 1] * transition[2] + oldInsert[indK + 1] * transition[3];
+        newDelete[indK] = oldMatch[indK] * transition[4] + oldDelete[indK] * transition[5];
     }
+
 }
