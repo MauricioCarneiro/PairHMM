@@ -1,5 +1,0 @@
-,,java.original,,,java.exact,,,java.caching,,,java.loglesscaching,,,C,,,CUDA,
-,Tot Time, Comp. Time, Err,Tot Time, Comp. Time, Err,Tot Time, Comp. Time, Err,Tot Time, Comp. Time, Err,Tot Time, Comp. Time, Err,Tot Time, Comp. Time, Err
-largeTest,,,,,,,,,,2h 9m 12.320s,2h 5m 1.268s,0.000053,1h 24m 17.290s,1h 20m 55.863s,2.378401,21m 7.470s,16m 45.882s,2.378401
-mediumTest,24m 36.130s,24m 19.145s,185.764786,5h 31m 5.930s,5h 30m 38.841s,2.622214,16m 32.340s,16m 12.003s,185.764786,9m 27.550s,9m 7.687s,0.000053,6m 2.730s,5m 48.681s,2.344392,1m 29.040s,1m 12.209s,2.344392
-smallTest,2.890s,1.102s,13.265299,16.690s,14.440s,2.348305,3.140s,0.723s,13.265299,2.800s,0.379s,0.000003,0.320s,0.312s,0.008955,0.400s,0.138s,0.008955

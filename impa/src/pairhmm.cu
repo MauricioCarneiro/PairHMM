@@ -12,25 +12,10 @@ typedef unsigned long ul;
 typedef unsigned char uc;
 typedef double dbl;
 
-#ifndef BLOCKWIDTH
-	#define BLOCKWIDTH 96
-#endif
-
-#ifndef BLOCKHEIGHT
-	#define BLOCKHEIGHT 3
-#endif
-
-#ifndef COMPROWS
-	#define COMPROWS BLOCKWIDTH
-#endif
-
-#ifndef COMPDIAGS
-	#define COMPDIAGS 60
-#endif
-
-#ifndef COMPBUFFSIZE
-	#define COMPBUFFSIZE 30
-#endif
+#define BLOCKWIDTH 64
+#define BLOCKHEIGHT 1
+#define COMPDIAGS 60
+#define COMPBUFFSIZE 30
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define PARALLELMXY (BLOCKHEIGHT == 3)
@@ -42,7 +27,7 @@ typedef double dbl;
 #define THREADX (threadIdx.y == 1)
 #define THREADY (threadIdx.y == 2)
 
-#define MAX_COMPARISONS_PER_SPLIT ((unsigned long) 73000)
+#define MAX_COMPARISONS_PER_SPLIT ((unsigned long) 35000)
 #define MAX_H 5120
 #define MAX_R 1536
 #define MAX_SIMULTANEOUS_BLOCKS 150
@@ -476,17 +461,21 @@ int main(int argc, char **argv)
 	int *g_compIndex, compIndex = 0;
 	int *g_lastLinesIndex, lastLinesIndex = 0;
 
-	init_memory(argv[1], &h_big);
+	struct
+	{
+		double start, init_memory, mallocs, comp, output, end;
+		double t1, t2;
+		float kernel;
+	} times;
+	times.kernel = 0.f;
 
-	/*
-	fprintf(stderr, "\n");
-	fprintf(stderr, "BLOCKWIDTH=%d\n", BLOCKWIDTH);
-	fprintf(stderr, "BLOCKHEIGHT=%d\n", BLOCKHEIGHT);
-	fprintf(stderr, "COMPROWS=%d\n", COMPROWS);
-	fprintf(stderr, "COMPDIAGS=%d\n", COMPDIAGS);
-	fprintf(stderr, "COMPBUFFSIZE=%d\n", COMPBUFFSIZE);
-	exit(0);
-	*/
+	times.start = right_now();
+	times.t1 = right_now();
+	init_memory(argv[1], &h_big);
+	times.t2 = right_now();
+	times.init_memory = times.t2 - times.t1;
+
+	times.t1 = right_now();
 
 	h_small.r = (ReadSequence *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(ReadSequence));
 	h_small.h = (Haplotype *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(Haplotype));
@@ -525,8 +514,17 @@ int main(int argc, char **argv)
 		exit(0);
 	}
 
+	times.t2 = right_now();
+	times.mallocs = times.t2 - times.t1;
+
+	times.t1 = right_now();
 	while (!split(h_big, h_small))
 	{
+		cudaEvent_t kernel_start, kernel_stop;
+		float k_time;
+		cudaEventCreate(&kernel_start);
+		cudaEventCreate(&kernel_stop);
+
 		d_mem.ng = h_small.ng;
 		d_mem.nh = h_small.nh;
 		d_mem.nr = h_small.nr;
@@ -541,10 +539,18 @@ int main(int argc, char **argv)
 		cudaMemcpy(d_mem.cmpR, h_small.cmpR, h_small.nres * sizeof(ul), cudaMemcpyHostToDevice);
 		dim3 gridDim(MAX_SIMULTANEOUS_BLOCKS);
 		dim3 blockDim(BLOCKWIDTH, BLOCKHEIGHT);
-		compare<COMPROWS, COMPDIAGS, COMPBUFFSIZE><<<gridDim, blockDim>>>(d_mem, g_lastlines, g_lastLinesIndex, g_compIndex);
+		cudaEventRecord(kernel_start, 0);
+		compare<BLOCKWIDTH, COMPDIAGS, COMPBUFFSIZE><<<gridDim, blockDim>>>(d_mem, g_lastlines, g_lastLinesIndex, g_compIndex);
+		cudaEventRecord(kernel_stop, 0);
+		cudaEventSynchronize(kernel_stop);
+
 		cudaMemcpy(h_big.res + already, d_mem.res, d_mem.nres * sizeof(dbl), cudaMemcpyDeviceToHost);
 		already += d_mem.nres;
+		cudaEventElapsedTime(&k_time, kernel_start, kernel_stop);
+		times.kernel += k_time;
 	}
+	times.t2 = right_now();
+	times.comp = times.t2 - times.t1;
 
 	cudaFree(g_lastlines);
 	cudaFree(g_lastLinesIndex);
@@ -555,7 +561,20 @@ int main(int argc, char **argv)
 	cudaFree(d_mem.cmpH);
 	cudaFree(d_mem.cmpR);
 	cudaFree(d_mem.res);
+
+	times.t1 = right_now();
 	output(h_big.res, h_big.nres, argv[2]);
+	times.t2 = right_now();
+	times.output = times.t2 - times.t1;
+	times.end = right_now();
+
+	printf("INIT_MEMORY: %g\n", times.init_memory * 1000.0);
+	printf("MALLOCS: %g\n", times.mallocs * 1000.0);
+	printf("COMPUTATION: %g\n", times.comp * 1000.0);
+	printf("KERNEL: %f\n", times.kernel);
+	printf("OUTPUT: %g\n", times.output * 1000.0);
+	printf("TOTAL (measured inside program): %g\n", (times.end - times.start) * 1000.0);
+
 	return 0;
 }
 
