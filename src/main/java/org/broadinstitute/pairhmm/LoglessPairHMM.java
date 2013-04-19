@@ -58,13 +58,15 @@ public class LoglessPairHMM extends PairHMM {
     protected static final double INITIAL_CONDITION_LOG10 = Math.log10(INITIAL_CONDITION);
 
     // array declarations for arrays implementation
-    double[] newMatch = null;
-    double[] newDelete = null;
-    double[] newInsert = null;
-    double[] oldMatch = null;
-    double[] oldoldMatch = null;
-    double[] oldDelete = null;
-    double[] oldInsert = null;
+    protected double[] newMatch = null;
+    protected double[] newDelete = null;
+    protected double[] newInsert = null;
+    protected double[] oldMatch = null;
+    protected double[] oldDelete = null;
+    protected double[] oldInsert = null;
+    protected double[] oldoldMatch = null;
+    protected double[] oldoldDelete = null;
+    protected double[] oldoldInsert = null;
 
     /**
      * {@inheritDoc}
@@ -90,54 +92,64 @@ public class LoglessPairHMM extends PairHMM {
                                                                final int hapStartIndex,
                                                                final boolean recacheReadValues ) {
 
-        if (previousHaplotypeBases == null || previousHaplotypeBases.length != haplotypeBases.length) {
-            final double initialValue = INITIAL_CONDITION / haplotypeBases.length;
-            // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
-            for( int j = 0; j < paddedHaplotypeLength; j++ ) {
-                deletionMatrix[0][j] = initialValue;
-            }
-        }
-
+//        if (previousHaplotypeBases == null || previousHaplotypeBases.length != haplotypeBases.length) {
+//            final double initialValue = INITIAL_CONDITION / haplotypeBases.length;
+//            // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
+//            for( int j = 0; j < paddedHaplotypeLength; j++ ) {
+//                deletionMatrix[0][j] = initialValue;
+//            }
+//        }
+//
         if ( ! constantsAreInitialized || recacheReadValues )
             initializeProbabilities(insertionGOP, deletionGOP, overallGCP);
         initializePriors(haplotypeBases, readBases, readQuals, hapStartIndex);
+//
+//        for (int i = 1; i < paddedReadLength; i++) {
+//            // +1 here is because hapStartIndex is 0-based, but our matrices are 1 based
+//            for (int j = hapStartIndex+1; j < paddedHaplotypeLength; j++) {
+//                updateCell(i, j, prior[i][j], transition[i]);
+//            }
+//        }
+//
+//        // final probability is the log10 sum of the last element in the Match and Insertion state arrays
+//        // this way we ignore all paths that ended in deletions! (huge)
+//        // but we have to sum all the paths ending in the M and I matrices, because they're no longer extended.
+//        final int endI = paddedReadLength - 1;
+//        double finalSumProbabilities = 0.0;
+//        for (int j = 1; j < paddedHaplotypeLength; j++) {
+//            finalSumProbabilities += matchMatrix[endI][j] + insertionMatrix[endI][j];
+//        }
 
-        for (int i = 1; i < paddedReadLength; i++) {
-            // +1 here is because hapStartIndex is 0-based, but our matrices are 1 based
-            for (int j = hapStartIndex+1; j < paddedHaplotypeLength; j++) {
-                updateCell(i, j, prior[i][j], transition[i]);
-            }
-        }
 
-        // final probability is the log10 sum of the last element in the Match and Insertion state arrays
-        // this way we ignore all paths that ended in deletions! (huge)
-        // but we have to sum all the paths ending in the M and I matrices, because they're no longer extended.
-        final int endI = paddedReadLength - 1;
-        double finalSumProbabilities = 0.0;
-        for (int j = 1; j < paddedHaplotypeLength; j++) {
-            finalSumProbabilities += matchMatrix[endI][j] + insertionMatrix[endI][j];
-        }
 
         // Array implementation.  Leaving original in for now, for comparison testing.
         // initialize some array parameters
         // Number of diagonals for a matrix  = rows + cols - 1;
-        int maxDiagonals = readBases.length + haplotypeBases.length - 1;
+        final int maxDiagonals = readBases.length + haplotypeBases.length - 1;
         int maxFill;
         int k;
         int X;
         int Y;
-        //double finalSumProbabilities = 0.0;
+        double finalArraySumProbabilities = 0.0;
 
         // Initialize pre-Arrays, so our updates have something to work with
         // arrays are 1 longer than min(readBases.length, haplotypeBases.length) == paddedReadLength
         // array[readBases.length] is a padding cell, initialized to zero.
         oldMatch= new double[paddedReadLength];
-        oldoldMatch = new double[paddedReadLength];
         oldDelete = new double[paddedReadLength];
         oldInsert = new double[paddedReadLength];
 
+        oldoldMatch = new double[paddedReadLength];
+        oldoldDelete = new double[paddedReadLength];
+        oldoldInsert = new double[paddedReadLength];
+
         // Padding value for the deletion array. Let's us have free deletions at the beginning
         final double initialValue = INITIAL_CONDITION / haplotypeBases.length;
+
+        // Pad the deletion arrays. Akin to padding the first row in the deletion matrix
+        // Insert and match arrays are padded as well, but all padding is '0', set when arrays initialized.
+        oldDelete[readBases.length] = initialValue;
+        oldoldDelete[readBases.length] = initialValue;
 
         // Perform dynamic programming using arrays, as if over diagonals of a hypothetical matrix
         for (int i = 1; i <= maxDiagonals; i++) {
@@ -150,7 +162,6 @@ public class LoglessPairHMM extends PairHMM {
             // fill in the cells for our new arrays
             for (int j = 0; j < maxFill; j++) {
                 // find the array index, translate into X,Y coordinates for our priors matrix.
-                // TODO- priors matrix is padded. Will probably have to +1 both X and Y
                 if (i > haplotypeBases.length){
                     k = j;
                     X = maxDiagonals - haplotypeBases.length - j;
@@ -161,8 +172,8 @@ public class LoglessPairHMM extends PairHMM {
                 }
                 Y = i - X - 1;
 
-                // update cell for each of our new arrays
-                updateArrayCell(k, prior[X][Y], transition[X]);
+                // update cell for each of our new arrays. Prior, transition matrices are padded +1 row,col
+                updateArrayCell(k, prior[X+1][Y+1], transition[X+1]);
             }
             // Pad the deletion array. Akin to padding the first row in the deletion matrix
             // Insert and match arrays are padded as well, but all padding is '0', set when arrays initialized.
@@ -172,16 +183,18 @@ public class LoglessPairHMM extends PairHMM {
             // this way we ignore all paths that ended in deletions! (huge)
             // but we have to sum all the paths ending in the M and I arrays, because they're no longer extended.
             // Where i > readBases.length, array[0] corresponds to bottom row of a [read] x [haplotype] matrix. Otherwise is assumed to be zero (padding)
-            //finalSumProbabilities += newInsert[0] + newMatch[0];
+            finalArraySumProbabilities += newInsert[0] + newMatch[0];
 
             // update array references
             oldoldMatch = oldMatch;
+            oldoldDelete = oldDelete;
+            oldoldInsert = oldInsert;
             oldMatch = newMatch;
             oldDelete = newDelete;
             oldInsert = newInsert;
         }
-
-        return Math.log10(finalSumProbabilities) - INITIAL_CONDITION_LOG10;
+        //return Math.log10(finalArraySumProbabilities) - INITIAL_CONDITION_LOG10;
+        return Math.log10(finalArraySumProbabilities) - INITIAL_CONDITION_LOG10;
     }
 
     /**
@@ -262,8 +275,8 @@ public class LoglessPairHMM extends PairHMM {
     private void updateArrayCell( final int indK, final double prior, final double[] transition) {
 
         newMatch[indK] = prior * ( oldoldMatch[indK + 1] * transition[0] +
-                oldInsert[indK + 1] * transition[1] +
-                oldDelete[indK + 1] * transition[1] );
+                oldoldInsert[indK + 1] * transition[1] +
+                oldoldDelete[indK + 1] * transition[1] );
         newInsert[indK] = oldMatch[indK + 1] * transition[2] + oldInsert[indK + 1] * transition[3];
         newDelete[indK] = oldMatch[indK] * transition[4] + oldDelete[indK] * transition[5];
     }
