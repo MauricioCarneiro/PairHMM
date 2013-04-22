@@ -32,21 +32,24 @@ public class Evaluate {
         final boolean debug = args.contains("-d") || args.contains("--debug");
         logger.setLevel(debug ? Level.DEBUG : Level.INFO);
         BasicConfigurator.configure();
-        if (args.contains("--caching")) {
-            /*logger.info("Using CachingPairHMM");*/
-            pairHMM = new CachingPairHMM();
+    }
+
+    public void initializeHMMs(Set<String> args) {
+        boolean addedHMMs = false;
+
+        if (args.contains("--all") || args.contains("--approximate")) {
+            logger.info("Initializing ApproximatePairHMM");
+            pairHMM.add(new Log10PairHMM(false));
+            addedHMMs = true;
         }
-        else if (args.contains("--original")) {
-            /*logger.info("Using OriginalPairHMM");*/
-            pairHMM = new OriginalPairHMM();
+        if (args.contains("--all") || args.contains("--exact")) {
+            logger.info("Initializing Log10PairHMM");
+            pairHMM.add(new Log10PairHMM(true));
+            addedHMMs = true;
         }
-        else if (args.contains("--exact")) {
-            /*logger.info("Using ExactPairHMM");*/
-            pairHMM = new ExactPairHMM();
-        }
-        else {
-            /*logger.info("Using LoglessCachingPairHMM");*/
-            pairHMM = new LoglessCachingPairHMM();
+        if (!addedHMMs || args.contains("--all") || args.contains("--logless")) {
+            logger.info("Initializing LoglessPairHMM");
+            pairHMM.add(new LoglessPairHMM());
         }
     }
 
@@ -92,39 +95,12 @@ public class Evaluate {
         return readQuals;
     }
 
-
-    private void runTestsImpa(Iterator<TestRow> testCache, String output_fn) {
-        final long startTime = System.currentTimeMillis();
-        long t1, comp_time = 0;
-
-        pairHMM.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
-
-        try
-        {
-            BufferedWriter bw = new BufferedWriter(new FileWriter(new File(output_fn), false));
-            while (testCache.hasNext())
-            {
-                TestRow currentTest = testCache.next();
-                t1 = System.currentTimeMillis();
-                Double result = hmm(currentTest.getHaplotypeBases(), currentTest.getReadBases(), currentTest.getReadQuals(), currentTest.getReadInsQuals(), currentTest.getReadDelQuals(), currentTest.getOverallGCP(), currentTest.getHaplotypeStart(), currentTest.getReachedReadValye());
-                comp_time += (System.currentTimeMillis() - t1);
-                bw.write(String.format("%f", result));
-                bw.newLine();
-            }
-            bw.close();
-            System.out.printf("COMPUTATION_TIME %d%n", comp_time);
-        }  catch (Exception e)
-        {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private void runTests(Iterator<TestRow> testCache) {
-        final long startTime = System.currentTimeMillis();
-
-        boolean testsPassed = true;
-        pairHMM.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
-
+    private void runTests(final PairHMM hmm, final Iterator<TestRow> testCache, String hmmName, String testSet, boolean noCaching) throws IOException {
+        long totalTime = 0L;
+        final String runName = hmmName + "." + testSet;
+        final String filename = createFileName(runName);
+        final FileWriter out = new FileWriter(filename);
+        hmm.initialize(X_METRIC_LENGTH, Y_METRIC_LENGTH);
         while (testCache.hasNext()) {
             final TestRow currentTest = testCache.next();
             if (noCaching)
@@ -154,27 +130,28 @@ public class Evaluate {
 
             final boolean noCaching = args.contains("--nocache");
 
-			/*
-				java -Xmx4g -jar build/libs/PairHMM-0.1.jar <input path> <output path> --impa-mode
-			*/
-			if (args.contains("--impa-mode")) {
-				/*
-                System.out.printf("%s%n", argv[0]);
-                System.out.printf("%s%n", argv[1]);
-                return;
-				*/
-				Iterator<TestRow> iter = parseFile(argv[0]);
-				evaluate.runTestsImpa(iter, argv[1]);
-			} else {
-				for (String arg : args) {
-					if (!arg.startsWith("-")) {
-						logger.info("parsing file " + arg);
-						Iterator<TestRow> iter = parseFile(arg);
-						logger.info("running tests");
-						evaluate.runTests(iter);
-					}
-				}
-			}
+            for (String arg : args) {
+                if (!arg.startsWith("-")) {
+                    logger.info("Adding test dataset: " + arg);
+                    testFiles.add(arg);
+                }
+            }
+
+            for (final String testSet : testFiles) {
+                logger.info("Using " + testSet + " tests");
+                evaluate.initializeHMMs(args);
+                final Iterator<PairHMM> pairHMMIterator = evaluate.pairHMM.iterator();
+                while(pairHMMIterator.hasNext()) {
+                    final PairHMM hmm = pairHMMIterator.next();
+                    final String hmmName = hmm.getClass().getSimpleName();
+                    final String[] testSplit = testSet.split("/");                           // get rid of the file path (if any)
+                    final String testName = testSplit[testSplit.length - 1].split("\\.")[0]; // get rid of the file extension
+                    logger.info("Running " + hmmName);
+                    evaluate.runTests(hmm, createIteratorFor(testSet), hmmName, testName, noCaching);
+                    pairHMMIterator.remove();
+                }
+                logger.info("Finished all HMMs for " + testSet + " tests");
+            }
         }
 
     }
