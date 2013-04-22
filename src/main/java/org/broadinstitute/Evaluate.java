@@ -3,7 +3,9 @@ package org.broadinstitute;
 import org.apache.log4j.BasicConfigurator;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
-import org.broadinstitute.pairhmm.*;
+import org.broadinstitute.pairhmm.Log10PairHMM;
+import org.broadinstitute.pairhmm.LoglessPairHMM;
+import org.broadinstitute.pairhmm.PairHMM;
 import org.broadinstitute.utils.QualityUtils;
 
 import java.io.*;
@@ -18,8 +20,7 @@ import java.util.*;
  */
 public class Evaluate {
 
-    private static PairHMM pairHMM;
-    private static final double PRECISION = 0.001;
+    public final List<PairHMM> pairHMM = new ArrayList<PairHMM>(20);
 
     private static final int X_METRIC_LENGTH = 10000;
     private static final int Y_METRIC_LENGTH = 10000;
@@ -27,6 +28,7 @@ public class Evaluate {
     private static Logger logger = Logger.getLogger("Main");
 
     public Evaluate(Set<String> args) {
+        // Setup the logger
         final boolean debug = args.contains("-d") || args.contains("--debug");
         logger.setLevel(debug ? Level.DEBUG : Level.INFO);
         BasicConfigurator.configure();
@@ -61,8 +63,20 @@ public class Evaluate {
      * @param overallGCP     comparison haplotype gap continuation quals (phred-scaled)
      * @return the likelihood of the alignment between read and haplotype
      */
-    public double hmm(final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex, final boolean recacheReadValues) {
-        return pairHMM.subComputeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
+    public double runhmm(PairHMM hmm, final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex, final boolean recacheReadValues) {
+        return hmm.computeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
+    }
+
+    private static String createFileName(String hmmName) throws IOException {
+        int runNumber = 0;
+        String filename;
+        File testFileName;
+        do {
+            runNumber++;
+            filename = hmmName + "." + runNumber + ".out";
+            testFileName = new File(filename);
+        } while (testFileName.exists());
+        return filename;
     }
 
     /**
@@ -112,35 +126,33 @@ public class Evaluate {
         pairHMM.initialize(X_METRIC_LENGTH + 2, Y_METRIC_LENGTH + 2);
 
         while (testCache.hasNext()) {
-            TestRow currentTest = testCache.next();
-
-            Double result = hmm(currentTest.getHaplotypeBases(), currentTest.getReadBases(),
-                    currentTest.getReadQuals(), currentTest.getReadInsQuals(),
-                    currentTest.getReadDelQuals(), currentTest.getOverallGCP(),
-                    currentTest.getHaplotypeStart(), currentTest.getReachedReadValye());
-
-            logger.debug(String.format(" Result:%4.3f",result));
-            logger.debug("==========================================================%n");
-            if ((currentTest.getLikelihood() - result) > PRECISION) {
-                logger.error("Wrong result. Expected " + currentTest.getLikelihood() + " , actual: " + result);
-                testsPassed = false;
-            }
+            final TestRow currentTest = testCache.next();
+            if (noCaching)
+                currentTest.haplotypeStart = 0;
+            final long startTime = System.nanoTime();
+            final double likelihood = runhmm(hmm, currentTest.haplotypeBases, currentTest.readBases, currentTest.readQuals, currentTest.readInsQuals, currentTest.readDelQuals, currentTest.overallGCP, currentTest.haplotypeStart, currentTest.reachedReadValue);
+            totalTime += System.nanoTime() - startTime;
+            out.write("" + likelihood + "\n");
         }
-        if (testsPassed)
-            logger.info(String.format("All tests PASSED in %.3f secs", (double) (System.currentTimeMillis() - startTime)/1000));
+        logger.info(String.format("%s test completed in %.3f secs, results written to: %s", hmmName, totalTime/1000000000.0, filename));
+        out.close();
     }
 
 
-    private static Iterator<TestRow> parseFile(String filePath) throws FileNotFoundException {
+    private static Iterator<TestRow> createIteratorFor(String filePath) throws FileNotFoundException {
         return new ParserIterator(filePath);
     }
 
-    public static void main(String[] argv) throws FileNotFoundException {
+    public static void main(final String[] argv) throws IOException {
+
         Set<String> args = new HashSet<String>(Arrays.asList(argv));
         if (args.size() < 1) {
             throw new RuntimeException("\r\nYou must specify a file name for input.\n" + "filename \n ----------------------------\n" + "Run with -d or --debug for debug output");
         } else {
-            Evaluate evaluate = new Evaluate(args);
+            final Evaluate evaluate = new Evaluate(args);
+            final List<String> testFiles = new LinkedList<String>();
+
+            final boolean noCaching = args.contains("--nocache");
 
 			/*
 				java -Xmx4g -jar build/libs/PairHMM-0.1.jar <input path> <output path> --impa-mode
@@ -189,7 +201,7 @@ public class Evaluate {
             String line = m_reader.next();
             String[] p = line.split(" ");
             final boolean reachedRead = p[7].trim().equals("true");
-            m_nextEntry = new TestRow(p[0].getBytes(), p[1].getBytes(), convertToByteArray(p[2]), convertToByteArray(p[3]), convertToByteArray(p[4]), convertToByteArray(p[5]), Integer.parseInt(p[6]), reachedRead, Double.parseDouble(p[8]));
+            m_nextEntry = new TestRow(p[0].getBytes(), p[1].getBytes(), convertToByteArray(p[2]), convertToByteArray(p[3]), convertToByteArray(p[4]), convertToByteArray(p[5]), Integer.parseInt(p[6]), reachedRead);
 
             logger.debug("Haplotype Bases:" + p[0]);
             logger.debug("Read Bases:" + p[1]);
@@ -199,7 +211,6 @@ public class Evaluate {
             logger.debug("Overall GCP:" + p[5]);
             logger.debug("Haplotype start:" + p[6]);
             logger.debug("Boolean (reached read values):" + p[7]);
-            logger.debug("result, likelihood:" + p[8]);
 
             return true;
         }
@@ -226,22 +237,16 @@ public class Evaluate {
     }
 
     static class TestRow {
-        private byte[] haplotypeBases;
-        private byte[] readBases;
-        private byte[] readQuals;
-        private byte[] readInsQuals;
-        private byte[] readDelQuals;
-        private byte[] overallGCP;
-        private int haplotypeStart;
-        private boolean reachedReadValue;
-        private Double likelihood;
+        byte[] haplotypeBases;
+        byte[] readBases;
+        byte[] readQuals;
+        byte[] readInsQuals;
+        byte[] readDelQuals;
+        byte[] overallGCP;
+        int haplotypeStart;
+        boolean reachedReadValue;
 
-        TestRow(byte[] haplotypeBases, byte[] readBases,
-                byte[] readQuals, byte[] readInsQuals,
-                byte[] readDelQuals, byte[] overallGCP,
-                int haplotypeStart, boolean reachedReadValue,
-                Double likelihood) {
-
+        TestRow(byte[] haplotypeBases, byte[] readBases, byte[] readQuals, byte[] readInsQuals, byte[] readDelQuals, byte[] overallGCP, int haplotypeStart, boolean reachedReadValue) {
             this.haplotypeBases = haplotypeBases;
             this.readBases = readBases;
             this.readQuals = readQuals;
@@ -250,45 +255,7 @@ public class Evaluate {
             this.overallGCP = overallGCP;
             this.haplotypeStart = haplotypeStart;
             this.reachedReadValue = reachedReadValue;
-            this.likelihood = likelihood;
         }
-
-        public byte[] getHaplotypeBases() {
-            return this.haplotypeBases;
-        }
-
-        public byte[] getReadBases() {
-            return this.readBases;
-        }
-
-        public byte[] getReadQuals() {
-            return this.readQuals;
-        }
-
-        public byte[] getReadInsQuals() {
-            return this.readInsQuals;
-        }
-
-        public byte[] getReadDelQuals() {
-            return this.readDelQuals;
-        }
-
-        public byte[] getOverallGCP() {
-            return this.overallGCP;
-        }
-
-        public int getHaplotypeStart() {
-            return this.haplotypeStart;
-        }
-
-        public boolean getReachedReadValye() {
-            return this.reachedReadValue;
-        }
-
-        public double getLikelihood() {
-            return this.likelihood;
-        }
-
     }
 
     static class XReadLines implements Iterator<String>, Iterable<String> {
