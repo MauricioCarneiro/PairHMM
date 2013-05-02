@@ -12,8 +12,11 @@ typedef unsigned long ul;
 typedef unsigned char uc;
 typedef double dbl;
 
+/*
 #define BLOCKWIDTH 64
 #define BLOCKHEIGHT 1
+*/
+
 #define COMPDIAGS 60
 #define COMPBUFFSIZE 30
 
@@ -31,6 +34,9 @@ typedef double dbl;
 #define MAX_H 5120
 #define MAX_R 1536
 #define MAX_SIMULTANEOUS_BLOCKS 150
+
+#define INITIAL_CONSTANT (ldexp(1.0, 1020.0))
+#define LOG10_INITIAL_CONSTANT (log10(INITIAL_CONSTANT))
 
 template<ul ROWS, ul DIAGS, ul BUFFSIZE>
 struct PubVars
@@ -55,6 +61,7 @@ struct PubVars
 	dbl buffM[BUFFSIZE], buffX[BUFFSIZE], buffY[BUFFSIZE];
 	ul buffsz;
 	ul buffstart;
+	dbl result;
 };
 
 template <int ROWS, int DIAGS, int BUFFSIZE>
@@ -181,19 +188,19 @@ __device__ inline void firstline_firstcolum(PubVars<ROWS, DIAGS, BUFFSIZE> &pv)
 	if (PARALLELMXY)
 	{
 		if (THREADM)
-			pv.m[0] = 1.0e300 / (pv.H > pv.R ? pv.H - pv.R + 1 : 1);
+			pv.m[0] = 0.0;
 
 		if (THREADX)
 			pv.x[0] = 0.0;
 
 		if (THREADY)
-			pv.y[0] = 0.0;
+			pv.y[0] = INITIAL_CONSTANT / pv.H;
 	}
 	else
 	{
-		pv.m[0] = 1.0e300 / (pv.H > pv.R ? pv.H - pv.R + 1 : 1);
+		pv.m[0] = 0.0;
 		pv.x[0] = 0.0;
-		pv.y[0] = 0.0;
+		pv.y[0] = INITIAL_CONSTANT / pv.H;
 	}
 }
 
@@ -209,13 +216,13 @@ __device__ inline void firstline_notfirstcolum(PubVars<ROWS, DIAGS, BUFFSIZE> &p
 			pv.x[0] = 0.0;
 
 		if (THREADY)
-			pv.y[0] = pv.mp[0] + pv.yp[0];
+			pv.y[0] = INITIAL_CONSTANT / pv.H;
 	}
 	else
 	{
 		pv.m[0] = 0.0;
 		pv.x[0] = 0.0;
-		pv.y[0] = pv.mp[0] + pv.yp[0];
+		pv.y[0] = INITIAL_CONSTANT / pv.H;
 	}
 }
 
@@ -268,12 +275,19 @@ __device__ inline void block(int &i, int &j, PubVars<ROWS, DIAGS, BUFFSIZE> &pv)
 
 		r = nRows - 1;
 		c = diag - r + j * DIAGS;
-		if ((TID == 0) && (c >= 0) && (c <= (int)pv.H) && (i < pv.nblockrows - 1))
+		if ((TID == 0) && (c >= 0) && (c <= (int)pv.H))
 		{
-			pv.buffM[pv.buffsz] = pv.m[r];
-			pv.buffX[pv.buffsz] = pv.x[r];
-			pv.buffY[pv.buffsz] = pv.y[r];
-			pv.buffsz++;
+			if (i < pv.nblockrows - 1) // buffer!!
+			{
+				pv.buffM[pv.buffsz] = pv.m[r];
+				pv.buffX[pv.buffsz] = pv.x[r];
+				pv.buffY[pv.buffsz] = pv.y[r];
+				pv.buffsz++;
+			}
+			else // sum the result!!
+			{
+				pv.result += (pv.m[r] + pv.x[r]);
+			}
 		}
 
 		__syncthreads();
@@ -298,6 +312,7 @@ __device__ inline void block(int &i, int &j, PubVars<ROWS, DIAGS, BUFFSIZE> &pv)
 
 	return;
 }
+
 
 template <int ROWS, int DIAGS, int BUFFSIZE>
 __global__ void compare(Memory mem, dbl *g_lastLinesArr, int *g_lastLinesIndex, int *g_compIndex)
@@ -342,6 +357,7 @@ __global__ void compare(Memory mem, dbl *g_lastLinesArr, int *g_lastLinesIndex, 
 			pv.m = pv.m1; pv.mp = pv.m2; pv.mpp = pv.m3;
 			pv.y = pv.y1; pv.yp = pv.y2; pv.ypp = pv.y3;
 			pv.x = pv.x1; pv.xp = pv.x2; pv.xpp = pv.x3;
+			pv.result = 0;
 		}
 
 		__syncthreads();
@@ -370,15 +386,7 @@ __global__ void compare(Memory mem, dbl *g_lastLinesArr, int *g_lastLinesIndex, 
 
 		if (TID == 0)
 		{
-			int resr = (int)pv.R - (int)(pv.nblockrows - 1) * ROWS;
-			int swaps = (DIAGS * (int)pv.nblockcols - resr - (int)(pv.H + 1)) % 3;
-
-			if (swaps == 2)
-				mem.res[compIndex] = log10(pv.m[resr] + pv.x[resr] + pv.y[resr]) - 300.0;
-			else if (swaps == 0)
-				mem.res[compIndex] = log10(pv.mp[resr] + pv.xp[resr] + pv.yp[resr]) - 300.0;
-			else
-				mem.res[compIndex] = log10(pv.mpp[resr] + pv.xpp[resr] + pv.ypp[resr]) - 300.0;
+			mem.res[compIndex] = log10(pv.result) - LOG10_INITIAL_CONSTANT;
 		}
 
 		__syncthreads();
