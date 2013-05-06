@@ -1,4 +1,7 @@
-all:	matcmp statistics curr2cuda extract_answers timeformatter firstnotacceptable
+all:	matcmp statistics curr2cuda extract_answers timeformatter firstnotacceptable adaptcsv
+
+adaptcsv:	.FORCE
+	g++ adaptcsv.cc -O2 -W -Wall -fopenmp -pedantic -o adaptcsv -lgomp -lm
 
 matcmp:	.FORCE
 	g++ matcmp.cc -O2 -W -Wall -fopenmp -pedantic -o matcmp -lgomp -lm
@@ -19,7 +22,7 @@ firstnotacceptable:	.FORCE
 	g++ firstnotacceptable.cc -O2 -W -Wall -fopenmp -pedantic -o firstnotacceptable -lgomp -lm
 
 clean:
-	rm -f matcmp statistics curr2cuda extract_answers timeformatter firstnotacceptable
+	rm -f matcmp statistics curr2cuda extract_answers timeformatter firstnotacceptable adaptcsv
 
 .FORCE:
 
