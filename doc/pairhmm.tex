@@ -18,21 +18,35 @@
 	\subsection{CPU implementation}
 	Describe the GATK's implementation of the PairHMM. (Mauricio)
 	\subsection{FPGA Implementation}
-	Describe the FPGA's implementation of the PairHMM. (Scott/George)
+	We also investigated optimizing the PairHMM algorithm on Convey Computer’s Hybrid-Core (HC) architecture, which previously has proven useful for a range of bioinformatics applications including BWA. HC servers combine a traditional x86 environment with a high-performance coprocessor based on Field Programmable Gate Arrays (FPGAs).  FPGAs are reprogrammable chips that can be loaded with instructions for the critical, computationally intensive blocks of an algorithm, achieving significant speedups relative to general-purpose CPUs. Their ability to be dynamically reprogrammed at run time allows them to deliver such optimized performance to many different applications.   Coprocessor instruction sets for the HC, or personalities, are embedded in applications like the GATK so as to be automatically used when the application runs if a coprocessor is present.  The executable also includes the standard x86 instruction set, which is used when running on a traditional server where no coprocessor is present.
+
+	The paired Hidden Markov Model (PairHMM) personality was developed for the HC in a couple weeks using Impulse C, a personality development productivity tool based on the C language.  The PairHMM personality performs comparisons for every base in the read sequence in parallel by pipelining the instructions as a systolic array with 162 elements, which can compare that many bases with a candidate haplotype simultaneously.  For the calculation of these direct probabilities, for each comparison we calculate the three Viterbi values (match/insertion/deltion) in parallel as well.  The pipeline can be envisioned as a wavefront, where the haplotype streams across the sequence of read bases to fill out the Viterbi matrix of all comparisons.  The processing element emits the full set of Viterbi values for each cell on every instruction.  That is, in the first instruction it computes $V_{1,1}$; the second computes both $V_{1,2}$ and $V_{2,1}$; the third computes all of $V_{1,3}$, $V_{2,2}$, and $V_{3,1}$; etc., with the $j^{th}$ instruction computing $V_{i, j - i + 1}$ for all rows $i$.
+
+	For such systolic arrays, top performance is achieved when the pipe remains full as many cycles as possible.  In this case, performance is better for longer haplotypes, and when reads are as close to 162 bases in length.  The read limit is a result of the available resources on the FPGA chips of HC-1 and HC-2 servers.  HC-2ex servers have a larger coprocessor and would yield about a three-fold performance boost over the HC-2.  The additional resources could be used for a significantly longer pipeline or for more pipelines of the same length with no fundamental change in design.
+
+	Performance was measured on an HC-1 with 128GB of host memory and 64GB of coprocessor scatter-gather memory with a 2-way stripe of 1TB disks.  The host has an L5408 quad core processor running at 2.13GHz.  The largest data set with 14.1M test cases ran in 770 seconds on the HC-1 as compared with about 10,800 seconds on a 12-core server with the final optimized software (and about 68,200 seconds with the original code).  The PairHMM personality on the HC was implemented with single precision instructions.  All results agree with the software to $10^{-5}$ accuracy, showing that this is sufficient and double precision instructions are not required.
+
 	\subsection{CUDA Implementation}
 	Describe the GATK's implementation of the PairHMM. (Diego/Eric)
+	
 	\subsection{Rootbeer Implementation}
 	Describe the Rootbeer implementation of the PairHMM. Why is it different from CUDA. (Phil)
+
 	\subsection{Experimental data and methods}
 	1000G data reference, talk about the GATK pipeline and how we made these calls and prepare the test data sets. (Mauricio)
+
 	\section{Results}
 	Comparison of the different implementations running on NA12878 data.
 	How does FPGA and CUDA differ both implementationwise and performance wise? 
 	What is the difference from the user's perspective, what do they have to do differently?
+
 	\subsection{experimental results on 1000G data}
 	What did we find? New SNPs? New Indels? 
 	What were the benefits of calling this data together using the haplotype caller?
 	Why is this useful to other medically relevant projects around the world? 
+
+	\section{Availability}
+	Briefly talk about the availability of GPU and FPGA machines in the cloud.
 
 \end{document}
 
