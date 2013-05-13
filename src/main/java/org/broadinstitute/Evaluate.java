@@ -22,8 +22,8 @@ public class Evaluate {
 
     public final List<PairHMM> pairHMM = new ArrayList<PairHMM>(20);
 
-    private static final int X_METRIC_LENGTH = 10000;
-    private static final int Y_METRIC_LENGTH = 10000;
+    private static final int X_METRIC_LENGTH = 1000;
+    private static final int Y_METRIC_LENGTH = 1000;
 
     private static Logger logger = Logger.getLogger("Main");
 
@@ -66,8 +66,8 @@ public class Evaluate {
      * @param overallGCP     comparison haplotype gap continuation quals (phred-scaled)
      * @return the likelihood of the alignment between read and haplotype
      */
-    public double runhmm(PairHMM hmm, final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex, final boolean recacheReadValues) {
-        return hmm.computeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
+    public double runhmm(PairHMM hmm, final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex, final boolean recacheReadValues, final int nextHapStartIndex) {
+        return hmm.computeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues, nextHapStartIndex);
     }
 
     private static String createFileName(String hmmName) throws IOException {
@@ -103,10 +103,12 @@ public class Evaluate {
         hmm.initialize(X_METRIC_LENGTH, Y_METRIC_LENGTH);
         while (testCache.hasNext()) {
             final TestRow currentTest = testCache.next();
-            if (noCaching)
+            if (noCaching) {
                 currentTest.haplotypeStart = 0;
+                currentTest.nextHaplotypeStart = 0;
+            }
             final long startTime = System.nanoTime();
-            final double likelihood = runhmm(hmm, currentTest.haplotypeBases, currentTest.readBases, currentTest.readQuals, currentTest.readInsQuals, currentTest.readDelQuals, currentTest.overallGCP, currentTest.haplotypeStart, currentTest.reachedReadValue);
+            final double likelihood = runhmm(hmm, currentTest.haplotypeBases, currentTest.readBases, currentTest.readQuals, currentTest.readInsQuals, currentTest.readDelQuals, currentTest.overallGCP, currentTest.haplotypeStart, currentTest.reachedReadValue, currentTest.nextHaplotypeStart);
             totalTime += System.nanoTime() - startTime;
             out.write("" + likelihood + "\n");
         }
@@ -178,7 +180,7 @@ public class Evaluate {
             String line = m_reader.next();
             String[] p = line.split(" ");
             final boolean reachedRead = p[7].trim().equals("true");
-            m_nextEntry = new TestRow(p[0].getBytes(), p[1].getBytes(), convertToByteArray(p[2]), convertToByteArray(p[3]), convertToByteArray(p[4]), convertToByteArray(p[5]), Integer.parseInt(p[6]), reachedRead);
+            m_nextEntry = new TestRow(p[0].getBytes(), p[1].getBytes(), convertToByteArray(p[2]), convertToByteArray(p[3]), convertToByteArray(p[4]), convertToByteArray(p[5]), Integer.parseInt(p[6]), reachedRead, Integer.parseInt(p[8]));
 
             logger.debug("Haplotype Bases:" + p[0]);
             logger.debug("Read Bases:" + p[1]);
@@ -188,6 +190,7 @@ public class Evaluate {
             logger.debug("Overall GCP:" + p[5]);
             logger.debug("Haplotype start:" + p[6]);
             logger.debug("Boolean (reached read values):" + p[7]);
+            logger.debug("Next haplotype start: " + p[8]);
 
             return true;
         }
@@ -222,8 +225,9 @@ public class Evaluate {
         byte[] overallGCP;
         int haplotypeStart;
         boolean reachedReadValue;
+        int nextHaplotypeStart;
 
-        TestRow(byte[] haplotypeBases, byte[] readBases, byte[] readQuals, byte[] readInsQuals, byte[] readDelQuals, byte[] overallGCP, int haplotypeStart, boolean reachedReadValue) {
+        TestRow(byte[] haplotypeBases, byte[] readBases, byte[] readQuals, byte[] readInsQuals, byte[] readDelQuals, byte[] overallGCP, int haplotypeStart, boolean reachedReadValue, int nextHaplotypeStart) {
             this.haplotypeBases = haplotypeBases;
             this.readBases = readBases;
             this.readQuals = readQuals;
@@ -232,6 +236,7 @@ public class Evaluate {
             this.overallGCP = overallGCP;
             this.haplotypeStart = haplotypeStart;
             this.reachedReadValue = reachedReadValue;
+            this.nextHaplotypeStart = nextHaplotypeStart;
         }
     }
 
@@ -311,8 +316,13 @@ public class Evaluate {
                 // If we haven't reached EOF yet
                 if (this.nextLine == null) {
                     in.close();             // And close on EOF
+                    result += " 0";         // there is no next hap start index
                 }
-
+                // Need to pre-Fetch the hapStartIndex for the NEXT line
+                else{
+                    String[] p = this.nextLine.split(" ");
+                    result += " " + p[6];
+                }
                 // Return the line we read last time through.
                 return result;
             } catch (IOException e) {
