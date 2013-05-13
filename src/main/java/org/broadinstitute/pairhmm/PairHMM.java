@@ -66,6 +66,7 @@ public abstract class PairHMM {
     protected int paddedReadLength, paddedHaplotypeLength;
     private boolean initialized = false;
 
+
     /**
      * Initialize this PairHMM, making it suitable to run against a read and haplotype with given lengths
      *
@@ -125,7 +126,8 @@ public abstract class PairHMM {
                                                                   final byte[] deletionGOP,
                                                                   final byte[] overallGCP,
                                                                   int hapStartIndex,
-                                                                  final boolean recacheReadValues ) {
+                                                                  final boolean recacheReadValues,
+                                                                  int nextHapStartIndex) {
         if ( ! initialized ) throw new IllegalStateException("Must call initialize before calling computeReadLikelihoodGivenHaplotypeLog10");
         if ( haplotypeBases == null ) throw new IllegalArgumentException("haplotypeBases cannot be null");
         if ( haplotypeBases.length > maxHaplotypeLength ) throw new IllegalArgumentException("Haplotype bases is too long, got " + haplotypeBases.length + " but max is " + maxHaplotypeLength);
@@ -143,7 +145,7 @@ public abstract class PairHMM {
         hapStartIndex =  (previousHaplotypeBases == null || haplotypeBases.length != previousHaplotypeBases.length || recacheReadValues) ? 0 : hapStartIndex;
 
 
-        double result = subComputeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
+        double result = subComputeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues, nextHapStartIndex);
 
         if ( ! MathUtils.goodLog10Probability(result) )
             throw new IllegalStateException("PairHMM Log Probability cannot be greater than 0: " + String.format("haplotype: %s, read: %s, result: %f", Arrays.toString(haplotypeBases), Arrays.toString(readBases), result));
@@ -165,7 +167,8 @@ public abstract class PairHMM {
                                                                         final byte[] deletionGOP,
                                                                         final byte[] overallGCP,
                                                                         final int hapStartIndex,
-                                                                        final boolean recacheReadValues );
+                                                                        final boolean recacheReadValues,
+                                                                        final int nextHapStartIndex);
 
     /**
      * Print out the core hmm matrices for debugging

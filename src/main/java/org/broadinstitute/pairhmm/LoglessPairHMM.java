@@ -48,6 +48,8 @@ package org.broadinstitute.pairhmm;
 
 import org.broadinstitute.utils.QualityUtils;
 
+import java.util.Arrays;
+
 /**
  * Created with IntelliJ IDEA.
  * User: rpoplin, carneiro
@@ -57,7 +59,7 @@ public class LoglessPairHMM extends PairHMM {
     private static final double INITIAL_CONDITION = Math.pow(2, 1020);
     private static final double INITIAL_CONDITION_LOG10 = Math.log10(INITIAL_CONDITION);
 
-    // array declarations for arrays implementation
+    // Array declarations for arrays implementation
     private double[] currentMatchArray = null;
     private double[] currentDeleteArray = null;
     private double[] currentInsertArray = null;
@@ -68,6 +70,15 @@ public class LoglessPairHMM extends PairHMM {
     private double[] grandparentDeleteArray = null;
     private double[] grandparentInsertArray = null;
 
+    // Special array used for caching when successive haplotypes have a common prefix
+    private double[] haplotypeCacheArray = null;
+
+    // Used when caching to store our intermediate sum at point of first difference bw successive haplotypes
+    private double partialSum;
+
+    // we cannot cache the next array if nextHapStartIndex < hapStartIndex
+    private boolean recacheHaplotypeValues = false;
+
     /**
      * {@inheritDoc}
      */
@@ -77,6 +88,23 @@ public class LoglessPairHMM extends PairHMM {
 
         transition = new double[paddedMaxReadLength][6];
         prior = new double[paddedMaxReadLength][paddedMaxHaplotypeLength];
+
+        // Initialize all arrays
+        // Final Cell of array is a padding cell, initialized to zero.
+        currentMatchArray = new double[readMaxLength];
+        currentDeleteArray = new double[readMaxLength];
+        currentInsertArray = new double[readMaxLength];
+
+        parentMatchArray = new double[readMaxLength];
+        parentDeleteArray = new double[readMaxLength];
+        parentInsertArray = new double[readMaxLength];
+
+        grandparentMatchArray = new double[readMaxLength];
+        grandparentDeleteArray = new double[readMaxLength];
+        grandparentInsertArray = new double[readMaxLength];
+
+        // Initialize the special array used for caching when successive haplotypes have a common prefix
+        haplotypeCacheArray = new double[readMaxLength];
     }
 
     /**
@@ -89,49 +117,51 @@ public class LoglessPairHMM extends PairHMM {
                                                                final byte[] insertionGOP,
                                                                final byte[] deletionGOP,
                                                                final byte[] overallGCP,
-                                                               final int hapStartIndex,
-                                                               final boolean recacheReadValues ) {
+                                                               int hapStartIndex,
+                                                               final boolean recacheReadValues,
+                                                               final int nextHapStartIndex) {
 
-        // There were no brackets around this if statement in master. Error?
+        // if we have not cached from prev haplotype, clear any info we may have accumulated in a previous HMM iteration
+        if (hapStartIndex == 0 || recacheHaplotypeValues) {
+            Arrays.fill(haplotypeCacheArray, 0, readBases.length + 1, 0);
+            hapStartIndex = 0;
+            partialSum = 0;
+        }
+
         if ( ! constantsAreInitialized || recacheReadValues )
             initializeProbabilities(insertionGOP, deletionGOP, overallGCP);
         initializePriors(haplotypeBases, readBases, readQuals, hapStartIndex);
 
         // Array implementation. Start by initializing some array parameters
         // Number of diagonals for a matrix  = rows + cols - 1;
-        final int maxDiagonals = readBases.length + haplotypeBases.length - 1;
-        // Size of each array.
-        final int arrayLength = Math.min(paddedReadLength,paddedHaplotypeLength);
+        final int maxDiagonals = readBases.length + haplotypeBases.length - hapStartIndex - 1;
         // Padding value for the deletion array. Let's us have free deletions at the beginning
         final double initialValue = INITIAL_CONDITION / haplotypeBases.length;
-        // The number of cells to fill in for the current arrays. Set dynamically.
-        int maxFill;
+        // The array indices we want to fill in will be between these values
+        int startFill;
+        int endFill;
         // The position of the arrays to be updated
         int arrayIndex;
         // The coordinate in our priors and transition matrices corresponding to a given position in the read/haplotype alignment
         int matrixRow;
         int matrixCol;
         // The final answer prior to log10 correction
-        double finalArraySumProbabilities = 0.0;
+        double finalArraySumProbabilities = partialSum;
+        // This array will contain the partial sum to cache for the next haplotype
+        final int cacheArray = nextHapStartIndex - hapStartIndex + readBases.length - 1;
 
-        // Initialize all arrays
-        // array[readBases.length] is a padding cell, initialized to zero.
-        currentMatchArray = new double[arrayLength];
-        currentDeleteArray = new double[arrayLength];
-        currentInsertArray = new double[arrayLength];
+        // Zero the arrays from any previous HMM runs so we have a nice clean start
+        Arrays.fill(grandparentMatchArray, 0, readBases.length + 1, 0);
+        Arrays.fill(grandparentDeleteArray, 0, readBases.length + 1, 0);
+        Arrays.fill(grandparentInsertArray, 0, readBases.length + 1, 0);
 
-        parentMatchArray = new double[arrayLength];
-        parentDeleteArray = new double[arrayLength];
-        parentInsertArray = new double[arrayLength];
+        // don't have to do parentDeleteArray; taken care of by haplotypeCacheArray
+        Arrays.fill(parentMatchArray, 0, readBases.length + 1, 0);
+        Arrays.fill(parentInsertArray, 0, readBases.length + 1, 0);
 
-        grandparentMatchArray = new double[arrayLength];
-        grandparentDeleteArray = new double[arrayLength];
-        grandparentInsertArray = new double[arrayLength];
-
-        // Declare some temporary array pointers for use in rotating array references in loop
-        double[] tempMatchArray = null;
-        double[] tempDeleteArray = null;
-        double[] tempInsertArray = null;
+        Arrays.fill(currentMatchArray, 0, readBases.length + 1, 0);
+        Arrays.fill(currentDeleteArray, 0, readBases.length + 1, 0);
+        Arrays.fill(currentInsertArray, 0, readBases.length + 1, 0);
 
         // Pad the deletion arrays. Akin to padding the first row in the deletion matrix
         // Insert and match arrays are padded as well, but all padding is '0', set when arrays initialized.
@@ -141,26 +171,29 @@ public class LoglessPairHMM extends PairHMM {
 
         // Perform dynamic programming using arrays, as if over diagonals of a hypothetical matrix
         for (int i = 1; i <= maxDiagonals; i++) {
-            //currentMatchArray = new double[paddedReadLength];
-            //currentDeleteArray = new double[paddedReadLength];
-            //currentInsertArray = new double[paddedReadLength];
-            // how many cells of the new arrays are we updating? Remember arrays contain 1 extra cell of terminal padding
-            maxFill = (i > haplotypeBases.length) ? (readBases.length + haplotypeBases.length - i) : Math.min(i, arrayLength - 1);
-            // fill in the cells for our new arrays
-            for (int j = 0; j < maxFill; j++) {
-                // find the array index, translate into [matrixRow][matrixCol] coordinates for our priors matrix.
-                if (i > haplotypeBases.length){
-                    arrayIndex = j;
-                    matrixRow = maxDiagonals - haplotypeBases.length - j;
-                }
-                else {
-                    arrayIndex =  readBases.length - j - 1;
-                    matrixRow = j;
-                }
-                matrixCol = i - matrixRow - 1;
+            // set the bounds for cells we wish to fill in the arrays
+            startFill = Math.max(readBases.length - i, 0);
+            endFill = Math.min(maxDiagonals - i + 1, readBases.length);
+
+            // apply any previously cached array information
+            if (i <= readBases.length)
+                parentDeleteArray[startFill] = haplotypeCacheArray[startFill];
+
+            // fill in the cells for our arrays
+            for (arrayIndex = startFill; arrayIndex < endFill; arrayIndex++) {
+
+                // translate the array position into a row, column in the priors and transition matrices
+                matrixRow = readBases.length - arrayIndex - 1;
+                matrixCol = i - matrixRow - 1 + hapStartIndex;
 
                 // update cell for each of our new arrays. Prior, transition matrices are padded +1 row,col
                 updateArrayCell(arrayIndex, prior[matrixRow+1][matrixCol+1], transition[matrixRow+1]);
+
+                // Set up caching for the next haplotype
+                // At the position of the last similar base between this haplotype and the next one...
+                // ...remember the mid-array values for use as the parent deletion array next time through
+                if (matrixCol == nextHapStartIndex - 1)
+                    haplotypeCacheArray[arrayIndex] = currentDeleteArray[arrayIndex];
             }
 
             // final probability is the log10 sum of the last element in the Match and Insertion state arrays
@@ -169,10 +202,16 @@ public class LoglessPairHMM extends PairHMM {
             // Where i > readBases.length, array[0] corresponds to bottom row of a [read] x [haplotype] matrix. Otherwise is assumed to be zero (padding)
             finalArraySumProbabilities += currentInsertArray[0] + currentMatchArray[0];
 
+            // Partial sum for caching the next haplotype:
+            // At the position of the last similar base between this haplotype and the next one...
+            // ...remember the partial sum, so that we can start here on the next hap.
+            if (i == cacheArray)
+                partialSum = finalArraySumProbabilities;
+
             // rotate array references
-            tempMatchArray = grandparentMatchArray;
-            tempDeleteArray = grandparentDeleteArray;
-            tempInsertArray = grandparentInsertArray;
+            double[] tempMatchArray = grandparentMatchArray;
+            double[] tempDeleteArray = grandparentDeleteArray;
+            double[] tempInsertArray = grandparentInsertArray;
 
             grandparentMatchArray = parentMatchArray;
             grandparentDeleteArray = parentDeleteArray;
@@ -186,6 +225,10 @@ public class LoglessPairHMM extends PairHMM {
             currentDeleteArray = tempDeleteArray;
             currentInsertArray = tempInsertArray;
         }
+
+        // did we really cache? If not, remember that for the next iteration
+        recacheHaplotypeValues = (nextHapStartIndex < hapStartIndex);
+
         //return result
         return Math.log10(finalArraySumProbabilities) - INITIAL_CONDITION_LOG10;
     }
