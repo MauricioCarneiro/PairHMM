@@ -20,7 +20,31 @@
 	\subsection{FPGA Implementation}
 	Describe the FPGA's implementation of the PairHMM. (Scott/George)
 	\subsection{CUDA Implementation}
-	Describe the GATK's implementation of the PairHMM. (Diego/Eric)
+Modern GPUs are massively parallel computing devices
+composed of multiple independent multiprocessors, each
+capable of executing the same operation on multiple data
+elements simultaneously. The architecture is designed for
+high throughput, rather than for low latency.  For best
+performance, the computation must be divided according to
+this two-level hierarchy: a number of independent jobs large
+enough to keep all multiprocessors busy (inter-block
+parallelism), each job to be executed by collaborating cores 
+that perform computations in tandem (intra-block
+parallelism).
+
+To this end, we enqueue as many pairs as will fit into the
+GPU memory before launching a persistent kernel.  Each
+computational block loops obtaining pairs from the queue
+until it is empty. This setup supplies the necessary
+inter-block parallelism.  Due to the restricted amount of
+shared-memory available, and to enable a larger number of
+resident blocks, we break the traversal of matrices~$X$, $Y$
+and~$M$ into horizontal bands. Finally, since diagonal
+entries are independent from one another, we evaluate
+diagonal elements in parallel thereby exposing the required
+intra-block parallelism. 
+
+
 	\subsection{Rootbeer Implementation}
 	Describe the Rootbeer implementation of the PairHMM. Why is it different from CUDA. (Phil)
 	\subsection{Experimental data and methods}
