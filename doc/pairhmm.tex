@@ -1,62 +1,162 @@
 \documentclass[11pt, oneside]{article}
 
-\title{Enabling high throughput haplotype analysis through hardware acceleration}
+\title{Enabling high throughput haplotype analysis through hardware acceleration} 
 \author{Carneiro MO, Biagioli E, Pratt-Szeliga P, Thibault S, Vacek G, Nehab D}
 
-\begin{document}
-	\maketitle
+\begin{document} \maketitle
 	
-	\begin{abstract}
-	Small variants such as single nucleotide polymorphisms (SNPs) or single base pair insertions or deletions (indel) are not the most difficult task for variant calling algorithms. Latest callsets from the 1000 Genomes project have shown upwards of 99\% sensitivity on those types of variants (cite 1kg). Calling larger indels and short rearrangements (up to 50 bases long) can only be achieved through local denovo assembly of a reference haplotype based on the read data (cite haplotype caller?). For this computation we rely on fast heuristic methods that generate pcandidate haplotypes without trying all possibilties (cite debruijn graphs). Once we have a list of candidate haplotypes, we have to determine which of these haplotypes is the most likely haplotype to explain the read data. For this task we use a paired hidden markov model (PairHMM) that calculates the probabiltity of all alignments of a read to a candidate haplotype, repeating the process for every candidate haplotype against every read and tallying the results. The haplotype with the highest probability across all reads is the chosen one. This PairHMM is responsible for more than 50\% of the runtime of the Haplotype Caller (denovo assembly variant caller available in the Genome Analysis Toolkit) due to it's $N^2$ implementation. Here we show how we can harness the parallelism of graphics processing units (GPU) and field-programmable gate arrays (FPGA) to reduce the runtime by ~300 fold. This performance improvement not only accelerates the calling process, but also enables projects that need to call tens of thousands of samples which would otherwise be impossible.
+	\begin{abstract} 
+	
+	Small variants such as single nucleotide polymorphisms (SNPs) or single base
+	pair insertions or deletions (indel) are not the most difficult task for
+	variant calling algorithms. Latest callsets from the 1000 Genomes project
+	have shown upwards of 99\% sensitivity on those types of variants (cite
+	1kg). Calling larger indels and short rearrangements (up to 50 bases
+	long) can only be achieved through local denovo assembly of a
+	reference haplotype based on the read data (cite haplotype caller?).
+	For this computation we rely on fast heuristic methods that generate
+	pcandidate haplotypes without trying all possibilties (cite debruijn
+	graphs). Once we have a list of candidate haplotypes, we
+	have to determine which of these haplotypes is the most likely
+	haplotype to explain the read data. For this task we use a paired
+	hidden markov model (PairHMM) that calculates the probabiltity of
+	all alignments of a read to a candidate haplotype, repeating the
+	process for every candidate haplotype against every read and
+	tallying the results. The haplotype with the highest probability
+	across all reads is the chosen one. This PairHMM is responsible for
+	more than 50\% of the runtime of the Haplotype Caller (denovo
+	assembly variant caller available in the Genome Analysis
+	Toolkit) due to it's $N^2$ implementation. Here we show how
+	we can harness the parallelism of graphics processing units (GPU)
+	and field-programmable gate arrays (FPGA) to reduce the runtime by ~300
+	fold. This performance improvement not only accelerates the calling process,
+	but also enables projects that need to call tens of thousands of samples
+	which would otherwise be impossible.  
+	
 	\end{abstract}
 
-	\section{Introduction}
-	General introduction on the problem (variant calling), indels and why do we need local reassembly to find variants. (Mauricio)
-	\section{Methods}
-	\subsection{Mathematical Description of the Problem}
-	Full description of the HMM in it's final version. (Mauricio)
-	\subsection{CPU implementation}
-	Describe the GATK's implementation of the PairHMM. (Mauricio)
-	\subsection{FPGA Implementation}
-	Describe the FPGA's implementation of the PairHMM. (Scott/George)
-	\subsection{CUDA Implementation}
-Modern GPUs are massively parallel computing devices
-composed of multiple independent multiprocessors, each
-capable of executing the same operation on multiple data
-elements simultaneously. The architecture is designed for
-high throughput, rather than for low latency.  For best
-performance, the computation must be divided according to
-this two-level hierarchy: a number of independent jobs large
-enough to keep all multiprocessors busy (inter-block
-parallelism), each job to be executed by collaborating cores 
-that perform computations in tandem (intra-block
-parallelism).
+	\section{Introduction} 
+	
+	General introduction on the problem (variant calling), indels and why do we need local reassembly to find variants. (Mauricio) 
+	
+	\section{Methods} 
+	
+	\subsection{Mathematical Description of the Problem} 
+	
+	Full description of the HMM in it's final version.  (Mauricio) 
+	
+	\subsection{CPU implementation} 
+	
+	Describe the GATK's implementation of the PairHMM. (Mauricio) 
+	
+	\subsection{FPGA Implementation} 
+	
+	We also investigated optimizing the PairHMM algorithm on Convey Computer’s
+	Hybrid-Core (HC) architecture, which previously has proven useful for a
+	range of bioinformatics applications including BWA. HC servers combine a
+	traditional x86 environment with a high-performance coprocessor based on
+	Field Programmable Gate Arrays (FPGAs).  FPGAs are reprogrammable chips that
+	can be loaded with instructions for the critical, computationally intensive
+	blocks of an algorithm, achieving significant speedups relative to
+	general-purpose CPUs. Their ability to be dynamically reprogrammed at run
+	time allows them to deliver such optimized performance to many different
+	applications.   Coprocessor instruction sets for the HC, or personalities,
+	are embedded in applications like the GATK to be automatically used when the
+	application runs if a coprocessor is present.  The executable also includes
+	the standard x86 instruction set, which is used when running on a
+	traditional server where no coprocessor is present.  The paired Hidden
+	Markov Model (PairHMM) personality was developed for the HC in Impulse C,
+	a personality development productivity tool based on the C language.  The
+	PairHMM personality performs comparisons for every base in the read sequence
+	in parallel by pipelining the instructions as a systolic array with 162
+	elements, which can compare that many bases with a candidate haplotype
+	simultaneously.  For the calculation of these direct probabilities, for each
+	comparison we calculate the three Viterbi values
+	(match, insertion and deletion probabilities) in parallel as well.  The pipeline can be
+	envisioned as a wavefront, where the haplotype streams across the sequence
+	of read bases to fill out the Viterbi matrix of all comparisons.  The
+	processing element emits the full set of Viterbi values for each cell on
+	every instruction.  That is, in the first instruction it computes $V_{1,1}$; the
+	second computes both $V_{1,2}$ and $V_{2,1}$; the third computes all of $V_{1,3}$, $V_{2,2}$,
+	and $V_{3,1}$; etc., with the $j^{th}$ instruction computing $V_{i,j−i+1}$
+	for all rows $i$.
+	
+	For such systolic arrays, top performance is achieved when the pipe remains
+	full as many cycles as possible.  In this case, performance is better for
+	longer haplotypes, and when reads are as close to 162 bases in length.  The
+	read limit is a result of the available resources on the FPGA chips of HC-1
+	and HC-2 servers.  HC-2ex servers have a larger coprocessor and would yield
+	about a three-fold performance boost over the HC-2.  The additional
+	resources could be used for longer read lengths or for more simultaneous
+	operations in parallel of the same read lengths with no fundamental change
+	in design.  
 
-To this end, we enqueue as many pairs as will fit into the
-GPU memory before launching a persistent kernel.  Each
-computational block loops obtaining pairs from the queue
-until it is empty. This setup supplies the necessary
-inter-block parallelism.  Due to the restricted amount of
-shared-memory available, and to enable a larger number of
-resident blocks, we break the traversal of matrices~$X$, $Y$
-and~$M$ into horizontal bands. Finally, since diagonal
-entries are independent from one another, we evaluate
-diagonal elements in parallel thereby exposing the required
-intra-block parallelism. 
+	
+	\subsection{CUDA Implementation} 
+	
+	Modern GPUs are massively parallel computing devices composed of multiple
+	independent multiprocessors, each capable of executing the same operation on
+	multiple data elements simultaneously. The architecture is designed for high
+	throughput, rather than for low latency.  For best performance, the
+	computation must be divided according to this two-level hierarchy: a number
+	of independent jobs large enough to keep all multiprocessors busy
+	(inter-block parallelism), each job to be executed by collaborating cores
+	that perform computations in tandem (intra-block parallelism).
+
+	To this end, we enqueue as many pairs as will fit into the GPU memory before
+	launching a persistent kernel.  Each computational block loops obtaining
+	pairs from the queue until it is empty. This setup supplies the necessary
+	inter-block parallelism.  Due to the restricted amount of shared-memory
+	available, and to enable a larger number of resident blocks, we break the
+	traversal of matrices~$X$, $Y$ and~$M$ into horizontal bands. Finally, since
+	diagonal entries are independent from one another, we evaluate diagonal
+	elements in parallel thereby exposing the required intra-block parallelism. 
 
 
-	\subsection{Rootbeer Implementation}
-	Describe the Rootbeer implementation of the PairHMM. Why is it different from CUDA. (Phil)
-	\subsection{Experimental data and methods}
-	1000G data reference, talk about the GATK pipeline and how we made these calls and prepare the test data sets. (Mauricio)
+	\subsection{Rootbeer Implementation} 
+	
+	Describe the Rootbeer implementation of the PairHMM. Why is it different from CUDA. (Phil) 
+	
+	\subsection{Experimental data and methods} 
+	
+	1000G data reference, talk about the GATK pipeline and how we made these
+	calls and prepare the test data sets. (Mauricio) 
+	
 	\section{Results}
-	Comparison of the different implementations running on NA12878 data.
-	How does FPGA and CUDA differ both implementationwise and performance wise? 
-	What is the difference from the user's perspective, what do they have to do differently?
-	\subsection{experimental results on 1000G data}
-	What did we find? New SNPs? New Indels? 
-	What were the benefits of calling this data together using the haplotype caller?
-	Why is this useful to other medically relevant projects around the world? 
+
+	Comparison of the different implementations running on NA12878 data.  How
+	does FPGA and CUDA differ both implementationwise and performance wise?
+	What is the difference from the user's perspective, what do they have to do
+	differently?  
+	
+	Performance of the FPGA implementation was measured on an HC-1 with 128GB of
+	host memory and 64GB of coprocessor scatter-gather memory with a 2-way
+	stripe of 1TB disks.  The host has an L5408 quad core processor running at
+	2.13GHz.  The largest data set with 14.1M test cases ran in 770 seconds on
+	the HC-1 as compared with about 10800 seconds on a 12-core server with the
+	final optimized software (and about 68200 seconds with the original code).
+	The PairHMM personality on the HC was implemented with single precision
+	instructions.  All results agree with the software to 10**-5 accuracy,
+	showing that this is sufficient and double precision instructions are not
+	required
+
+	\subsection{experimental results on 1000G data} 
+	
+	What did we find? New SNPs? New Indels?  What were the benefits of calling
+	this data together using the haplotype caller?  Why is this useful to other
+	medically relevant projects around the world?  \subsection{Availability of
+	hardware acceleration as a service} Cloud computing offers the ability
+	to flexibly use computing on demand when it is needed, and thus to rent
+	it on a per project basis rather than purchase servers up front.  It can
+	also provide an opportunity to shift to the most appropriate HPC
+	architecture when various applications in a workflow would benefit from
+	different resources (coprocessors, high memory, etc).  Amazon Web
+	Services (AWS), probably the best known cloud service provider, offers
+	both standard x86 servers as well as Cluster GPU instances
+	[aws.amazon.com].  Nimbix offers an Accelerated Compute Cloud (NACC),
+	with a bioinformatics portal to the widest availability of accelerated
+	bioinformatics computing, including Convey HC servers as well as
+	standard and GPUs servers [www.nimbix.net].
 
 \end{document}
 
