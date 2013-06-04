@@ -1,3 +1,4 @@
+
 \documentclass[11pt, oneside]{article}
 
 \title{Enabling high throughput haplotype analysis through hardware acceleration} 
@@ -11,7 +12,23 @@
 	pair insertions or deletions (indel) are not the most difficult task for
 	variant calling algorithms. Latest callsets from the 1000 Genomes project
 	have shown upwards of 99\% sensitivity on those types of variants (cite
-	1kg). Calling larger indels and short rearrangements (up to 50 bases
+	1kg). Indels extending up to a fraction of the sequencing read lengths are
+	the current challenge of variant detection, and with ever-extending read
+	lengths, the expectation of identifying larger indels increases at the same
+	rate. Tools like the GATK's Haplotype Caller (cite GATK/HC) rely on a pair
+	hidden markov model (HMM - cite book) to score the probability of the pairwise alignment
+	between a read and a candidate haplotype which is responsible for over 50\%
+	of the runtime. Here we present a framework that enables the analysis of
+	whole genome sequencing data with such algorithms through a high throughput
+	implementation of the HMM using two different types of hardware
+	accelarations: Graphics Processing Unit (GPU) and Field Programmable Gate
+	Array (FPGA).
+	
+	\end{abstract}
+
+	\section{Introduction} 
+
+	Calling larger indels and short rearrangements (up to 50 bases
 	long) can only be achieved through local denovo assembly of a
 	reference haplotype based on the read data (cite haplotype caller?).
 	For this computation we rely on fast heuristic methods that generate
@@ -33,12 +50,7 @@
 	but also enables projects that need to call tens of thousands of samples
 	which would otherwise be impossible.  
 	
-	\end{abstract}
 
-	\section{Introduction} 
-	
-	General introduction on the problem (variant calling), indels and why do we need local reassembly to find variants. (Mauricio) 
-	
 	\section{Methods} 
 	
 	\subsection{Mathematical Description of the Problem} 
@@ -140,22 +152,24 @@
 	showing that this is sufficient and double precision instructions are not
 	required
 
-	\subsection{experimental results on 1000G data} 
+	\subsection{Experimental results on 1000G data} 
 	
 	What did we find? New SNPs? New Indels?  What were the benefits of calling
 	this data together using the haplotype caller?  Why is this useful to other
-	medically relevant projects around the world?  \subsection{Availability of
-	hardware acceleration as a service} Cloud computing offers the ability
-	to flexibly use computing on demand when it is needed, and thus to rent
-	it on a per project basis rather than purchase servers up front.  It can
-	also provide an opportunity to shift to the most appropriate HPC
-	architecture when various applications in a workflow would benefit from
-	different resources (coprocessors, high memory, etc).  Amazon Web
-	Services (AWS), probably the best known cloud service provider, offers
-	both standard x86 servers as well as Cluster GPU instances
-	[aws.amazon.com].  Nimbix offers an Accelerated Compute Cloud (NACC),
-	with a bioinformatics portal to the widest availability of accelerated
-	bioinformatics computing, including Convey HC servers as well as
+	medically relevant projects around the world?  
+	
+	\subsection{Availability of hardware acceleration as a service} 
+
+	Cloud computing offers the ability to flexibly use computing on demand when
+	it is needed, and thus to rent it on a per project basis rather than
+	purchase servers up front.  It can also provide an opportunity to shift to
+	the most appropriate HPC architecture when various applications in a
+	workflow would benefit from different resources (coprocessors, high memory,
+	etc).  Amazon Web Services (AWS), probably the best known cloud
+	service provider, offers both standard x86 servers as well as Cluster GPU
+	instances [aws.amazon.com].  Nimbix offers an Accelerated Compute Cloud
+	(NACC), with a bioinformatics portal to the widest availability of
+	accelerated bioinformatics computing, including Convey HC servers as well as
 	standard and GPUs servers [www.nimbix.net].
 
 \end{document}
