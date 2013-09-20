@@ -1,64 +1,144 @@
 \documentclass[11pt, oneside]{article}
+\usepackage{amsmath}
 
 \title{Enabling high throughput haplotype analysis through hardware acceleration} 
-\author{Carneiro MO, Biagioli E, Pratt-Szeliga P, Thibault S, Vacek G, Nehab D}
+\author{Carneiro MO, Poplin R, Biagioli E, Thibault S, \\  Taylor B, Vacek G, Nehab D, Banks E}
 
 \begin{document} \maketitle
 	
 	\begin{abstract} 
 	
-	Small variants such as single nucleotide polymorphisms (SNPs) or single base
-	pair insertions or deletions (indel) are not the most difficult task for
-	variant calling algorithms. Latest call sets from the 1000 Genomes project
-	have shown upwards of 99\% sensitivity on those types of variants (cite
-	1kg). Indels extending up to a fraction of the sequencing read lengths are
-	the current challenge of variant detection, and with ever-extending read
-	lengths, the expectation of identifying larger indels increases at the same
-	rate. Tools like the GATK's Haplotype Caller (cite GATK/HC) rely on a pair
-	Hidden Markov Model (HMM - cite book) to score the probability of the pairwise alignment
-	between a read and a candidate haplotype which is responsible for over 50\%
-	of the runtime. Here we present a framework that enables the analysis of
-	whole genome sequencing data with such algorithms through a high throughput
-	implementation of the HMM using two different types of hardware
-	accelerations: Graphics Processing Unit (GPU) and Field Programmable Gate
-	Array (FPGA).
+	Identifying insertions and deletions has been the greatest challenge of the 
+    new era of high throughput short read DNA sequencing. Although sophisticated
+    and accurate statistical methods for indel calling exist, the exhaustive
+    computation necessary to correctly evaluate all possible haplotypes against
+    the reference hypothesis is a major obstacle to using these algorithms in
+    whole genome and large scale complex disease whole exome studies.  Here we
+    present two hardware accelerated implementations of the method (as
+    implemented in the Genome Analysis Toolkit), that speeds up the parts of the
+    algorithm about 300 fold through the use of Graphics Processing Unit (GPU) and
+    Floating Poing Gate Array (FPGA) specific code.
+    
 	
 	\end{abstract}
 
 	\section{Introduction} 
 
-	Calling larger indels and short rearrangements (up to 50 bases
-	long) can only be achieved through local denovo assembly of a
-	reference haplotype based on the read data (cite haplotype caller?).
-	For this computation we rely on fast heuristic methods that generate
-	pcandidate haplotypes without trying all possibilities (cite debruijn
-	graphs). Once we have a list of candidate haplotypes, we
-	have to determine which of these haplotypes is the most likely
-	haplotype to explain the read data. For this task we use a paired
-	hidden markov model (PairHMM) that calculates the probability of
-	all alignments of a read to a candidate haplotype, repeating the
-	process for every candidate haplotype against every read and
-	tallying the results. The haplotype with the highest probability
-	across all reads is the chosen one. This PairHMM is responsible for
-	more than 50\% of the runtime of the Haplotype Caller (denovo
-	assembly variant caller available in the Genome Analysis
-	Toolkit), and gets worse for longer reads, due to it's $N^2$ implementation. Here we show how
-	we can harness the parallelism of graphics processing units (GPU)
-	and field-programmable gate arrays (FPGA) to reduce the runtime by ~300
-	fold. This performance improvement not only accelerates the calling process,
-	but also enables projects that need to call tens of thousands of samples
-	which would otherwise be impossible.  
-	
+    The 1000 Genomes project has set a tremendous stage for the development of
+    variant calling methods since it's inception in 2008 [cite original 1kg
+    paper]. With the goal of identifying all human variation that is present in
+    at least 1\% of the world's population, the project has pushed for more and
+    more accurate variant calling programs that were peer reviewed by the
+    project and are now available to scientists around the world [cite variant
+    callers from 1kg]. After 5 years, the project has achieved over 99\%
+    accuracy when calling single nucleotide polymorphisms (SNPs) but still has
+    not achieved the same quality in the arguably more difficult insertions and
+    deletions (indels) [cite latest 1kg paper].
+    
+    The Genome Analysis Toolkit (GATK) has recently unveiled a brand new variant
+    caller (in the setting of the 1000 Genomes project) that has raised the
+    accuracy of indels significantly [cite haplotype caller], but is limited to
+    small datasets due to its high computational complexity. The key concept
+    behind the GATK's Haplotype Caller is the acknowledgement that short genomic
+    rearragements (that will lead to small indels) will be further complicated
+    by the complexity of the mapping and alignment of the reads that extend the
+    event to the reference genome. From an aligner's perspective, multiple reads
+    that span the event are treated as independent observations and may be
+    forcefully aligned to the reference genome, creating complex regions that
+    are uninteligible to any downstream analyses.
+
+    The Haplotype Caller addresses this inevitable outcome from the alignment
+    step by re-assembling these complex regions using denovo assembly algorithms
+    that produces a list of candidate haplotypes that would better describe the
+    real status of each sample than the reference haplotype. The heart of the
+    variant caller lies on assessing, with statistical significance, which one
+    of the candidate haplotypes is the most likely to be explained by the read
+    data. This natural bayesian view of the data is implemented as a paired
+    Hidden Markov Model (pairHMM) that exhaustively calculates the probability
+    that each candidate haplotype can be explained by the observed data. The
+    most likely haplotypes (depending on ploidy) are then evaluated through an
+    exact model to establish the genotype of the sample in ways described
+    previously in the GATK's Unified Genotyper [cite GATK] and Samtools [cite
+    samtools] variant callers. 
+
+    The Haplotype Caller has brought the indel accuracy from ~60\% to ~97\%
+    (show NA12878 vaildation figure), the exhaustive computation nature of its
+    pairHMM limits the amount of data that can be processed ($N*M*R*H$ where N
+    is the number of reads, M is the number of candidate haplotypes, R is the
+    read length and H is candidate haplotype length). However, these
+    computations are effectively independent and can be aggressively
+    parallelized. Platforms like graphics processing units (GPU) and
+    field-programmable gate arrays (FPGA) have the property of allowing high
+    parallel computation with minimal overhead enabling us to compute the
+    pairHMM not only in parallel, but also parallelizing the computation of
+    independent steps of the pairHMM matrix as well.
+
+    Here we show how we can leverage the potential of these hardware accelerated
+    platforms to allow us to reduce the runtime of the PairHMM routine inside
+    the GATK's Haplotype Caller ~300 fold, and encourage this approach to other
+    bioinformatics algorithms by describing our methodology and making the
+    source code freely available.
 
 	\section{Methods} 
 	
-	\subsection{Mathematical Description of the Problem} 
-	
-	Full description of the HMM in it's final version.  (Mauricio) 
-	
-	\subsection{CPU implementation} 
-	
-	Describe the GATK's implementation of the PairHMM. (Mauricio) 
+    The pairHMM algorithm takes a list of $N$ reads and a list of $M$ candidate
+    haplotypes as input and returns the probability that the data would explain
+    each one of the candidate haplotypes. To calculate the probability, the pair
+    HMM performs assesses all possible alignments of each haplotype (the
+    hypothesis) against all the reads (the data). The HMM has three main states:
+    match, insertion and deletion. Here we introduce three concepts related to the
+    base quality score ($Q_m$): The insertion gap open penalty (or base
+    insertion quality $Q_i$), the deletion gap open penalty (or base deletion
+    quality $Q_d$) and the gap continuation penalty ($Q_g$). The first two
+    represent the probability that the base precedes an insertion or a deletion
+    (respectively) and even when not reported by the instrument can be generated
+    by the latest version of the Base Quality Score Recalibration tool
+    (BaseRecalibrator) in the GATK [cite GATK]. The third represents the
+    probability that an insertion or deletion are extended which in theory could
+    be different for insertions and deletions, but in our model we use the same
+    flat value $Q10$ for all gap continuation penalties. The pairHMM
+    accuracy relies on the accurate estimation of these four quality scores for
+    every base. The pairHMM equations are described below:
+
+    \begin{align}
+        M_{i,j} &= P_{i,j} (\alpha  M_{i-1,j-1} + \beta  I_{i-1,j-1} + \gamma D_{i-1,j-1} ) \\
+        I_{i,j} &= \delta  M_{i-1,j} + \epsilon  I_{i-1,j} \\
+        D_{i,j} &= \zeta   M_{i,j-1} + \eta  D_{i,j-1} 
+    \end{align}
+
+    Given that $Q_m$ is the base quality score of a base in the read converted
+    from phred-scale to probability space using the formula $Q = -log_{10}P$. The
+    prior $P_{i,j}$ is $1-Q_m$ of the $i^{th}$ base in the read if it matches
+    the $j^{th}$ base in the haplotype, or $Q_m$ if it does not.  The transition
+    probabilities are expressed by the roman letters in the equation and are
+    described below: 
+
+    \begin{align*}
+        \alpha   &= 1 - (Q_i + Q_d) \text{ | match continuation} \\
+        \beta    &= 1 - Q_g \text{ | insertion to match} \\
+        \gamma   &= 1 - Q_g \text{ | deletion to match} \\
+        \delta   &= Q_i \text{ | match to insertion} \\
+        \epsilon &= Q_g \text{ | insertion continuation} \\
+        \zeta    &= Q_d \text{ | match to deletion} \\
+        \eta     &= Q_g \text{ | deletion continuation}
+    \end{align*}
+
+    The resulting probability is theoretically the sum of $M_{N,M}$, $I_{N,M}$
+    and $D_{N,M}$, however there are a two special conditions in this HMM that
+    change:
+
+    \begin{enumerate}
+    
+        \item To allow the alignment of the haplotype to start anywhere on the read
+        without penalty, we need to initialize the entire first row of the
+        deletion matrix with the normalized factor
+        $\frac{1}{\text{len(}R_i\text{)}}$.
+
+        \item To allow the alignment to end anywhere in the read without penalty, we
+        need to ignore the last row of the deletion matrix ($D$) in the final
+        calculation of the pairHMM probability.
+
+    \end{enumerate}
 	
 	\subsection{FPGA Implementation} 
 	
@@ -124,21 +204,27 @@
 	elements in parallel thereby exposing the required intra-block parallelism. 
 
 
-	\subsection{Rootbeer Implementation} 
-	
-	Describe the Rootbeer implementation of the PairHMM. Why is it different from CUDA. (Phil) 
-	
 	\subsection{Experimental data and methods} 
 	
-	1000G data reference, talk about the GATK pipeline and how we made these
-	calls and prepare the test data sets. (Mauricio) 
+    To evaluate the implementations of the pairHMM we made calls on the 1000
+    Genomes Project sample NA12878 which is publicly available in the 1000G
+    FTP using the Haplotype Caller from GATK version 2.7 and created a test
+    dataset to use as input and check the output of the pairHMM routine
+    individually (so we could measure the performance improvements directly on
+    the pairHMM routine). Our sandboxed implementation of the GATK's PairHMM is
+    availabe on github together with the performance evaluation program.
+    
+    In addition to this test, we also ran the full GATK with the hardware
+    acceleration capability to evaluate the impact of the hardware acceleration
+    on the Haplotype Caller as a whole (as users will experience). For
+    instructions, details and updates on the status of GATK support for these
+    and other hardware accelerated platforms, please visit the GATK website on
+    http://www.broadinstitute.org/gatk.
 	
 	\section{Results}
 
-	Comparison of the different implementations running on NA12878 data.  How
-	does FPGA and CUDA differ both implementationwise and performance wise?
-	What is the difference from the user's perspective, what do they have to do
-	differently?  
+
+    [ we need a bar plot of the performances on the large test ]
 	
 	Performance of the FPGA implementation was measured on an HC-1 with 128GB of
 	host memory and 64GB of coprocessor scatter-gather memory with a 2-way
