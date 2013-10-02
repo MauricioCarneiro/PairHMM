@@ -54,8 +54,9 @@ import org.broadinstitute.utils.QualityUtils;
  * Date: 10/16/12
  */
 public class LoglessPairHMM extends PairHMM {
-    protected static final double INITIAL_CONDITION = Math.pow(2, 1020);
-    protected static final double INITIAL_CONDITION_LOG10 = Math.log10(INITIAL_CONDITION);
+    //protected static final float INITIAL_CONDITION = Math.pow(2, 1020);
+    protected static final float INITIAL_CONDITION = 1e32f;
+    protected static final float INITIAL_CONDITION_LOG10 = 32.f;
 
     /**
      * {@inheritDoc}
@@ -64,15 +65,15 @@ public class LoglessPairHMM extends PairHMM {
     public void initialize(final int readMaxLength, final int haplotypeMaxLength ) {
         super.initialize(readMaxLength, haplotypeMaxLength);
 
-        transition = new double[paddedMaxReadLength][6];
-        prior = new double[paddedMaxReadLength][paddedMaxHaplotypeLength];
+        transition = new float[paddedMaxReadLength][6];
+        prior = new float[paddedMaxReadLength][paddedMaxHaplotypeLength];
     }
 
     /**
      * {@inheritDoc}
      */
     @Override
-    public double subComputeReadLikelihoodGivenHaplotypeLog10( final byte[] haplotypeBases,
+    public float subComputeReadLikelihoodGivenHaplotypeLog10( final byte[] haplotypeBases,
                                                                final byte[] readBases,
                                                                final byte[] readQuals,
                                                                final byte[] insertionGOP,
@@ -82,7 +83,7 @@ public class LoglessPairHMM extends PairHMM {
                                                                final boolean recacheReadValues ) {
 
         if (previousHaplotypeBases == null || previousHaplotypeBases.length != haplotypeBases.length) {
-            final double initialValue = INITIAL_CONDITION / haplotypeBases.length;
+            final float initialValue = INITIAL_CONDITION / haplotypeBases.length;
             // set the initial value (free deletions in the beginning) for the first row in the deletion matrix
             for( int j = 0; j < paddedHaplotypeLength; j++ ) {
                 deletionMatrix[0][j] = initialValue;
@@ -104,11 +105,11 @@ public class LoglessPairHMM extends PairHMM {
         // this way we ignore all paths that ended in deletions! (huge)
         // but we have to sum all the paths ending in the M and I matrices, because they're no longer extended.
         final int endI = paddedReadLength - 1;
-        double finalSumProbabilities = 0.0;
+        float finalSumProbabilities = 0.f;
         for (int j = 1; j < paddedHaplotypeLength; j++) {
             finalSumProbabilities += matchMatrix[endI][j] + insertionMatrix[endI][j];
         }
-        return Math.log10(finalSumProbabilities) - INITIAL_CONDITION_LOG10;
+        return (float) Math.log10(finalSumProbabilities) - INITIAL_CONDITION_LOG10;
     }
 
     /**
@@ -169,7 +170,7 @@ public class LoglessPairHMM extends PairHMM {
      * @param prior            the likelihood editing distance matrix for the read x haplotype
      * @param transition        an array with the six transition relevant to this location
      */
-    private void updateCell( final int indI, final int indJ, final double prior, final double[] transition) {
+    private void updateCell( final int indI, final int indJ, final float prior, final float[] transition) {
 
         matchMatrix[indI][indJ] = prior * ( matchMatrix[indI - 1][indJ - 1] * transition[0] +
                                                  insertionMatrix[indI - 1][indJ - 1] * transition[1] +

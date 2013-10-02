@@ -41,8 +41,8 @@ public abstract class PairHMM {
     protected static final byte DEFAULT_GCP = (byte) 10;
 
 
-    protected double[][] transition = null; // The transition probabilities cache
-    protected double[][] prior = null;      // The prior probabilities cache
+    protected float[][] transition = null; // The transition probabilities cache
+    protected float[][] prior = null;      // The prior probabilities cache
     protected boolean constantsAreInitialized = false;
 
     protected byte[] previousHaplotypeBases;
@@ -58,9 +58,9 @@ public abstract class PairHMM {
         LOGLESS_CACHING
     }
 
-    protected double[][] matchMatrix = null;
-    protected double[][] insertionMatrix = null;
-    protected double[][] deletionMatrix = null;
+    protected float[][] matchMatrix = null;
+    protected float[][] insertionMatrix = null;
+    protected float[][] deletionMatrix = null;
     protected int maxHaplotypeLength, maxReadLength;
     protected int paddedMaxReadLength, paddedMaxHaplotypeLength;
     protected int paddedReadLength, paddedHaplotypeLength;
@@ -85,9 +85,9 @@ public abstract class PairHMM {
         paddedMaxReadLength = readMaxLength + 1;
         paddedMaxHaplotypeLength = haplotypeMaxLength + 1;
 
-        matchMatrix = new double[paddedMaxReadLength][paddedMaxHaplotypeLength];
-        insertionMatrix = new double[paddedMaxReadLength][paddedMaxHaplotypeLength];
-        deletionMatrix = new double[paddedMaxReadLength][paddedMaxHaplotypeLength];
+        matchMatrix = new float[paddedMaxReadLength][paddedMaxHaplotypeLength];
+        insertionMatrix = new float[paddedMaxReadLength][paddedMaxHaplotypeLength];
+        deletionMatrix = new float[paddedMaxReadLength][paddedMaxHaplotypeLength];
 
         previousHaplotypeBases = null;
         constantsAreInitialized = false;
@@ -118,7 +118,7 @@ public abstract class PairHMM {
      *                          parameters are the same, and only the haplotype bases are changing underneath us
      * @return the log10 probability of read coming from the haplotype under the provided error model
      */
-    public final double computeReadLikelihoodGivenHaplotypeLog10( final byte[] haplotypeBases,
+    public final float computeReadLikelihoodGivenHaplotypeLog10( final byte[] haplotypeBases,
                                                                   final byte[] readBases,
                                                                   final byte[] readQuals,
                                                                   final byte[] insertionGOP,
@@ -143,7 +143,7 @@ public abstract class PairHMM {
         hapStartIndex =  (previousHaplotypeBases == null || haplotypeBases.length != previousHaplotypeBases.length || recacheReadValues) ? 0 : hapStartIndex;
 
 
-        double result = subComputeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
+        float result = subComputeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, readQuals, insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
 
         if ( ! MathUtils.goodLog10Probability(result) )
             throw new IllegalStateException("PairHMM Log Probability cannot be greater than 0: " + String.format("haplotype: %s, read: %s, result: %f", Arrays.toString(haplotypeBases), Arrays.toString(readBases), result));
@@ -158,7 +158,7 @@ public abstract class PairHMM {
     /**
      * To be overloaded by subclasses to actually do calculation for #computeReadLikelihoodGivenHaplotypeLog10
      */
-    protected abstract double subComputeReadLikelihoodGivenHaplotypeLog10( final byte[] haplotypeBases,
+    protected abstract float subComputeReadLikelihoodGivenHaplotypeLog10( final byte[] haplotypeBases,
                                                                         final byte[] readBases,
                                                                         final byte[] readQuals,
                                                                         final byte[] insertionGOP,
@@ -181,12 +181,12 @@ public abstract class PairHMM {
      * @param name the name of this matrix
      * @param matrix the matrix of values
      */
-    private void dumpMatrix(final String name, final double[][] matrix) {
+    private void dumpMatrix(final String name, final float[][] matrix) {
         System.out.printf("%s%n", name);
         for ( int i = 0; i < matrix.length; i++) {
             System.out.printf("\t%s[%d]", name, i);
             for ( int j = 0; j < matrix[i].length; j++ ) {
-                if ( Double.isInfinite(matrix[i][j]) )
+                if ( Float.isInfinite(matrix[i][j]) )
                     System.out.printf(" %15s", String.format("%f", matrix[i][j]));
                 else
                     System.out.printf(" % 15.5e", matrix[i][j]);

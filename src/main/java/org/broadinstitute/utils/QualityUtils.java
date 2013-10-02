@@ -43,13 +43,13 @@ public class QualityUtils {
     /**
      * Cached values for qual as byte calculations so they are very fast
      */
-    private static double qualToErrorProbCache[] = new double[256];
-    private static double qualToProbLog10Cache[] = new double[256];
+    private static float qualToErrorProbCache[] = new float[256];
+    private static float qualToProbLog10Cache[] = new float[256];
 
     static {
         for (int i = 0; i < 256; i++) {
-            qualToErrorProbCache[i] = qualToErrorProb((double) i);
-            qualToProbLog10Cache[i] = Math.log10(1.0 - qualToErrorProbCache[i]);
+            qualToErrorProbCache[i] = qualToErrorProb((float) i);
+            qualToProbLog10Cache[i] = (float) Math.log10(1.0 - qualToErrorProbCache[i]);
         }
     }
 
@@ -77,8 +77,8 @@ public class QualityUtils {
      * @param qual a quality score (0-255)
      * @return a probability (0.0-1.0)
      */
-    public static double qualToProb(final byte qual) {
-        return 1.0 - qualToErrorProb(qual);
+    public static float qualToProb(final byte qual) {
+        return 1.f - qualToErrorProb(qual);
     }
 
     /**
@@ -86,15 +86,15 @@ public class QualityUtils {
      *
      * This is the Phred-style conversion, *not* the Illumina-style conversion.
      *
-     * Because the input is a double value, this function must call Math.pow so can be quite expensive
+     * Because the input is a float value, this function must call Math.pow so can be quite expensive
      *
      * WARNING -- because this function takes a byte for maxQual, you must be careful in converting
      * integers to byte.  The appropriate way to do this is ((byte)(myInt & 0xFF))
      *
-     * @param qual a phred-scaled quality score encoded as a double.  Can be non-integer values (30.5)
+     * @param qual a phred-scaled quality score encoded as a float.  Can be non-integer values (30.5)
      * @return a probability (0.0-1.0)
      */
-    public static double qualToProbLog10(final byte qual) {
+    public static float qualToProbLog10(final byte qual) {
         return qualToProbLog10Cache[(int)qual & 0xff]; // Map: 127 -> 127; -128 -> 128; -1 -> 255; etc.
     }
 
@@ -103,14 +103,14 @@ public class QualityUtils {
      *
      * This is the Phred-style conversion, *not* the Illumina-style conversion.
      *
-     * Because the input is a double value, this function must call Math.pow so can be quite expensive
+     * Because the input is a float value, this function must call Math.pow so can be quite expensive
      *
-     * @param qual a phred-scaled quality score encoded as a double.  Can be non-integer values (30.5)
+     * @param qual a phred-scaled quality score encoded as a float.  Can be non-integer values (30.5)
      * @return a probability (0.0-1.0)
      */
-    public static double qualToErrorProb(final double qual) {
+    public static float qualToErrorProb(final float qual) {
         if ( qual < 0.0 ) throw new IllegalArgumentException("qual must be >= 0.0 but got " + qual);
-        return Math.pow(10.0, qual / -10.0);
+        return (float) Math.pow(10.0, qual / -10.0);
     }
 
     /**
@@ -126,7 +126,7 @@ public class QualityUtils {
      * @param qual a phred-scaled quality score encoded as a byte
      * @return a probability (0.0-1.0)
      */
-    public static double qualToErrorProb(final byte qual) {
+    public static float qualToErrorProb(final byte qual) {
         return qualToErrorProbCache[(int)qual & 0xff]; // Map: 127 -> 127; -128 -> 128; -1 -> 255; etc.
     }
 
@@ -144,8 +144,8 @@ public class QualityUtils {
      * @param qual a phred-scaled quality score encoded as a byte
      * @return a probability (0.0-1.0)
      */
-    public static double qualToErrorProbLog10(final byte qual) {
-        return qualToErrorProbLog10((double)(qual & 0xFF));
+    public static float qualToErrorProbLog10(final byte qual) {
+        return qualToErrorProbLog10((float)(qual & 0xFF));
     }
 
     /**
@@ -155,12 +155,12 @@ public class QualityUtils {
      *
      * The calculation is extremely efficient
      *
-     * @param qual a phred-scaled quality score encoded as a double
+     * @param qual a phred-scaled quality score encoded as a float
      * @return a probability (0.0-1.0)
      */
-    public static double qualToErrorProbLog10(final double qual) {
+    public static float qualToErrorProbLog10(final float qual) {
         if ( qual < 0.0 ) throw new IllegalArgumentException("qual must be >= 0.0 but got " + qual);
-        return qual / -10.0;
+        return qual / -10.f;
     }
 }
 

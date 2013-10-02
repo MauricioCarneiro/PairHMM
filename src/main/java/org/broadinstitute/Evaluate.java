@@ -66,7 +66,7 @@ public class Evaluate {
      * @param overallGCP     comparison haplotype gap continuation quals (phred-scaled)
      * @return the likelihood of the alignment between read and haplotype
      */
-    public double runhmm(PairHMM hmm, final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex, final boolean recacheReadValues) {
+    public float runhmm(PairHMM hmm, final byte[] haplotypeBases, final byte[] readBases, final byte[] readQuals, final byte[] insertionGOP, final byte[] deletionGOP, final byte[] overallGCP, final int hapStartIndex, final boolean recacheReadValues) {
         return hmm.computeReadLikelihoodGivenHaplotypeLog10(haplotypeBases, readBases, cleanupQualityScores(readQuals), insertionGOP, deletionGOP, overallGCP, hapStartIndex, recacheReadValues);
     }
 
@@ -106,7 +106,7 @@ public class Evaluate {
             if (noCaching)
                 currentTest.haplotypeStart = 0;
             final long startTime = System.nanoTime();
-            final double likelihood = runhmm(hmm, currentTest.haplotypeBases, currentTest.readBases, currentTest.readQuals, currentTest.readInsQuals, currentTest.readDelQuals, currentTest.overallGCP, currentTest.haplotypeStart, currentTest.reachedReadValue);
+            final float likelihood = runhmm(hmm, currentTest.haplotypeBases, currentTest.readBases, currentTest.readQuals, currentTest.readInsQuals, currentTest.readDelQuals, currentTest.overallGCP, currentTest.haplotypeStart, currentTest.reachedReadValue);
             totalTime += System.nanoTime() - startTime;
             out.write("" + likelihood + "\n");
         }
