@@ -56,7 +56,8 @@ import org.broadinstitute.utils.QualityUtils;
 public class LoglessPairHMM extends PairHMM {
     //protected static final float INITIAL_CONDITION = Math.pow(2, 1020);
     protected static final float INITIAL_CONDITION = 1e32f;
-    protected static final float INITIAL_CONDITION_LOG10 = 32.f;
+    //protected static final float INITIAL_CONDITION_LOG10 = 32.f;
+    protected static final float INITIAL_CONDITION_LOG10 = (float) Math.log10(INITIAL_CONDITION);
 
     /**
      * {@inheritDoc}
