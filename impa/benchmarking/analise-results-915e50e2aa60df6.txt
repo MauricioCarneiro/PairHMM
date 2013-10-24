@@ -1,0 +1,94 @@
+Analise da performance obtida
+=============================
+
+******************************************************************
+**************************** DOUBLE ******************************
+******************************************************************
+
+Em arquitetura 4xx:
+
+A melhor performance foi obtida na 480 (germain). Esses forem os tempos:
+
+Significado das colunas:
+INICIALIZAÇÃO: ESSE É UM TEMPO QUE **ACHO** QUE NÃO TEM QUE SER TOMADO EM COMPTA
+SE A GENTE QUER UMA COMPARAÇÃO "JUSTA" COM AS OUTRAS IMPLEMENTAÇÕES, PORQUE ELAS
+ESTÃO COMENÇANDO COM O INPUT JÁ NA MEMORIA E A GENTE NÃO).
+
+COMPUTATION: Tempo transcurrido desde o començo do processo de calculo ate o 
+final de ele. Esse numero inclui o tempo investido nas transferencias
+Host->Device, nas transferencias Device->Host, e na execução do kernel.
+
+KERNEL: Tempo transcurrido executando o kernel.
+
+NOTA: Com essas definições, COMPUTATION - KERNEL é o tempo de transferencia. Em
+TUDOS os casos, esse tempo foi quase 0. Acho que isso não faz sentido, mais tb
+não tenho a completa certeza disso. Na verdade em casos grandes chega a ser 
+quase 0.5 segundos, e não seria TAO absurdo... Sei la, é para a gente discutir
+depois.
+
+OUTPUT: Esse tempo tambem nao tem que ser tido em compta. É o tempo demorado em
+escrever o arquivo de output, que acho que eles não estão medindo nos casos 
+deles.
+
+Então
+=====
+
+480 e 470, largeTest, melhores casos:
+-------------------------------------
+
+HOST    GPU COMPUTATION KERNEL  OUTPUT(IGNORED!!)   INIT(IGNORED!!)
+germain 480 340.033     339.518 5.753               115.564
+germain 480 353.812     353.298 5.734               114.998
+germain 480 372.545     372.037 5.57                116.875
+viete   470 420.606     419.72  10.698              255.029
+germain 480 420.981     420.465 5.723               114.952
+
+Note-se que os tempos demorados no output e no init dependen do computador (a
+germain e BEM melhor do que a viete).
+
+=====> MELHOR CASO DOUBLE, SERIE 4XX: 340.033 [MELHOR PRACA: 480]
+
+680 e 670, largeTest, melhores casos:
+-------------------------------------
+
+HOST       GPU  COMPUTATION  KERNEL  OUTPUT(IGNORED!!) INIT(IGNORED!!)
+bresenham  680  535.864      535.421 5.2               106.845
+bresenham  680  553.619      553.177 5.201             106.737
+dijkstra   670  564.103      563.528 5.794             119.532
+bresenham  680  567.313      566.87  5.193             106.909
+dijkstra   670  582.785      582.208 5.8               118.357
+
+
+=====> MELHOR CASO DOUBLE, SERIE 6XX: 535.864 [MELHOR PRACA: 680]
+
+******************************************************************
+**************************** FLOAT  ******************************
+******************************************************************
+
+480 e 470, largeTest, melhores casos: (NAO MEDIDO EM 470)
+-------------------------------------
+
+HOST    GPU COMPUTATION KERNEL  OUTPUT(IGNORED!!) INIT(IGNORED!!)
+germain 480 189.521     189.04  5.397             118.324
+germain 480	216.676     216.194 5.422             115.356
+germain 480	331.068     330.591 5.329             116.838
+germain 480	389.706     389.228 5.43              118.386
+
+=====> MELHOR CASO FLOAT, SERIE 4XX: 189.521 [MELHOR PRACA: 480] [470 NAO COMPARADA]
+
+HOST       GPU COMPUTATION KERNEL   OUTPUT(IGNORED!!) INIT(IGNORED!!)
+bresenham  680 255.218     254.587  20.383            265.314
+bresenham  680 259.706     259.108  25.494            247.121
+dijkstra   670 268.38      267.892  5.351             118.705
+dijkstra   670 273.177     272.688  5.607             115.684
+bresenham  680 314.036     313.452  18.789            209.804
+
+=====> MELHOR CASO FLOAT, SERIE 6XX: 255.218 [MELHOR PRACA: 680]
+
+********************************* CONCLUSSAO ***********************************
+
+              SERIE 4XX                       SERIE 6XX
+DOUBLE        340.033                         535.864
+FLOAT         189.521 [55% da versão double]  255.218 [47% da versão double]
+
+
