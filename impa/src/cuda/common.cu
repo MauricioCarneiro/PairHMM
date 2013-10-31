@@ -104,14 +104,14 @@ void init_memory(const char *fn, Memory *m)
     bzero(m->chunk, chunk_sz);
 
 	m->nres = nres;
-	m->res = (REAL_NUMBER *) malloc(m->nres * sizeof(REAL_NUMBER));
+	m->res = (BIGGEST_NUMBER_REPRESENTATION *) malloc(m->nres * sizeof(BIGGEST_NUMBER_REPRESENTATION));
 	m->cmpH = (unsigned long *) malloc(m->nres * sizeof(unsigned long));
 	m->cmpR = (unsigned long *) malloc(m->nres * sizeof(unsigned long));
 
-    m->phred_to_prob = (REAL_NUMBER *)malloc(256 * sizeof(REAL_NUMBER));
+    m->phred_to_prob = NULL;/*(REAL_NUMBER *)malloc(256 * sizeof(REAL_NUMBER));
     for (t = 0; t < 256; t++)
         m->phred_to_prob[t] = pow(CONST(10.0), -((REAL_NUMBER) t) / CONST(10.0));
-
+	*/
     i = fopen(fn, "r");
     nG = 0;
     curr_g = 0; curr_r = 0; curr_h = 0;
@@ -201,7 +201,7 @@ void show_time(const char *txt)
     return;
 }
 
-void output(REAL_NUMBER *r, unsigned long nr, const char *filename)
+void output(BIGGEST_NUMBER_REPRESENTATION *r, unsigned long nr, const char *filename)
 {
     FILE *f;
     unsigned long x;

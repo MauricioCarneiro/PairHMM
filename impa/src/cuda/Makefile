@@ -1,4 +1,4 @@
-CUDA_VERSION?=5.0
+CUDA_VERSION?=5.5
 CUDA=/usr/local/cuda-$(CUDA_VERSION)
 LIBS=$(CUDA)/lib64
 INCS=$(CUDA)/include
