@@ -64,15 +64,35 @@ template<>
 __device__ static inline
 float INITIAL_CONSTANT<float>()
 {
-	return ldexp((float(1.0)), 120);
+	return 1e32f;
 }
 
 template<>
 __device__ static inline
 double INITIAL_CONSTANT<double>()
 {
-	return ldexp((double(1.0)), 1020);
+	return ldexp(1.0, 1020);
 }
+
+
+template<class T>
+__device__ static inline
+T MIN_ACCEPTED();
+
+template<>
+__device__ static inline
+float MIN_ACCEPTED<float>()
+{
+	return 1e-28f;
+}
+
+template<>
+__device__ static inline
+double MIN_ACCEPTED<double>()
+{
+	return 0.0;
+}
+
 
 
 
@@ -400,6 +420,7 @@ void compare
 {
 	__shared__ PubVars<ROWS, DIAGS, BUFFSIZE, NUMBER> pv;
 	__shared__ int compIndex;
+	__shared__ bool flag_zero;
 
 	for (int i = TID; i < 128; i += NTH)
 		pv.ph2pr[i] = pow((NUMBER(10.0)), -(NUMBER(i)) / (NUMBER(10.0)));
@@ -418,12 +439,18 @@ void compare
 	for (;;)
 	{
 		if (TID == 0)
+		{
 			compIndex = atomicAdd(g_compIndex, 1);
+			flag_zero = (mem.flag[compIndex] == 0);
+		}
 
 		__syncthreads();
 
 		if (compIndex >= mem.nres)
 			break;
+
+		if (!flag_zero)
+			continue;
 
 		if (TID == 0)
 		{
@@ -466,7 +493,13 @@ void compare
 		}
 
 		if (TID == 0)
-			mem.res[compIndex] = log10(pv.result) - log10(INITIAL_CONSTANT<NUMBER>());
+		{
+			if (pv.result > MIN_ACCEPTED<NUMBER>())
+			{
+				mem.flag[compIndex] = 1;
+				mem.res[compIndex] = log10(pv.result) - log10(INITIAL_CONSTANT<NUMBER>());
+			}
+		}
 
 		__syncthreads();
 	}
@@ -577,6 +610,7 @@ int main
 	h_small.cmpH = (ul *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(ul));
 	h_small.cmpR = (ul *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(ul));
 	h_small.res = (BIGGEST_NUMBER_REPRESENTATION *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(BIGGEST_NUMBER_REPRESENTATION));
+	h_small.flag = (char *) malloc(MAX_COMPARISONS_PER_SPLIT);
 	h_small.g = NULL;
 	h_small.phred_to_prob = NULL;
 
@@ -626,17 +660,27 @@ int main
 		d_mem.nr = h_small.nr;
 		d_mem.chunk_sz = h_small.chunk_sz;
 		d_mem.nres = h_small.nres;
-		cudaMemcpy(g_compIndex, &compIndex, sizeof(int), cudaMemcpyHostToDevice);
-		cudaMemcpy(g_lastLinesIndex, &lastLinesIndex, sizeof(int), cudaMemcpyHostToDevice);
 		cudaMemcpy(d_mem.r, h_small.r, h_small.nr * sizeof(ReadSequence), cudaMemcpyHostToDevice);
 		cudaMemcpy(d_mem.h, h_small.h, h_small.nh * sizeof(Haplotype), cudaMemcpyHostToDevice);
 		cudaMemcpy(d_mem.chunk, h_small.chunk, h_small.chunk_sz, cudaMemcpyHostToDevice);
 		cudaMemcpy(d_mem.cmpH, h_small.cmpH, h_small.nres * sizeof(ul), cudaMemcpyHostToDevice);
 		cudaMemcpy(d_mem.cmpR, h_small.cmpR, h_small.nres * sizeof(ul), cudaMemcpyHostToDevice);
+
+		memset(h_small.flag, 0, MAX_COMPARISONS_PER_SPLIT);
+		cudaMemcpy(d_mem.flag, h_small.flag, MAX_COMPARISONS_PER_SPLIT, cudaMemcpyHostToDevice);
+
 		dim3 gridDim(MAX_SIMULTANEOUS_BLOCKS);
 		dim3 blockDim(BLOCKWIDTH, BLOCKHEIGHT);
 		cudaEventRecord(kernel_start, 0);
+
+		cudaMemcpy(g_compIndex, &compIndex, sizeof(int), cudaMemcpyHostToDevice);
+		cudaMemcpy(g_lastLinesIndex, &lastLinesIndex, sizeof(int), cudaMemcpyHostToDevice);
 		compare<BLOCKWIDTH, COMPDIAGS, COMPBUFFSIZE, float><<<gridDim, blockDim>>>(d_mem, (float *) g_lastlines, g_lastLinesIndex, g_compIndex);
+
+		cudaMemcpy(g_compIndex, &compIndex, sizeof(int), cudaMemcpyHostToDevice);
+		cudaMemcpy(g_lastLinesIndex, &lastLinesIndex, sizeof(int), cudaMemcpyHostToDevice);
+		compare<BLOCKWIDTH, COMPDIAGS, COMPBUFFSIZE, double><<<gridDim, blockDim>>>(d_mem, (double *) g_lastlines, g_lastLinesIndex, g_compIndex);
+
 		cudaEventRecord(kernel_stop, 0);
 		cudaEventSynchronize(kernel_stop);
 
