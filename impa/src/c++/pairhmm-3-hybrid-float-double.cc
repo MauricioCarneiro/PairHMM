@@ -10,6 +10,8 @@
 #define MY 4
 #define YY 5
 
+#define MAX_TESTCASES_BUNCH_SIZE 100
+
 /*
 	q: read quality
 	i: insertion penalty
@@ -77,100 +79,92 @@ int read_testcase(testcase *tc)
 	return 0;
 }
 
+inline int read_a_bunch_of_testcases(testcase *tc, int max_bunch_size)
+{
+	int num_tests = 0;
+	for (num_tests = 0; 
+		(num_tests < max_bunch_size) && (read_testcase(tc + num_tests) == 0); 
+		num_tests++);
+	return num_tests;
+}
+
 template<class T>
-struct Context{};
+inline T INITIAL_CONSTANT();
 
 template<>
-struct Context<double>
+inline float INITIAL_CONSTANT<float>()
 {
-	Context()
-	{
-		for (int x = 0; x < 128; x++)
-			ph2pr[x] = pow(10.0, -((double)x) / 10.0);
-
-		INITIAL_CONSTANT = ldexp(1.0, 1020.0);
-		LOG10_INITIAL_CONSTANT = log10(INITIAL_CONSTANT);
-		RESULT_THRESHOLD = 0.0;
-	}
-
-	double LOG10(double v){ return log10(v); }
-
-	static double _(double n){ return n; }
-	static double _(float n){ return ((double) n); }
-	double ph2pr[128];
-	double INITIAL_CONSTANT;
-	double LOG10_INITIAL_CONSTANT;
-	double RESULT_THRESHOLD;
-};
+	return 1e32f;
+}
 
 template<>
-struct Context<float>
+inline double INITIAL_CONSTANT<double>()
 {
-	Context()
-	{
-		for (int x = 0; x < 128; x++)
-			ph2pr[x] = powf(10.f, -((float)x) / 10.f);
+	return ldexp(1.0, 1020);
+}
 
-		INITIAL_CONSTANT = 1e32f;
-		LOG10_INITIAL_CONSTANT = 32.f;
-		RESULT_THRESHOLD = 1e-28f;
-	}
+template<class T>
+inline T MIN_ACCEPTED();
 
-	float LOG10(float v){ return log10f(v); }
+template<>
+inline float MIN_ACCEPTED<float>()
+{
+	return 1e-28f;
+}
 
-	static float _(double n){ return ((float) n); }
-	static float _(float n){ return n; }
-	float ph2pr[128];
-	float INITIAL_CONSTANT;
-	float LOG10_INITIAL_CONSTANT;
-	float RESULT_THRESHOLD;
-};
+template<>
+inline double MIN_ACCEPTED<double>()
+{
+	return 0.0;
+}
 
 template<class NUMBER>
-NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
+double compute_full_prob(testcase *tc, char *done)
 {
 	int r, c;
 	int ROWS = tc->rslen + 1;
 	int COLS = tc->haplen + 1;
 
-	Context<NUMBER> ctx;
+	NUMBER ph2pr[128];
+	for (int x = 0; x < 128; x++)
+		ph2pr[x] = pow((NUMBER(10.0)), -(NUMBER(x)) / (NUMBER(10.0)));
 
 	NUMBER M[ROWS][COLS];
 	NUMBER X[ROWS][COLS];
 	NUMBER Y[ROWS][COLS];
 	NUMBER p[ROWS][6];
 
-	p[0][MM] = ctx._(0.0);
-	p[0][GapM] = ctx._(0.0);
-	p[0][MX] = ctx._(0.0);
-	p[0][XX] = ctx._(0.0);
-	p[0][MY] = ctx._(0.0);
-	p[0][YY] = ctx._(0.0);
+	p[0][MM] = (NUMBER(0.0));
+	p[0][GapM] = (NUMBER(0.0));
+	p[0][MX] = (NUMBER(0.0));
+	p[0][XX] = (NUMBER(0.0));
+	p[0][MY] = (NUMBER(0.0));
+	p[0][YY] = (NUMBER(0.0));
 	for (r = 1; r < ROWS; r++)
 	{
 		int _i = tc->i[r-1] & 127;
 		int _d = tc->d[r-1] & 127;
 		int _c = tc->c[r-1] & 127;
-		p[r][MM] = ctx._(1.0) - ctx.ph2pr[(_i + _d) & 127];
-		p[r][GapM] = ctx._(1.0) - ctx.ph2pr[_c];
-		p[r][MX] = ctx.ph2pr[_i];
-		p[r][XX] = ctx.ph2pr[_c];
-		p[r][MY] = (r == ROWS - 1) ? ctx._(1.0) : ctx.ph2pr[_d];
-		p[r][YY] = (r == ROWS - 1) ? ctx._(1.0) : ctx.ph2pr[_c];
+		p[r][MM] = (NUMBER(1.0)) - ph2pr[(_i + _d) & 127];
+		p[r][GapM] = (NUMBER(1.0)) - ph2pr[_c];
+		p[r][MX] = ph2pr[_i];
+		p[r][XX] = ph2pr[_c];
+		p[r][MY] = (r == ROWS - 1) ? (NUMBER(1.0)) : ph2pr[_d];
+		p[r][YY] = (r == ROWS - 1) ? (NUMBER(1.0)) : ph2pr[_c];
 	}
 
 	for (c = 0; c < COLS; c++)
 	{
-		M[0][c] = ctx._(0.0);
-		X[0][c] = ctx._(0.0);
-		Y[0][c] = ctx.INITIAL_CONSTANT / (tc->haplen);
+		M[0][c] = (NUMBER(0.0));
+		X[0][c] = (NUMBER(0.0));
+		Y[0][c] = INITIAL_CONSTANT<NUMBER>() / (tc->haplen);
 	}
 
 	for (r = 1; r < ROWS; r++)
 	{
-		M[r][0] = ctx._(0.0);
+		M[r][0] = (NUMBER(0.0));
 		X[r][0] = X[r-1][0] * p[r][XX];
-		Y[r][0] = ctx._(0.0);
+		Y[r][0] = (NUMBER(0.0));
 	}
 
 	for (r = 1; r < ROWS; r++)
@@ -179,48 +173,45 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
 			char _rs = tc->rs[r-1];
 			char _hap = tc->hap[c-1];
 			int _q = tc->q[r-1] & 127;
-			NUMBER distm = ctx.ph2pr[_q];
+			NUMBER distm = ph2pr[_q];
 			if (_rs == _hap || _rs == 'N' || _hap == 'N')
-				distm = ctx._(1.0) - distm;
+				distm = (NUMBER(1.0)) - distm;
 			M[r][c] = distm * (M[r-1][c-1] * p[r][MM] + X[r-1][c-1] * p[r][GapM] + Y[r-1][c-1] * p[r][GapM]);
 			X[r][c] = M[r-1][c] * p[r][MX] + X[r-1][c] * p[r][XX];
 			Y[r][c] = M[r][c-1] * p[r][MY] + Y[r][c-1] * p[r][YY];
 		}
 
-	NUMBER result = ctx._(0.0);
+	NUMBER result = (NUMBER(0.0));
 	for (c = 0; c < COLS; c++)
 		result += M[ROWS-1][c] + X[ROWS-1][c];
 
-	if (before_last_log != NULL)
-		*before_last_log = result;	
+	*done = (result > MIN_ACCEPTED<NUMBER>()) ? 1 : 0;
 
-	return ctx.LOG10(result) - ctx.LOG10_INITIAL_CONSTANT;
+	return (double) (log10(result) - log10(INITIAL_CONSTANT<NUMBER>()));
 }
 
 int main()
 {
-	testcase tc[100];
-	double result[100];
-	float beflog[100];
-	Context<float> c;
-
-	int ntcs = 0, j;
+	testcase tc[MAX_TESTCASES_BUNCH_SIZE];
+	double result[MAX_TESTCASES_BUNCH_SIZE];
+	char done[MAX_TESTCASES_BUNCH_SIZE];
+	int num_tests;
 
 	do
 	{
-		for (ntcs = 0; (ntcs < 100) && (read_testcase(tc + ntcs) == 0); ntcs++);
+		num_tests = read_a_bunch_of_testcases(tc, MAX_TESTCASES_BUNCH_SIZE);
 
 		#pragma omp parallel for schedule(dynamic)
-		for (j = 0; j < ntcs; j++)
+		for (int j = 0; j < num_tests; j++)
 		{
-			result[j] = compute_full_prob<float>(tc + j, beflog + j);
-			if (beflog[j] < c.RESULT_THRESHOLD)
-				result[j] = compute_full_prob<double>(tc + j);
+			result[j] = compute_full_prob<float>(tc + j, done + j);
+			if (!done[j])
+				result[j] = compute_full_prob<double>(tc + j, done + j);
 		}
 
-		for (j = 0; j < ntcs; j++)
+		for (int j = 0; j < num_tests; j++)
 			printf("%f\n", result[j]);
-	} while (ntcs == 100);
+	} while (num_tests == MAX_TESTCASES_BUNCH_SIZE);
 
 	return 0;
 }
