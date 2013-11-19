@@ -3,53 +3,20 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <math.h>
+#include <time.h>
+#include <sys/time.h>
+
+#include <string>
+#include <sstream>
+#include <iostream>
 
 #include "common.h"
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <time.h>
-#include <sys/time.h>
-#endif
-
 double right_now(void)
 {
-#ifdef _WIN32
-    LARGE_INTEGER counter, freq;
-    QueryPerformanceCounter(&counter);
-    QueryPerformanceFrequency(&freq);
-    return (1.0*counter.QuadPart)/(1.0*freq.QuadPart);
-#else
     struct timeval v;
     gettimeofday(&v, (struct timezone *) NULL);
     return v.tv_sec + v.tv_usec/1.0e6;
-#endif
-}
-
-int ndigs(char c)
-{
-    int t = 0;
-    if (c < 0) { c *= -1; t++; }
-    if ((0 <= c) && (c < 10)) return (t + 1);
-    if ((10 <= c) && (c < 100)) return (t + 2);
-    return (t + 3);
-}
-
-int read_numbers(const char *str, int n, char *dest)
-{
-    int pos = 0, x, temp;
-    sscanf(str, "%d", &temp);
-    dest[0] = temp;
-    pos += ndigs(*dest);
-    for (x = 1; x < n; x++)
-    {
-        sscanf(str + pos, ",%d", &temp);
-        dest[x] = (char)temp;
-		dest[x] = ((dest[x]) & 127);
-        pos += ndigs(dest[x]) + 1;
-    }
-    return pos;
 }
 
 void init_memory(const char *fn, Memory *m)
@@ -59,8 +26,10 @@ void init_memory(const char *fn, Memory *m)
     size_t sz = 0;
     FILE *i;
     unsigned long nG = 0, nR = 0, nH = 0, tr, th, R = 0, H = 0, x = 0;
-    unsigned long y = 0, t = 0, chunk_sz = 0, nres = 0, curr_g = 0, curr_r = 0;
+    unsigned long y = 0, chunk_sz = 0, nres = 0, curr_g = 0, curr_r = 0;
     unsigned long curr_h = 0, curr_res = 0, gr = 0, r = 0, h = 0;
+
+	std::string qual, ins, del, cont;
 
     i = fopen(fn, "r");
     while (getline(&l, &sz, i) != -1)
@@ -73,7 +42,7 @@ void init_memory(const char *fn, Memory *m)
         sscanf(l, "%lu %lu\n", &tr, &th);
         nR += tr;
         nH += th;
-		nres += (tr * th);
+        nres += (tr * th);
         for (x = 0; x < tr; x++)
         {
             if (getline(&l, &sz, i) == -1) return;
@@ -103,15 +72,11 @@ void init_memory(const char *fn, Memory *m)
     m->chunk = (char *) malloc(chunk_sz);
     bzero(m->chunk, chunk_sz);
 
-	m->nres = nres;
-	m->res = (BIGGEST_NUMBER_REPRESENTATION *) malloc(m->nres * sizeof(BIGGEST_NUMBER_REPRESENTATION));
-	m->cmpH = (unsigned long *) malloc(m->nres * sizeof(unsigned long));
-	m->cmpR = (unsigned long *) malloc(m->nres * sizeof(unsigned long));
+    m->nres = nres;
+    m->res = (BIGGEST_NUMBER_REPRESENTATION *) malloc(m->nres * sizeof(BIGGEST_NUMBER_REPRESENTATION));
+    m->cmpH = (unsigned long *) malloc(m->nres * sizeof(unsigned long));
+    m->cmpR = (unsigned long *) malloc(m->nres * sizeof(unsigned long));
 
-    m->phred_to_prob = NULL;/*(REAL_NUMBER *)malloc(256 * sizeof(REAL_NUMBER));
-    for (t = 0; t < 256; t++)
-        m->phred_to_prob[t] = pow(CONST(10.0), -((REAL_NUMBER) t) / CONST(10.0));
-	*/
     i = fopen(fn, "r");
     nG = 0;
     curr_g = 0; curr_r = 0; curr_h = 0;
@@ -131,22 +96,40 @@ void init_memory(const char *fn, Memory *m)
         for (x = 0; x < m->g[curr_g].nR; x++)
         {
             if (getline(&l, &sz, i) == -1) return;
-            R = 0; while (l[R] != ' ') R++;
 
-            m->r[curr_r].R = R;
-            m->r[curr_r].r = lastptr;
-            m->r[curr_r].qual = lastptr + (R+1);
-            m->r[curr_r].ins = lastptr + (R+1) * 2;
-            m->r[curr_r].del = lastptr + (R+1) * 3;
-            m->r[curr_r].cont = lastptr + (R+1) * 4;
-            sscanf(l, "%s ", m->chunk + lastptr);
+			// read the readsequence curr_r
+
+            R = 0; while (l[R] != ' ') R++;
+			// R is the number of characters in the read sequence
+            m->r[curr_r].R = R; 
+            m->r[curr_r].r = lastptr; // m->r[curr_r].r is the position in the chunk in which the readsequence starts. In the chunk, the readsequence has R characters followed by a '\0' character.
+            m->r[curr_r].qidc = lastptr + (R+1); // m->r[curr_r].qidc is the position in the chunk in which the readsequence starts
+            sscanf(l, "%s ", m->chunk + lastptr); // read r. Put the R characters into the chunk, starting at m->r[curr_r].r
             y = R+1;
-            y += read_numbers(l + y, R, m->chunk + lastptr + (R+1)); y++;
-            for (t = 0; t < R; t++) 
-                m->chunk[m->r[curr_r].qual + t] = (m->chunk[m->r[curr_r].qual + t] < 6) ? 6 : m->chunk[m->r[curr_r].qual + t];
-            y += read_numbers(l + y, R, m->chunk + lastptr + (R+1)*2); y++;
-            y += read_numbers(l + y, R, m->chunk + lastptr + (R+1)*3); y++;
-            read_numbers(l + y, R, m->chunk + lastptr + (R+1)*4);
+
+			// read qual, ins, del, cont and put them in an interleaved way into the chunk.
+			std::istringstream iss(l + y);
+			iss >> qual >> ins >> del >> cont;
+			std::istringstream issq(qual);
+			std::istringstream issi(ins);
+			std::istringstream issd(del);
+			std::istringstream issc(cont);
+			for (int j = 0; j < R; j++)
+			{
+				if (issq.peek() == ',') issq.ignore();
+				if (issi.peek() == ',') issi.ignore();
+				if (issd.peek() == ',') issd.ignore();
+				if (issc.peek() == ',') issc.ignore();
+				int intq, inti, intd, intc;
+				issq >> intq; if (intq < 6) intq = 6;
+				issi >> inti;
+				issd >> intd;
+				issc >> intc;
+				m->chunk[lastptr + (R+1) + 4 * j + 0] = (char) intq;
+				m->chunk[lastptr + (R+1) + 4 * j + 1] = (char) inti;
+				m->chunk[lastptr + (R+1) + 4 * j + 2] = (char) intd;
+				m->chunk[lastptr + (R+1) + 4 * j + 3] = (char) intc;
+			}
 
             lastptr += (R+1) * 5;
             curr_r++;
@@ -176,28 +159,6 @@ void init_memory(const char *fn, Memory *m)
                 m->cmpR[curr_res] = m->g[gr].fstR + r;
                 curr_res++;
             }
-    return;
-}
-
-void show_time(const char *txt)
-{
-    static int N = 0;
-    static double previous;
-    static double start;
-    double now;
-
-    if (N == 0)
-    {
-        start = right_now();
-        previous = start;
-    }
-
-    now = right_now();
-
-    printf("Prev: %e sec   Tot: %e sec ===   %s\n", now - previous, now - start, txt);
-
-    N++;
-    previous = now;
     return;
 }
 

@@ -35,7 +35,7 @@ struct PubVars
 	ul H, R;
 	char h[ROWS+DIAGS-1];
 	char r[ROWS];
-	uc q[ROWS], i[ROWS], d[ROWS], c[ROWS];
+	char4 qidc[ROWS];
 	ul nblockrows, nblockcols;
 	Haplotype hap;
 	ReadSequence rs;
@@ -159,10 +159,10 @@ void load_read_data
 	for (int r = ((i == 0) ? 1 : 0) + TID; r < MIN(ROWS, pv.R + 1 - i * ROWS); r += NTH)
 	{
 		pv.r[r] = pv.chunk[pv.rs.r + i * ROWS + r - 1];
-		pv.q[r] = pv.chunk[pv.rs.qual + i * ROWS + r - 1];
-		pv.i[r] = pv.chunk[pv.rs.ins + i * ROWS + r - 1];
-		pv.d[r] = pv.chunk[pv.rs.del + i * ROWS + r - 1];
-		pv.c[r] = pv.chunk[pv.rs.cont + i * ROWS + r - 1];
+		pv.qidc[r].x = pv.chunk[pv.rs.qidc + 4 * (i * ROWS + r - 1) + 0];
+		pv.qidc[r].y = pv.chunk[pv.rs.qidc + 4 * (i * ROWS + r - 1) + 1];
+		pv.qidc[r].z = pv.chunk[pv.rs.qidc + 4 * (i * ROWS + r - 1) + 2];
+		pv.qidc[r].w = pv.chunk[pv.rs.qidc + 4 * (i * ROWS + r - 1) + 3];
 	}
 }
 
@@ -182,7 +182,7 @@ void notfirstline_firstcolum
 			pv.m[r] = (NUMBER(0.0));
 
 		if (THREADX)
-			pv.x[r] = _m * pv.ph2pr[pv.i[r]] + _x * pv.ph2pr[pv.c[r]];
+			pv.x[r] = _m * pv.ph2pr[pv.qidc[r].y] + _x * pv.ph2pr[pv.qidc[r].w];
 
 		if (THREADY)
 			pv.y[r] = (NUMBER(0.0));
@@ -190,7 +190,7 @@ void notfirstline_firstcolum
 	else
 	{
 		pv.m[r] = (NUMBER(0.0));
-		pv.x[r] = _m * pv.ph2pr[pv.i[r]] + _x * pv.ph2pr[pv.c[r]];
+		pv.x[r] = _m * pv.ph2pr[pv.qidc[r].y] + _x * pv.ph2pr[pv.qidc[r].w];
 		pv.y[r] = (NUMBER(0.0));
 	}
 }
@@ -218,41 +218,41 @@ void notfirstline_notfirstcolumn
 	{
 		if (THREADM)
 		{
-			t1 = (NUMBER(1.0)) - pv.ph2pr[(pv.i[r] + pv.d[r]) & 127];
-			t2 = (NUMBER(1.0)) - pv.ph2pr[pv.c[r]];
-			t3 = pv.ph2pr[pv.q[r]];
+			t1 = (NUMBER(1.0)) - pv.ph2pr[(pv.qidc[r].y + pv.qidc[r].z) & 127];
+			t2 = (NUMBER(1.0)) - pv.ph2pr[pv.qidc[r].w];
+			t3 = pv.ph2pr[pv.qidc[r].x];
 			dist = (pv.r[r] == pv.h[ROWS - 1 + diag - r] || pv.r[r] == 'N' || pv.h[ROWS - 1 + diag - r] == 'N') ? (NUMBER(1.0)) - t3 : t3;
 			pv.m[r] = dist * (M_m * t1 + M_x * t2 + M_y * t2);
 		}
 
 		if (THREADX)
 		{
-			t1 = pv.ph2pr[pv.i[r]];
-			t2 = pv.ph2pr[pv.c[r]];
+			t1 = pv.ph2pr[pv.qidc[r].y];
+			t2 = pv.ph2pr[pv.qidc[r].w];
 			pv.x[r] = X_m * t1 + X_x * t2;
 		}
 
 		if (THREADY)
 		{
-			t1 = ((unsigned)r + i*ROWS==pv.R) ? (NUMBER(1.0)) : pv.ph2pr[pv.d[r]];
-			t2 = ((unsigned)r + i*ROWS==pv.R) ? (NUMBER(1.0)) : pv.ph2pr[pv.c[r]];
+			t1 = ((unsigned)r + i*ROWS==pv.R) ? (NUMBER(1.0)) : pv.ph2pr[pv.qidc[r].z];
+			t2 = ((unsigned)r + i*ROWS==pv.R) ? (NUMBER(1.0)) : pv.ph2pr[pv.qidc[r].w];
 			pv.y[r] = Y_m * t1 + Y_y * t2;
 		}
 	}
 	else
 	{
-		t1 = (NUMBER(1.0)) - pv.ph2pr[(pv.i[r] + pv.d[r]) & 127];
-		t2 = (NUMBER(1.0)) - pv.ph2pr[pv.c[r]];
-		t3 = pv.ph2pr[pv.q[r]];
+		t1 = (NUMBER(1.0)) - pv.ph2pr[(pv.qidc[r].y + pv.qidc[r].z) & 127];
+		t2 = (NUMBER(1.0)) - pv.ph2pr[pv.qidc[r].w];
+		t3 = pv.ph2pr[pv.qidc[r].x];
 		dist = (pv.r[r] == pv.h[ROWS - 1 + diag - r] || pv.r[r] == 'N' || pv.h[ROWS - 1 + diag - r] == 'N') ? (NUMBER(1.0)) - t3 : t3;
 		pv.m[r] = dist * (M_m * t1 + M_x * t2 + M_y * t2);
 
-		t1 = pv.ph2pr[pv.i[r]];
-		t2 = pv.ph2pr[pv.c[r]];
+		t1 = pv.ph2pr[pv.qidc[r].y];
+		t2 = pv.ph2pr[pv.qidc[r].w];
 		pv.x[r] = X_m * t1 + X_x * t2;
 
-		t1 = ((unsigned)r + i * ROWS == pv.R) ? (NUMBER(1.0)) : pv.ph2pr[pv.d[r]];
-		t2 = ((unsigned)r + i * ROWS == pv.R) ? (NUMBER(1.0)) : pv.ph2pr[pv.c[r]];
+		t1 = ((unsigned)r + i * ROWS == pv.R) ? (NUMBER(1.0)) : pv.ph2pr[pv.qidc[r].z];
+		t2 = ((unsigned)r + i * ROWS == pv.R) ? (NUMBER(1.0)) : pv.ph2pr[pv.qidc[r].w];
 		pv.y[r] = Y_m * t1 + Y_y * t2;
 	}
 }
@@ -560,10 +560,7 @@ int split
 	{
 		ret.r[j] = h_big.r[offset_r + j];
 		ret.r[j].r -= chunk_begin;
-		ret.r[j].qual -= chunk_begin;
-		ret.r[j].ins -= chunk_begin;
-		ret.r[j].del -= chunk_begin;
-		ret.r[j].cont -= chunk_begin;
+		ret.r[j].qidc -= chunk_begin;
 	}
 
 	for (j = 0; j < ret.nres; j++)
@@ -598,12 +595,15 @@ int main
 
 	times.start = right_now();
 	times.t1 = right_now();
+	/*
+		init_memory recibe un nombre de archivo y un puntero a una estructura
+		Memory, e inicializa h_big (una estructura de tipo Memory) basándose en 
+		el contenido del archivo.
+	*/
 	init_memory(argv[1], &h_big);
 	times.t2 = right_now();
 	times.init_memory = times.t2 - times.t1;
-
 	times.t1 = right_now();
-
 	h_small.r = (ReadSequence *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(ReadSequence));
 	h_small.h = (Haplotype *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(Haplotype));
 	h_small.chunk = (char *) malloc(MAX_COMPARISONS_PER_SPLIT * (MAX_H + MAX_R * 5));
@@ -612,7 +612,6 @@ int main
 	h_small.res = (BIGGEST_NUMBER_REPRESENTATION *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(BIGGEST_NUMBER_REPRESENTATION));
 	h_small.flag = (char *) malloc(MAX_COMPARISONS_PER_SPLIT);
 	h_small.g = NULL;
-	h_small.phred_to_prob = NULL;
 
 	g_lastlines = NULL;
 	g_compIndex = NULL;
@@ -636,7 +635,6 @@ int main
 	cudaMalloc(&(d_mem.flag), MAX_COMPARISONS_PER_SPLIT);
 	cudaMalloc(&(d_mem.res), MAX_COMPARISONS_PER_SPLIT * sizeof(BIGGEST_NUMBER_REPRESENTATION));
 	d_mem.g = NULL;
-	d_mem.phred_to_prob = NULL;
 
 	if (!g_lastLinesIndex || !g_lastlines || !g_compIndex || !d_mem.r || !d_mem.h || !d_mem.chunk || !d_mem.cmpH || !d_mem.cmpR || !d_mem.res)
 	{

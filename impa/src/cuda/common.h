@@ -11,7 +11,7 @@ typedef struct
 typedef struct
 {
 	unsigned long R;
-	int r, qual, ins, del, cont;
+	int r, qidc;
 } ReadSequence;
 
 typedef struct
@@ -30,15 +30,11 @@ typedef struct
     unsigned long *cmpR;
     BIGGEST_NUMBER_REPRESENTATION *res;
 	char *flag;
-    BIGGEST_NUMBER_REPRESENTATION *phred_to_prob; /* not used */
     unsigned long ng, nh, nr, chunk_sz, nres;
 } Memory;
 
 double right_now(void);
-int ndigs(char c);
-int read_numbers(const char *str, int n, char *dest);
 void init_memory(const char *fn, Memory *m);
-void show_time(const char *txt);
 void output(BIGGEST_NUMBER_REPRESENTATION *r, unsigned long nr, const char *filename);
 
 #endif
