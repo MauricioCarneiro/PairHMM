@@ -6,13 +6,13 @@ all: *.cc
 
 *.cc:	.FORCE
 ifeq ($(PROFILING), true)
-	g++ $@ -o $(basename $@)_profiling.o $(FLAGS_PROFILING)
+	g++ $@ -o $(basename $@)_profiling $(FLAGS_PROFILING)
 else
-	g++ $@ -o $(basename $@).o $(FLAGS)
+	g++ $@ -o $(basename $@) $(FLAGS)
 endif
 
 clean:	.FORCE
-	rm -f *.o
+	find . -executable -exec rm '{}' \;
 
 .FORCE:
 
