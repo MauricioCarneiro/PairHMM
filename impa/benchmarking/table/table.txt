@@ -1,0 +1,17 @@
+GPU
+===
+    The problem has been solved with 6 different sizes for the block of threads. 
+    This table shows the best time. All measures are for the case “largetest”	
+
+Device          Best Time (in seconds)
+GeForce GTX 480	190.679
+GeForce GTX 680	274.349
+GeForce GTX 670	288.284
+Titan           161.157
+
+CPU
+===
+
+Device	          Time
+[see cpuinfo.txt] 1267.42
+

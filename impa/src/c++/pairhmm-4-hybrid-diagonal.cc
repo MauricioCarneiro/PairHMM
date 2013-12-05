@@ -234,6 +234,28 @@ double compute_full_prob(testcase *tc, char *done)
 			Y[r][c] = M[r][c-1] * p[r][MY] + Y[r][c-1] * p[r][YY];
 		}
 
+	/* DEBUG */
+	#ifdef DEBUG_MODE
+	printf(" M \n---\n");
+	for (r = 0; r < ROWS; r++) {
+		for (c = 0; c < COLS; c++)
+			printf(" %09.2e", M[r][c]);
+		printf("\n");
+	}
+	printf(" X \n---\n");
+	for (r = 0; r < ROWS; r++) {
+		for (c = 0; c < COLS; c++)
+			printf(" %09.2e", X[r][c]);
+		printf("\n");
+	}
+	printf(" Y \n---\n");
+	for (r = 0; r < ROWS; r++) {
+		for (c = 0; c < COLS; c++)
+			printf(" %09.2e", Y[r][c]);
+		printf("\n");
+	}
+	#endif
+
 	NUMBER result = (NUMBER(0.0));
 	for (c = 0; c < COLS; c++)
 		result += M[ROWS-1][c] + X[ROWS-1][c];
