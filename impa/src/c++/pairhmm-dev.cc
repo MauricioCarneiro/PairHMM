@@ -120,10 +120,12 @@ inline double MIN_ACCEPTED<double>()
 	return 0.0;
 }
 
+#define VECTOR_SIZE 8
+
 template<class NUMBER>
 double compute_full_prob(testcase *tc, char *done)
 {
-	int r, c, diag;
+	int r, c, diag, rb;
 	int ROWS = tc->rslen + 1;
 	int COLS = tc->haplen + 1;
 
@@ -146,9 +148,10 @@ double compute_full_prob(testcase *tc, char *done)
 		YY[r] = (r == ROWS - 1) ? (NUMBER(1.0)) : ph2pr[_c];
 	}
 
-	NUMBER M1[ROWS], M2[ROWS], M3[ROWS], *M, *Mp, *Mpp;
-	NUMBER X1[ROWS], X2[ROWS], X3[ROWS], *X, *Xp, *Xpp;
-	NUMBER Y1[ROWS], Y2[ROWS], Y3[ROWS], *Y, *Yp, *Ypp;
+	int sz = ((ROWS+VECTOR_SIZE-1) / VECTOR_SIZE) * VECTOR_SIZE;
+	NUMBER M1[sz], M2[sz], M3[sz], *M, *Mp, *Mpp;
+	NUMBER X1[sz], X2[sz], X3[sz], *X, *Xp, *Xpp;
+	NUMBER Y1[sz], Y2[sz], Y3[sz], *Y, *Yp, *Ypp;
 	Mpp = M1; Xpp = X1; Ypp = Y1;
 	Mp = M2;  Xp = X2;  Yp = Y2;
 	M = M3;   X = X3;   Y = Y3;
@@ -180,20 +183,22 @@ double compute_full_prob(testcase *tc, char *done)
 		X[0] = (NUMBER(0.0));
 		Y[0] = k;
 
-		for (r = 1; r < ROWS; r++)
+		for (rb = 1; rb < ROWS; rb += VECTOR_SIZE)
 		{
-			c = (ROWS-1)+diag-r;
+			for (r = rb; r < rb + VECTOR_SIZE; r++)
+			{
+				c = diag-r;
+				char _rs = tc->rs[r-1];
+				char _hap = tc->hap[c-1];
+				int _q = tc->q[r-1] & 127; /* ajeitar isso quando carregar do input */
+				NUMBER distm = ph2pr[_q];
+				if (_rs == _hap || _rs == 'N' || _hap == 'N')
+					distm = (NUMBER(1.0)) - distm;
 
-			char _rs = tc->rs[r-1];
-			char _hap = tc->hap[c-1-(ROWS-1)];
-			int _q = tc->q[r-1] & 127;
-			NUMBER distm = ph2pr[_q];
-			if (_rs == _hap || _rs == 'N' || _hap == 'N')
-				distm = (NUMBER(1.0)) - distm;
-
-			M[r] = distm * (Mpp[r-1] * MM[r] + Xpp[r-1] * GM[r] + Ypp[r-1] * GM[r]);
-			X[r] = Mp[r-1] * MX[r] + Xp[r-1] * XX[r];
-			Y[r] = Mp[r] * MY[r] + Yp[r] * YY[r];
+				M[r] = distm * (Mpp[r-1] * MM[r] + Xpp[r-1] * GM[r] + Ypp[r-1] * GM[r]);
+				X[r] = Mp[r-1] * MX[r] + Xp[r-1] * XX[r];
+				Y[r] = Mp[r] * MY[r] + Yp[r] * YY[r];
+			}
 		}
 
 		result += M[ROWS-1] + X[ROWS-1];
