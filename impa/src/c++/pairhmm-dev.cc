@@ -10,7 +10,7 @@
 typedef struct 
 {
 	int rslen, haplen, *q, *i, *d, *c;
-	char *hap, *rs;
+	int *hap, *rs;
 } testcase;
 
 int normalize(char c)
@@ -25,24 +25,26 @@ int read_testcase(testcase *tc)
 	if (!(std::cin >> hap >> rs >> q >> i >> d >> c >> i1 >> i2).good())
 		return -1;
 
-	tc->haplen = strlen(hap.c_str());
-	tc->rslen = strlen(rs.c_str());
+	tc->haplen = hap.size();
+	tc->rslen = rs.size();
 
 	int h = (tc->rslen+1);
 	h = ((h + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
 
-	tc->hap = new char[tc->haplen + 2 * (h-1) + 1]();
+	tc->hap = new int[tc->haplen + 2 * (h-1) + 1]();
 	tc->hap += (h-1);
-	tc->rs = new char[h+1]();
+	tc->rs = new int[h+1]();
 	tc->q = new int[h+1]();
 	tc->i = new int[h+1]();
 	tc->d = new int[h+1]();
 	tc->c = new int[h+1]();
 
-	std::strcpy(tc->hap, hap.c_str());
-	std::strcpy(tc->rs, rs.c_str());
+	for (int x = 0; x < tc->haplen; x++)
+		tc->hap[x] = hap[x];
+
 	for (int x = 0; x < tc->rslen; x++)
 	{
+		tc->rs[x] = rs[x];
 		tc->q[x] = normalize((q.c_str())[x]);
 		tc->q[x] = tc->q[x] < 6 ? 6 : (tc->q[x]) & 127;
 		tc->i[x] = normalize((i.c_str())[x]);
@@ -102,7 +104,8 @@ double compute_full_prob(testcase *tc, char *done)
 	/* constants */
 	int sz = ((ROWS + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
 
-	NUMBER ph2pr[128], MM[sz + 1], GM[sz + 1], MX[sz + 1], XX[sz + 1], MY[sz + 1], YY[sz + 1];
+	NUMBER ph2pr[128], MM[sz + 1], GM[sz + 1], MX[sz + 1], XX[sz + 1], 
+		MY[sz + 1], YY[sz + 1], pq[sz+1];
 	for (int x = 0; x < 128; x++)
 		ph2pr[x] = pow((NUMBER(10.0)), -(NUMBER(x)) / (NUMBER(10.0)));
 	//	cell 0 of MM, GM, ... , YY is never used, since first row is just 
@@ -112,12 +115,15 @@ double compute_full_prob(testcase *tc, char *done)
 		int _i = (tc->i)[r-1] & 127;
 		int _d = (tc->d)[r-1] & 127;
 		int _c = (tc->c)[r-1] & 127;
-		MM[r] = (NUMBER(1.0)) - ph2pr[(_i + _d) & 127];
+		int _q = (tc->q)[r-1] & 127;
+		//MM[r] = (NUMBER(1.0)) - ph2pr[(_i + _d) & 127];
+		MM[r] = (NUMBER(1.0)) - ph2pr[_i]*ph2pr[_d];
 		GM[r] = (NUMBER(1.0)) - ph2pr[_c];
 		MX[r] = ph2pr[_i];
 		XX[r] = ph2pr[_c];
 		MY[r] = (r == ROWS - 1) ? (NUMBER(1.0)) : ph2pr[_d];
 		YY[r] = (r == ROWS - 1) ? (NUMBER(1.0)) : ph2pr[_c];
+		pq[r] = ph2pr[_q];
 	}
 
 	NUMBER M1[sz], M2[sz], M3[sz], *M, *Mp, *Mpp;
@@ -126,6 +132,7 @@ double compute_full_prob(testcase *tc, char *done)
 	Mpp = M1; Xpp = X1; Ypp = Y1;
 	Mp = M2;  Xp = X2;  Yp = Y2;
 	M = M3;   X = X3;   Y = Y3;
+
 
 	/* first and second diagonals */
 	NUMBER k = INITIAL_CONSTANT<NUMBER>() / (tc->haplen);
@@ -159,10 +166,9 @@ double compute_full_prob(testcase *tc, char *done)
 			for (r = rb; r < rb + VECTOR_SIZE; r++)
 			{
 				c = diag-r;
-				char _rs = tc->rs[r-1];
-				char _hap = tc->hap[c-1];
-				int _q = tc->q[r-1]; 
-				NUMBER distm = ph2pr[_q];
+				int _rs = tc->rs[r-1];
+				int _hap = tc->hap[c-1];
+				NUMBER distm = pq[r];
 				if (_rs == _hap || _rs == 'N' || _hap == 'N')
 					distm = (NUMBER(1.0)) - distm;
 
@@ -191,14 +197,6 @@ int main()
 	char done[MAX_TESTCASES_BUNCH_SIZE];
 	int num_tests;
 
-	#ifdef DEBUG_MODE
-		num_tests = read_a_bunch_of_testcases(tc, MAX_TESTCASES_BUNCH_SIZE);
-		(void)num_tests;
-		result[0] = compute_full_prob<float>(tc + 0, done + 0);
-		if (!done[0])
-			result[0] = compute_full_prob<double>(tc + 0, done + 0);
-		printf("%f\n", result[0]);
-	#else
 	do
 	{
 		num_tests = read_a_bunch_of_testcases(tc, MAX_TESTCASES_BUNCH_SIZE);
@@ -213,7 +211,6 @@ int main()
 		for (int j = 0; j < num_tests; j++)
 			printf("%f\n", result[j]);
 	} while (num_tests == MAX_TESTCASES_BUNCH_SIZE);
-	#endif
 
 	return 0;
 }
