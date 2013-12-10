@@ -1,25 +1,10 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <math.h>
-
-/*
-#define MM 0
-#define GapM 1
-#define MX 2
-#define XX 3
-#define MY 4
-#define YY 5
-*/
+#include <cstdio>
+#include <cstring>
+#include <cstdlib>
+#include <cmath>
+#include <iostream>
 
 #define MAX_TESTCASES_BUNCH_SIZE 100
-
-/*
-	q: read quality
-	i: insertion penalty
-	d: deletion penalty
-	c: gap continuation penalty
-*/
 
 typedef struct 
 {
@@ -29,54 +14,35 @@ typedef struct
 
 int normalize(char c)
 {
-	return ((int) (c - 33));
+	return ((int) (((int)c) - 33));
 }
 
 int read_testcase(testcase *tc)
 {
-	char *q, *i, *d, *c, *line = NULL;
-	int _q, _i, _d, _c;
-	int x, size = 0;
-	ssize_t read;
+	std::string hap, rs, q, i, d, c, i1, i2;
 
-	read = getline(&line, (size_t *) &size, stdin);
-	if (read == -1)
+	if (!(std::cin >> hap >> rs >> q >> i >> d >> c >> i1 >> i2).good())
 		return -1;
 
-	tc->hap = (char *) malloc(size);
-	tc->rs = (char *) malloc(size);
-	q = (char *) malloc(size);
-	i = (char *) malloc(size);
-	d = (char *) malloc(size);
-	c = (char *) malloc(size);
-
-	if (sscanf(line, "%s %s %s %s %s %s\n", tc->hap, tc->rs, q, i, d, c) != 6)
-		return -1;
-
-	tc->haplen = strlen(tc->hap);
-	tc->rslen = strlen(tc->rs);
+	tc->haplen = strlen(hap.c_str());
+	tc->rslen = strlen(rs.c_str());
+	tc->hap = (char *) malloc(tc->haplen + 1);
+	tc->rs = (char *) malloc(tc->rslen + 1);
 	tc->q = (int *) malloc(sizeof(int) * tc->rslen);
 	tc->i = (int *) malloc(sizeof(int) * tc->rslen);
 	tc->d = (int *) malloc(sizeof(int) * tc->rslen);
-	tc->c = (int *) malloc(sizeof(int) * tc->rslen);
+	tc->c = (int *) malloc(sizeof(int) * tc->rslen); 
 
-	for (x = 0; x < tc->rslen; x++)
+	std::strcpy(tc->hap, hap.c_str());
+	std::strcpy(tc->rs, rs.c_str());
+	for (int x = 0; x < tc->rslen; x++)
 	{
-		_q = normalize(q[x]);
-		_i = normalize(i[x]);
-		_d = normalize(d[x]);
-		_c = normalize(c[x]);
-		tc->q[x] = (_q < 6) ? 6 : _q;
-		tc->i[x] = _i;
-		tc->d[x] = _d;
-		tc->c[x] = _c;
+		tc->q[x] = normalize((q.c_str())[x]);
+		tc->q[x] = ((tc->q[x]) < 6) ? 6 : tc->q[x];
+		tc->i[x] = normalize((i.c_str())[x]);
+		tc->d[x] = normalize((d.c_str())[x]);
+		tc->c[x] = normalize((c.c_str())[x]);
 	}
-
-	free(q);
-	free(i);
-	free(d);
-	free(c);
-	free(line);
 
 	return 0;
 }
@@ -130,7 +96,8 @@ double compute_full_prob(testcase *tc, char *done)
 	int COLS = tc->haplen + 1;
 
 	/* constants */
-	NUMBER ph2pr[128], MM[ROWS], GM[ROWS], MX[ROWS], XX[ROWS], MY[ROWS], YY[ROWS];
+	int sz = ((ROWS+VECTOR_SIZE-1) / VECTOR_SIZE) * VECTOR_SIZE;
+	NUMBER ph2pr[128], MM[sz+1], GM[sz+1], MX[sz+1], XX[sz+1], MY[sz+1], YY[sz+1];
 	for (int x = 0; x < 128; x++)
 		ph2pr[x] = pow((NUMBER(10.0)), -(NUMBER(x)) / (NUMBER(10.0)));
 	//	cell 0 of MM, GM, ... , YY is never used, since first row is just 
@@ -148,7 +115,6 @@ double compute_full_prob(testcase *tc, char *done)
 		YY[r] = (r == ROWS - 1) ? (NUMBER(1.0)) : ph2pr[_c];
 	}
 
-	int sz = ((ROWS+VECTOR_SIZE-1) / VECTOR_SIZE) * VECTOR_SIZE;
 	NUMBER M1[sz], M2[sz], M3[sz], *M, *Mp, *Mpp;
 	NUMBER X1[sz], X2[sz], X3[sz], *X, *Xp, *Xpp;
 	NUMBER Y1[sz], Y2[sz], Y3[sz], *Y, *Yp, *Ypp;
