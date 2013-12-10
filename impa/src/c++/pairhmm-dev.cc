@@ -5,6 +5,7 @@
 #include <iostream>
 
 #define MAX_TESTCASES_BUNCH_SIZE 100
+#define VECTOR_SIZE 8
 
 typedef struct 
 {
@@ -14,7 +15,7 @@ typedef struct
 
 int normalize(char c)
 {
-	return ((int) (((int)c) - 33));
+	return (int)c - 33;
 }
 
 int read_testcase(testcase *tc)
@@ -26,19 +27,24 @@ int read_testcase(testcase *tc)
 
 	tc->haplen = strlen(hap.c_str());
 	tc->rslen = strlen(rs.c_str());
-	tc->hap = (char *) malloc(tc->haplen + 1);
-	tc->rs = (char *) malloc(tc->rslen + 1);
-	tc->q = (int *) malloc(sizeof(int) * tc->rslen);
-	tc->i = (int *) malloc(sizeof(int) * tc->rslen);
-	tc->d = (int *) malloc(sizeof(int) * tc->rslen);
-	tc->c = (int *) malloc(sizeof(int) * tc->rslen); 
+
+	int h = (tc->rslen+1);
+	h = ((h + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
+
+	tc->hap = new char[tc->haplen + 2 * (h-1) + 1]();
+	tc->hap += (h-1);
+	tc->rs = new char[h+1]();
+	tc->q = new int[h+1]();
+	tc->i = new int[h+1]();
+	tc->d = new int[h+1]();
+	tc->c = new int[h+1]();
 
 	std::strcpy(tc->hap, hap.c_str());
 	std::strcpy(tc->rs, rs.c_str());
 	for (int x = 0; x < tc->rslen; x++)
 	{
 		tc->q[x] = normalize((q.c_str())[x]);
-		tc->q[x] = ((tc->q[x]) < 6) ? 6 : tc->q[x];
+		tc->q[x] = tc->q[x] < 6 ? 6 : (tc->q[x]) & 127;
 		tc->i[x] = normalize((i.c_str())[x]);
 		tc->d[x] = normalize((d.c_str())[x]);
 		tc->c[x] = normalize((c.c_str())[x]);
@@ -86,8 +92,6 @@ inline double MIN_ACCEPTED<double>()
 	return 0.0;
 }
 
-#define VECTOR_SIZE 8
-
 template<class NUMBER>
 double compute_full_prob(testcase *tc, char *done)
 {
@@ -96,17 +100,18 @@ double compute_full_prob(testcase *tc, char *done)
 	int COLS = tc->haplen + 1;
 
 	/* constants */
-	int sz = ((ROWS+VECTOR_SIZE-1) / VECTOR_SIZE) * VECTOR_SIZE;
-	NUMBER ph2pr[128], MM[sz+1], GM[sz+1], MX[sz+1], XX[sz+1], MY[sz+1], YY[sz+1];
+	int sz = ((ROWS + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
+
+	NUMBER ph2pr[128], MM[sz + 1], GM[sz + 1], MX[sz + 1], XX[sz + 1], MY[sz + 1], YY[sz + 1];
 	for (int x = 0; x < 128; x++)
 		ph2pr[x] = pow((NUMBER(10.0)), -(NUMBER(x)) / (NUMBER(10.0)));
 	//	cell 0 of MM, GM, ... , YY is never used, since first row is just 
 	//	"hard-coded" in the calculus (i.e.: not computed, just initialized).
 	for (r = 1; r < ROWS; r++)
 	{
-		int _i = tc->i[r-1] & 127;
-		int _d = tc->d[r-1] & 127;
-		int _c = tc->c[r-1] & 127;
+		int _i = (tc->i)[r-1] & 127;
+		int _d = (tc->d)[r-1] & 127;
+		int _c = (tc->c)[r-1] & 127;
 		MM[r] = (NUMBER(1.0)) - ph2pr[(_i + _d) & 127];
 		GM[r] = (NUMBER(1.0)) - ph2pr[_c];
 		MX[r] = ph2pr[_i];
@@ -143,7 +148,7 @@ double compute_full_prob(testcase *tc, char *done)
 
 	/* main loop */
 	NUMBER result = (NUMBER(0.0));
-	for (diag = 2; diag < (ROWS-1)+COLS; diag++)
+	for (diag = 2; diag < (ROWS - 1) + COLS; diag++)
 	{
 		M[0] = (NUMBER(0.0));
 		X[0] = (NUMBER(0.0));
@@ -156,7 +161,7 @@ double compute_full_prob(testcase *tc, char *done)
 				c = diag-r;
 				char _rs = tc->rs[r-1];
 				char _hap = tc->hap[c-1];
-				int _q = tc->q[r-1] & 127; /* ajeitar isso quando carregar do input */
+				int _q = tc->q[r-1]; 
 				NUMBER distm = ph2pr[_q];
 				if (_rs == _hap || _rs == 'N' || _hap == 'N')
 					distm = (NUMBER(1.0)) - distm;
