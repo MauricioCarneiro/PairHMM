@@ -1,4 +1,5 @@
-FLAGS=-O2 -W -Wall -Wno-vla -fopenmp -pedantic -lgomp -lm
+FLAGS=-O2 -W -Wall -Wno-vla -mfpmath=sse -msse4.2 -fopenmp -pedantic -lgomp -lm
+#FLAGS=-W -ggdb -Wall -Wno-vla -pedantic -lm
 FLAGS_PROFILING=$(FLAGS) -pg
 PROFILING=
 DEBUG_MODE=
@@ -17,7 +18,7 @@ endif
 endif
 
 clean:	.FORCE
-	find . -executable -exec rm '{}' \;
+	rm pairhmm-1-base pairhmm-2-omp pairhmm-3-hybrid-float-double pairhmm-4-hybrid-diagonal pairhmm-5-hybrid-diagonal-homogeneus pairhmm-6-onlythreediags pairhmm-7-presse pairhmm-dev
 
 .FORCE:
 
