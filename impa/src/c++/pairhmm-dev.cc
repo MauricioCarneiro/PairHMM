@@ -143,36 +143,32 @@ double compute_full_prob<float>(testcase *tc, char *done)
 		pq[r] = ph2pr[_q];
 	}
 
-    Aligned<float, VECTOR_SIZE-1, 16> M(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> Mp(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> Mpp(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> X(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> Xp(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> Y(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> Yp(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> M(sz+1), Mp(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> X(sz+1), Xp(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> Y(sz+1), Yp(sz+1);
 
 	/* first and second diagonals */
 	float k = INITIAL_CONSTANT<float>() / (tc->haplen);
 
-	Mpp[0] = (float(0.0));
-	Mp[0] = (float(0.0)); Xp[0] = (float(0.0)); Yp[0] = k;
-	M[0] = (float(0.0)); X[0] = (float(0.0)); Y[0] = k;
+	Mp[0] = Xp[0] = 0.f;
+    Yp[0] = k;
+	M[0] = X[0] = 0.f;
+    Y[0] = k;
 	for (int r = 1; r < ROWS; r++)
 	{
-		Mpp[r] = (float(0.0));
-		Mp[r] = (float(0.0)); Xp[r] = (float(0.0)); Yp[r] = (float(0.0));
-		M[r] = (float(0.0)); X[r] = (float(0.0)); Y[r] = (float(0.0));
-	}
+		Mp[r] = Xp[r] = Yp[r] = 0.f;
+		M[r] = X[r] = Y[r] = 0.f;
+    }
 
     const __m128i N = _mm_set_epi32('N', 'N', 'N', 'N');
     const __m128 one = _mm_set1_ps(1.f);
 	/* main loop */
-	float result = (float(0.0));
+	float result = 0.f;
 	for (int diag = 2; diag < (ROWS - 1) + COLS; diag++)
 	{
-
         __m128 xpp = _mm_loadu_ps(X);
         __m128 ypp = _mm_loadu_ps(Y);
+        __m128 mpp = _mm_loadu_ps(M);
 		for (int r = 1; r < ROWS; r += VECTOR_SIZE)
 		{
 			__m128i rs = _mm_loadu_si128(reinterpret_cast<__m128i *>(tc->rs+r-1));
@@ -184,32 +180,27 @@ double compute_full_prob<float>(testcase *tc, char *done)
 			distm = _mm_blendv_ps(distm, _mm_sub_ps(one, distm),
                 _mm_castsi128_ps(cmp));
 
+            __m128 mpp_tmp = _mm_loadu_ps(M+r+VECTOR_SIZE-1);
 			_mm_store_ps(M+r, _mm_mul_ps(distm,
-				_mm_add_ps(_mm_mul_ps(_mm_loadu_ps(Mpp+r-1), _mm_load_ps(MM+r)),
+				_mm_add_ps(_mm_mul_ps(mpp, _mm_load_ps(MM+r)),
 					_mm_mul_ps(_mm_load_ps(GM+r),
 						_mm_add_ps(xpp, ypp)))));
+            mpp = mpp_tmp;
 
             xpp = _mm_loadu_ps(X+r+VECTOR_SIZE-1);
-            ypp = _mm_loadu_ps(Y+r+VECTOR_SIZE-1);
-
 			_mm_store_ps(X+r, _mm_add_ps(
 				_mm_mul_ps(_mm_loadu_ps(Mp+r-1), _mm_load_ps(MX+r)),
 				_mm_mul_ps(_mm_loadu_ps(Xp+r-1), _mm_load_ps(XX+r))));
 
+            ypp = _mm_loadu_ps(Y+r+VECTOR_SIZE-1);
 			_mm_store_ps(Y+r, _mm_add_ps(
 				_mm_mul_ps(_mm_loadu_ps(Mp+r), _mm_load_ps(MY+r)),
 				_mm_mul_ps(_mm_loadu_ps(Yp+r), _mm_load_ps(YY+r))));
 		}
 
-		M[0] = (float(0.0));
-		X[0] = (float(0.0));
-		Y[0] = k;
-
 		result += M[ROWS-1] + X[ROWS-1];
 
-        std::swap(Mpp, Mp); std::swap(Mp, M);
-        std::swap(Xp, X);
-        std::swap(Yp, Y);
+        std::swap(Mp, M); std::swap(Xp, X); std::swap(Yp, Y);
 
 	}
 
