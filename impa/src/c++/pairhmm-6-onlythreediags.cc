@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <math.h>
 
+#include "timing.h"
+
 /*
 #define MM 0
 #define GapM 1
@@ -34,49 +36,36 @@ int normalize(char c)
 
 int read_testcase(testcase *tc)
 {
-	char *q, *i, *d, *c, *line = NULL;
-	int _q, _i, _d, _c;
-	int x, size = 0;
-	ssize_t read;
+    std::string hap, rs, q, i, d, c, i1, i2;
 
-	read = getline(&line, (size_t *) &size, stdin);
-	if (read == -1)
-		return -1;
+    if (!(std::cin >> hap >> rs >> q >> i >> d >> c >> i1 >> i2).good())
+        return -1;
 
-	tc->hap = (char *) malloc(size);
-	tc->rs = (char *) malloc(size);
-	q = (char *) malloc(size);
-	i = (char *) malloc(size);
-	d = (char *) malloc(size);
-	c = (char *) malloc(size);
+    tc->haplen = hap.size();
+    tc->rslen = rs.size();
 
-	if (sscanf(line, "%s %s %s %s %s %s\n", tc->hap, tc->rs, q, i, d, c) != 6)
-		return -1;
+    int h = (tc->rslen+1);
 
-	tc->haplen = strlen(tc->hap);
-	tc->rslen = strlen(tc->rs);
-	tc->q = (int *) malloc(sizeof(int) * tc->rslen);
-	tc->i = (int *) malloc(sizeof(int) * tc->rslen);
-	tc->d = (int *) malloc(sizeof(int) * tc->rslen);
-	tc->c = (int *) malloc(sizeof(int) * tc->rslen);
+    tc->hap = new char[tc->haplen + 2 * (h-1) + 1]();
+    tc->hap += (h-1);
+    tc->rs = new char[h+1]();
+    tc->q = new int[h+1]();
+    tc->i = new int[h+1]();
+    tc->d = new int[h+1]();
+    tc->c = new int[h+1]();
 
-	for (x = 0; x < tc->rslen; x++)
-	{
-		_q = normalize(q[x]);
-		_i = normalize(i[x]);
-		_d = normalize(d[x]);
-		_c = normalize(c[x]);
-		tc->q[x] = (_q < 6) ? 6 : _q;
-		tc->i[x] = _i;
-		tc->d[x] = _d;
-		tc->c[x] = _c;
-	}
+    for (int x = 0; x < tc->haplen; x++)
+        tc->hap[x] = hap[x];
 
-	free(q);
-	free(i);
-	free(d);
-	free(c);
-	free(line);
+    for (int x = 0; x < tc->rslen; x++)
+    {
+        tc->rs[x] = rs[x];
+        tc->q[x] = normalize((q.c_str())[x]);
+        tc->q[x] = tc->q[x] < 6 ? 6 : (tc->q[x]) & 127;
+        tc->i[x] = normalize((i.c_str())[x]);
+        tc->d[x] = normalize((d.c_str())[x]);
+        tc->c[x] = normalize((c.c_str())[x]);
+    }
 
 	return 0;
 }
@@ -210,19 +199,12 @@ double compute_full_prob(testcase *tc, char *done)
 
 int main()
 {
+    Timing t;
 	testcase tc[MAX_TESTCASES_BUNCH_SIZE];
 	double result[MAX_TESTCASES_BUNCH_SIZE];
 	char done[MAX_TESTCASES_BUNCH_SIZE];
 	int num_tests;
 
-	#ifdef DEBUG_MODE
-		num_tests = read_a_bunch_of_testcases(tc, MAX_TESTCASES_BUNCH_SIZE);
-		(void)num_tests;
-		result[0] = compute_full_prob<float>(tc + 0, done + 0);
-		if (!done[0])
-			result[0] = compute_full_prob<double>(tc + 0, done + 0);
-		printf("%f\n", result[0]);
-	#else
 	do
 	{
 		num_tests = read_a_bunch_of_testcases(tc, MAX_TESTCASES_BUNCH_SIZE);
@@ -237,7 +219,6 @@ int main()
 		for (int j = 0; j < num_tests; j++)
 			printf("%f\n", result[j]);
 	} while (num_tests == MAX_TESTCASES_BUNCH_SIZE);
-	#endif
 
 	return 0;
 }

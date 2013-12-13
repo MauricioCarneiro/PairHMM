@@ -1,6 +1,6 @@
 #!/bin/bash
 
-program="pairhmm-dev"
+program="pairhmm-6-onlythreediags"
 fileinp="performances/benchmark.in"
 fileout="${fileinp%.in}.out"
 

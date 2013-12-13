@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <math.h>
 
+#include "timing.h"
+
 #define MM 0
 #define GapM 1
 #define MX 2
@@ -200,6 +202,7 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
 int main()
 {
 	testcase tc;
+    Timing t;
 
 	while (read_testcase(&tc) == 0)
 		printf("%E\n", compute_full_prob<double>(&tc));

@@ -5,8 +5,10 @@
 #include <iostream>
 #include <xmmintrin.h>
 #include <smmintrin.h>
-#include <chrono>
 #include <vector>
+
+#include "timing.h"
+#include "aligned.h"
 
 #define MAX_TESTCASES_BUNCH_SIZE 100
 #define VECTOR_SIZE 4
@@ -103,31 +105,6 @@ inline double MIN_ACCEPTED<double>()
 template<class NUMBER>
 double compute_full_prob(testcase *tc, char *done);
 
-template <typename T, size_t offset, size_t align>
-class aligned {
-public:
-    aligned(size_t size) {
-	    m_v = reinterpret_cast<T *>(_mm_malloc((size+offset)*sizeof(T), align))
-            + offset;
-    }
-    ~aligned() { if (m_v) _mm_free(m_v - offset); }
-    operator T*() { return m_v; }
-    float &operator[](int i) { return m_v[i]; }
-    const float &operator[](int i) const { return m_v[i]; }
-    aligned(const aligned<T,offset,align> &other) = delete;
-    aligned(aligned<T,offset,align> &&other) {
-        m_v = other.m_v;
-        other.m_v = nullptr;
-    }
-    aligned<T,offset,align> &operator=(aligned<T,offset,align> &&other) {
-        m_v = other.m_v;
-        other.m_v = nullptr;
-        return *this;
-    }
-private:
-    float *m_v;
-};
-
 template<>
 double compute_full_prob<float>(testcase *tc, char *done)
 {
@@ -137,13 +114,13 @@ double compute_full_prob<float>(testcase *tc, char *done)
 	/* constants */
 	int sz = ((ROWS + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
 
-    aligned<float, VECTOR_SIZE-1, 16> MM(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> GM(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> MX(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> XX(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> MY(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> YY(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> pq(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> MM(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> GM(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> MX(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> XX(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> MY(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> YY(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> pq(sz+1);
 	float ph2pr[128];
 
 	for (int x = 0; x < 128; x++)
@@ -166,15 +143,15 @@ double compute_full_prob<float>(testcase *tc, char *done)
 		pq[r] = ph2pr[_q];
 	}
 
-    aligned<float, VECTOR_SIZE-1, 16> M(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> Mp(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> Mpp(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> X(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> Xp(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> Xpp(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> Y(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> Yp(sz+1);
-    aligned<float, VECTOR_SIZE-1, 16> Ypp(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> M(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> Mp(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> Mpp(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> X(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> Xp(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> Xpp(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> Y(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> Yp(sz+1);
+    Aligned<float, VECTOR_SIZE-1, 16> Ypp(sz+1);
 
 	/* first and second diagonals */
 	float k = INITIAL_CONSTANT<float>() / (tc->haplen);
@@ -344,21 +321,6 @@ double compute_full_prob<double>(testcase *tc, char *done)
 
 	return (double) (log10(result) - log10(INITIAL_CONSTANT<double>()));
 }
-
-class Timing {       // Report elapsed lifetime of object
-  public:
-    Timing(): m_start(now()) {}
-    ~Timing() {
-      using us = std::chrono::microseconds;
-      double t = std::chrono::duration_cast<us>(now()-m_start).count();
-      std::cerr << t/1.0e6 << "\n";
-    }
-  private:
-    using time_point = 
-        std::chrono::time_point<std::chrono::high_resolution_clock>;
-    static time_point now() { return std::chrono::high_resolution_clock::now(); }
-    time_point m_start;
-};
 
 int main(void)
 {

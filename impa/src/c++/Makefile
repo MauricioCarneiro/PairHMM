@@ -1,24 +1,23 @@
-FLAGS=-O2 -std=c++11 -W -Wall -march=corei7 -mfpmath=sse -msse4.2 -fopenmp -pedantic -lgomp -lm
-#FLAGS=-W -ggdb -Wall -Wno-vla -pedantic -lm
-FLAGS_PROFILING=$(FLAGS) -pg
-PROFILING=
-DEBUG_MODE=
+#OMPCFLAGS=-fopenmp
+#OMPLDFLAGS=-lgomp
 
-all: *.cc
+CFLAGS=-O2 -std=c++11 -W -Wall -march=corei7 -mfpmath=sse -msse4.2 -pedantic $(OMPCFLAGS) -Wno-unknown-pragmas
 
-*.cc:	.FORCE
-ifeq ($(PROFILING), true)
-	g++ $@ -o $(basename $@)_profiling $(FLAGS_PROFILING)
-else
-ifeq ($(DEBUG_MODE), true)
-	g++ $@ -o $(basename $@) $(FLAGS) -DDEBUG_MODE=1
-else
-	g++ $@ -o $(basename $@) $(FLAGS)
-endif
-endif
+CXXFLAGS=$(CFLAGS)
+CC=gcc
+CXX=g++
 
-clean:	.FORCE
-	rm pairhmm-1-base pairhmm-2-omp pairhmm-3-hybrid-float-double pairhmm-4-hybrid-diagonal pairhmm-5-hybrid-diagonal-homogeneus pairhmm-6-onlythreediags pairhmm-7-presse pairhmm-dev
+LDFLAGS=-lm $(OMPLDFLAGS)
 
-.FORCE:
+BIN:=pairhmm-6-onlythreediags pairhmm-dev
 
+all: $(BIN)
+
+pairhmm-6-onlythreediags: pairhmm-6-onlythreediags.o
+	$(CXX) -o $@ $^ $(LDFLAGS)
+
+pairhmm-dev: pairhmm-dev.o
+	$(CXX) -o $@ $^ $(LDFLAGS)
+
+clean:
+	rm -f $(BIN) *.o
