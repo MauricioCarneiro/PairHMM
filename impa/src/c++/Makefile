@@ -1,6 +1,7 @@
 #OMPCFLAGS=-fopenmp
 #OMPLDFLAGS=-lgomp
 
+#CFLAGS=-O2 -std=c++11 -W -Wall -march=corei7-avx -Wa,-q -pedantic $(OMPCFLAGS) -Wno-unknown-pragmas
 CFLAGS=-O2 -std=c++11 -W -Wall -march=corei7 -mfpmath=sse -msse4.2 -pedantic $(OMPCFLAGS) -Wno-unknown-pragmas
 
 CXXFLAGS=$(CFLAGS)

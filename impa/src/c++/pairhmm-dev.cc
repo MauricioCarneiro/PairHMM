@@ -108,19 +108,16 @@ double compute_full_prob(testcase *tc, char *done);
 template<>
 double compute_full_prob<float>(testcase *tc, char *done)
 {
+    using aligned_vector = Aligned<float, VECTOR_SIZE-1,
+        sizeof(float)*VECTOR_SIZE>;
 	int ROWS = tc->rslen + 1;
 	int COLS = tc->haplen + 1;
 
 	/* constants */
 	int sz = ((ROWS + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
 
-    Aligned<float, VECTOR_SIZE-1, 16> MM(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> GM(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> MX(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> XX(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> MY(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> YY(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> pq(sz+1);
+    aligned_vector MM(sz+1), GM(sz+1), MX(sz+1), XX(sz+1), MY(sz+1), YY(sz+1);
+    aligned_vector pq(sz+1);
 	float ph2pr[128];
 
 	for (int x = 0; x < 128; x++)
@@ -143,9 +140,7 @@ double compute_full_prob<float>(testcase *tc, char *done)
 		pq[r] = ph2pr[_q];
 	}
 
-    Aligned<float, VECTOR_SIZE-1, 16> M(sz+1), Mp(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> X(sz+1), Xp(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> Y(sz+1), Yp(sz+1);
+    aligned_vector M(sz+1), Mp(sz+1), X(sz+1), Xp(sz+1), Y(sz+1), Yp(sz+1);
 
 	/* first and second diagonals */
 	float k = INITIAL_CONSTANT<float>() / (tc->haplen);
@@ -335,4 +330,3 @@ int main(void)
 
 	return 0;
 }
-
