@@ -10,7 +10,7 @@ echo "With input case: "$fileinp
 echo "Using as reference output: "$fileout
 echo " "
 
-(/usr/bin/time -f "%e" ./$program < $fileinp > fstdout) 2> ftime
+./$program < $fileinp > fstdout 2> ftime
 precision=`../../tools/matcmp $fileout fstdout | grep "The biggest difference is: "`
 precision=${precision#"The biggest difference is: "}
 tiempo=`cat ftime`

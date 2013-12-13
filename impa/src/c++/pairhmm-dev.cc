@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 #include <xmmintrin.h>
+#include <chrono>
 
 #define MAX_TESTCASES_BUNCH_SIZE 100
 #define VECTOR_SIZE 4
@@ -310,13 +311,28 @@ double compute_full_prob<double>(testcase *tc, char *done)
 	return (double) (log10(result) - log10(INITIAL_CONSTANT<double>()));
 }
 
-int main()
+class Timing {       // Report elapsed lifetime of object
+  public:
+    Timing(): m_start(now()) {}
+    ~Timing() {
+      using us = std::chrono::microseconds;
+      double t = std::chrono::duration_cast<us>(now()-m_start).count();
+      std::cerr << t/1.0e6 << "\n";
+    }
+  private:
+    using time_point = 
+        std::chrono::time_point<std::chrono::high_resolution_clock>;
+    static time_point now() { return std::chrono::high_resolution_clock::now(); }
+    time_point m_start;
+};
+
+int main(void)
 {
+    Timing t;
 	testcase tc[MAX_TESTCASES_BUNCH_SIZE];
 	double result[MAX_TESTCASES_BUNCH_SIZE];
 	char done[MAX_TESTCASES_BUNCH_SIZE];
 	int num_tests;
-
 	do
 	{
 		num_tests = read_a_bunch_of_testcases(tc, MAX_TESTCASES_BUNCH_SIZE);
