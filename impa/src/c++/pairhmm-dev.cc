@@ -6,6 +6,7 @@
 #include <xmmintrin.h>
 #include <smmintrin.h>
 #include <chrono>
+#include <vector>
 
 #define MAX_TESTCASES_BUNCH_SIZE 100
 #define VECTOR_SIZE 4
@@ -142,11 +143,12 @@ double compute_full_prob<float>(testcase *tc, char *done)
     aligned<float, VECTOR_SIZE-1, 16> XX(sz+1);
     aligned<float, VECTOR_SIZE-1, 16> MY(sz+1);
     aligned<float, VECTOR_SIZE-1, 16> YY(sz+1);
-
+    aligned<float, VECTOR_SIZE-1, 16> pq(sz+1);
 	float ph2pr[128];
-    float pq[sz+1];
+
 	for (int x = 0; x < 128; x++)
 		ph2pr[x] = pow((float(10.0)), -(float(x)) / (float(10.0)));
+
 	//	cell 0 of MM, GM, ... , YY is never used, since first row is just 
 	//	"hard-coded" in the calculus (i.e.: not computed, just initialized).
 	for (int r = 1; r < ROWS; r++)
@@ -209,7 +211,7 @@ double compute_full_prob<float>(testcase *tc, char *done)
 			__m128i hap = _mm_loadu_si128(reinterpret_cast<__m128i *>(tc->hap-diag+r));
 			__m128i cmp = _mm_or_si128(_mm_cmpeq_epi32(rs, hap),
  			    _mm_or_si128(_mm_cmpeq_epi32(rs, N), _mm_cmpeq_epi32(hap, N)));
-			__m128 distm = _mm_loadu_ps(pq+r);
+			__m128 distm = _mm_load_ps(pq+r);
 
 			distm = _mm_blendv_ps(distm, _mm_sub_ps(one, distm),
                 _mm_castsi128_ps(cmp));
@@ -251,8 +253,14 @@ double compute_full_prob<double>(testcase *tc, char *done)
 	/* constants */
 	int sz = ((ROWS + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
 
-	double ph2pr[128], MM[sz + 1], GM[sz + 1], MX[sz + 1], XX[sz + 1], 
-		MY[sz + 1], YY[sz + 1], pq[sz+1];
+	double ph2pr[128];
+    std::vector<double> MM(sz+1);
+    std::vector<double> GM(sz+1);
+    std::vector<double> MX(sz+1);
+    std::vector<double> XX(sz+1);
+	std::vector<double> MY(sz+1);
+    std::vector<double> YY(sz+1);
+    std::vector<double> pq(sz+1);
 	for (int x = 0; x < 128; x++)
 		ph2pr[x] = pow((double(10.0)), -(double(x)) / (double(10.0)));
 	//	cell 0 of MM, GM, ... , YY is never used, since first row is just 
@@ -272,13 +280,15 @@ double compute_full_prob<double>(testcase *tc, char *done)
 		pq[r] = ph2pr[_q];
 	}
 
-	double M1[sz], M2[sz], M3[sz], *M, *Mp, *Mpp;
-	double X1[sz], X2[sz], X3[sz], *X, *Xp, *Xpp;
-	double Y1[sz], Y2[sz], Y3[sz], *Y, *Yp, *Ypp;
-	Mpp = M1; Xpp = X1; Ypp = Y1;
-	Mp = M2;  Xp = X2;  Yp = Y2;
-	M = M3;   X = X3;   Y = Y3;
-
+    std::vector<double> M(sz);
+    std::vector<double> Mp(sz);
+    std::vector<double> Mpp(sz);
+    std::vector<double> X(sz);
+    std::vector<double> Xp(sz);
+    std::vector<double> Xpp(sz);
+    std::vector<double> Y(sz);
+    std::vector<double> Yp(sz);
+    std::vector<double> Ypp(sz);
 
 	/* first and second diagonals */
 	double k = INITIAL_CONSTANT<double>() / (tc->haplen);
@@ -324,10 +334,10 @@ double compute_full_prob<double>(testcase *tc, char *done)
 		}
 
 		result += M[ROWS-1] + X[ROWS-1];
-		double *aux;
-		aux = Mpp; Mpp = Mp; Mp = M; M = aux;
-		aux = Xpp; Xpp = Xp; Xp = X; X = aux;
-		aux = Ypp; Ypp = Yp; Yp = Y; Y = aux;
+
+        std::swap(Mpp, Mp); std::swap(Mp, M);
+        std::swap(Xpp, Xp); std::swap(Xp, X);
+        std::swap(Ypp, Yp); std::swap(Yp, Y);
 	}
 
 	*done = (result > MIN_ACCEPTED<double>()) ? 1 : 0;

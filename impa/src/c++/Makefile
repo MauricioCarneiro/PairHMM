@@ -1,4 +1,4 @@
-FLAGS=-O2 -std=c++11 -W -Wall -Wno-vla -mfpmath=sse -msse4.2 -fopenmp -pedantic -lgomp -lm
+FLAGS=-O2 -std=c++11 -W -Wall -march=corei7 -mfpmath=sse -msse4.2 -fopenmp -pedantic -lgomp -lm
 #FLAGS=-W -ggdb -Wall -Wno-vla -pedantic -lm
 FLAGS_PROFILING=$(FLAGS) -pg
 PROFILING=
