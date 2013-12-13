@@ -126,7 +126,7 @@ double compute_full_prob<float>(testcase *tc, char *done)
 	for (int x = 0; x < 128; x++)
 		ph2pr[x] = pow((float(10.0)), -(float(x)) / (float(10.0)));
 
-	//	cell 0 of MM, GM, ... , YY is never used, since first row is just 
+	//	cell 0 of MM, GM, ... , YY is never used, since first row is just
 	//	"hard-coded" in the calculus (i.e.: not computed, just initialized).
 	for (int r = 1; r < ROWS; r++)
 	{
@@ -148,40 +148,31 @@ double compute_full_prob<float>(testcase *tc, char *done)
     Aligned<float, VECTOR_SIZE-1, 16> Mpp(sz+1);
     Aligned<float, VECTOR_SIZE-1, 16> X(sz+1);
     Aligned<float, VECTOR_SIZE-1, 16> Xp(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> Xpp(sz+1);
     Aligned<float, VECTOR_SIZE-1, 16> Y(sz+1);
     Aligned<float, VECTOR_SIZE-1, 16> Yp(sz+1);
-    Aligned<float, VECTOR_SIZE-1, 16> Ypp(sz+1);
 
 	/* first and second diagonals */
 	float k = INITIAL_CONSTANT<float>() / (tc->haplen);
 
 	Mpp[0] = (float(0.0));
-	Xpp[0] = (float(0.0));
-	Ypp[0] = k;
-	Mp[0] = (float(0.0));
-	Xp[0] = (float(0.0));
-	Yp[0] = k;
+	Mp[0] = (float(0.0)); Xp[0] = (float(0.0)); Yp[0] = k;
+	M[0] = (float(0.0)); X[0] = (float(0.0)); Y[0] = k;
 	for (int r = 1; r < ROWS; r++)
 	{
 		Mpp[r] = (float(0.0));
-		Xpp[r] = (float(0.0));
-		Ypp[r] = (float(0.0));
-		Mp[r] = (float(0.0));
-		Xp[r] = (float(0.0));
-		Yp[r] = (float(0.0));
+		Mp[r] = (float(0.0)); Xp[r] = (float(0.0)); Yp[r] = (float(0.0));
+		M[r] = (float(0.0)); X[r] = (float(0.0)); Y[r] = (float(0.0));
 	}
 
     const __m128i N = _mm_set_epi32('N', 'N', 'N', 'N');
-    const __m128 one = _mm_set1_ps(1.f); 
+    const __m128 one = _mm_set1_ps(1.f);
 	/* main loop */
 	float result = (float(0.0));
 	for (int diag = 2; diag < (ROWS - 1) + COLS; diag++)
 	{
-		M[0] = (float(0.0));
-		X[0] = (float(0.0));
-		Y[0] = k;
 
+        __m128 xpp = _mm_loadu_ps(X);
+        __m128 ypp = _mm_loadu_ps(Y);
 		for (int r = 1; r < ROWS; r += VECTOR_SIZE)
 		{
 			__m128i rs = _mm_loadu_si128(reinterpret_cast<__m128i *>(tc->rs+r-1));
@@ -196,7 +187,10 @@ double compute_full_prob<float>(testcase *tc, char *done)
 			_mm_store_ps(M+r, _mm_mul_ps(distm,
 				_mm_add_ps(_mm_mul_ps(_mm_loadu_ps(Mpp+r-1), _mm_load_ps(MM+r)),
 					_mm_mul_ps(_mm_load_ps(GM+r),
-						_mm_add_ps(_mm_loadu_ps(Xpp+r-1), _mm_loadu_ps(Ypp+r-1))))));
+						_mm_add_ps(xpp, ypp)))));
+
+            xpp = _mm_loadu_ps(X+r+VECTOR_SIZE-1);
+            ypp = _mm_loadu_ps(Y+r+VECTOR_SIZE-1);
 
 			_mm_store_ps(X+r, _mm_add_ps(
 				_mm_mul_ps(_mm_loadu_ps(Mp+r-1), _mm_load_ps(MX+r)),
@@ -207,11 +201,15 @@ double compute_full_prob<float>(testcase *tc, char *done)
 				_mm_mul_ps(_mm_loadu_ps(Yp+r), _mm_load_ps(YY+r))));
 		}
 
+		M[0] = (float(0.0));
+		X[0] = (float(0.0));
+		Y[0] = k;
+
 		result += M[ROWS-1] + X[ROWS-1];
 
         std::swap(Mpp, Mp); std::swap(Mp, M);
-        std::swap(Xpp, Xp); std::swap(Xp, X);
-        std::swap(Ypp, Yp); std::swap(Yp, Y);
+        std::swap(Xp, X);
+        std::swap(Yp, Y);
 
 	}
 

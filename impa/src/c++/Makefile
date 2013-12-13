@@ -19,5 +19,8 @@ pairhmm-6-onlythreediags: pairhmm-6-onlythreediags.o
 pairhmm-dev: pairhmm-dev.o
 	$(CXX) -o $@ $^ $(LDFLAGS)
 
+bench: pairhmm-dev
+	./benchmark.sh
+
 clean:
 	rm -f $(BIN) *.o
