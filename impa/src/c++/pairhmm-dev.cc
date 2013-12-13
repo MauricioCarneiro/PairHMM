@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 #include <xmmintrin.h>
+#include <smmintrin.h>
 #include <chrono>
 
 #define MAX_TESTCASES_BUNCH_SIZE 100
@@ -101,6 +102,31 @@ inline double MIN_ACCEPTED<double>()
 template<class NUMBER>
 double compute_full_prob(testcase *tc, char *done);
 
+template <typename T, size_t offset, size_t align>
+class aligned {
+public:
+    aligned(size_t size) {
+	    m_v = reinterpret_cast<T *>(_mm_malloc((size+offset)*sizeof(T), align))
+            + offset;
+    }
+    ~aligned() { if (m_v) _mm_free(m_v - offset); }
+    operator T*() { return m_v; }
+    float &operator[](int i) { return m_v[i]; }
+    const float &operator[](int i) const { return m_v[i]; }
+    aligned(const aligned<T,offset,align> &other) = delete;
+    aligned(aligned<T,offset,align> &&other) {
+        m_v = other.m_v;
+        other.m_v = nullptr;
+    }
+    aligned<T,offset,align> &operator=(aligned<T,offset,align> &&other) {
+        m_v = other.m_v;
+        other.m_v = nullptr;
+        return *this;
+    }
+private:
+    float *m_v;
+};
+
 template<>
 double compute_full_prob<float>(testcase *tc, char *done)
 {
@@ -110,8 +136,15 @@ double compute_full_prob<float>(testcase *tc, char *done)
 	/* constants */
 	int sz = ((ROWS + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
 
-	float ph2pr[128], MM[sz + 1], GM[sz + 1], MX[sz + 1], XX[sz + 1], 
-		MY[sz + 1], YY[sz + 1], pq[sz+1];
+    aligned<float, VECTOR_SIZE-1, 16> MM(sz+1);
+    aligned<float, VECTOR_SIZE-1, 16> GM(sz+1);
+    aligned<float, VECTOR_SIZE-1, 16> MX(sz+1);
+    aligned<float, VECTOR_SIZE-1, 16> XX(sz+1);
+    aligned<float, VECTOR_SIZE-1, 16> MY(sz+1);
+    aligned<float, VECTOR_SIZE-1, 16> YY(sz+1);
+
+	float ph2pr[128];
+    float pq[sz+1];
 	for (int x = 0; x < 128; x++)
 		ph2pr[x] = pow((float(10.0)), -(float(x)) / (float(10.0)));
 	//	cell 0 of MM, GM, ... , YY is never used, since first row is just 
@@ -130,19 +163,16 @@ double compute_full_prob<float>(testcase *tc, char *done)
 		YY[r] = (r == ROWS - 1) ? (float(1.0)) : ph2pr[_c];
 		pq[r] = ph2pr[_q];
 	}
-	
-	const int mem_size = (sz + VECTOR_SIZE - 1) * sizeof(float);
-	const int align = VECTOR_SIZE * sizeof(float);
 
-	float *M = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
-	float *Mp = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
-	float *Mpp = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
-	float *X = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
-	float *Xp = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
-	float *Xpp = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
-	float *Y = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
-	float *Yp = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
-	float *Ypp = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
+    aligned<float, VECTOR_SIZE-1, 16> M(sz+1);
+    aligned<float, VECTOR_SIZE-1, 16> Mp(sz+1);
+    aligned<float, VECTOR_SIZE-1, 16> Mpp(sz+1);
+    aligned<float, VECTOR_SIZE-1, 16> X(sz+1);
+    aligned<float, VECTOR_SIZE-1, 16> Xp(sz+1);
+    aligned<float, VECTOR_SIZE-1, 16> Xpp(sz+1);
+    aligned<float, VECTOR_SIZE-1, 16> Y(sz+1);
+    aligned<float, VECTOR_SIZE-1, 16> Yp(sz+1);
+    aligned<float, VECTOR_SIZE-1, 16> Ypp(sz+1);
 
 	/* first and second diagonals */
 	float k = INITIAL_CONSTANT<float>() / (tc->haplen);
@@ -163,6 +193,8 @@ double compute_full_prob<float>(testcase *tc, char *done)
 		Yp[r] = (float(0.0));
 	}
 
+    const __m128i N = _mm_set_epi32('N', 'N', 'N', 'N');
+    const __m128 one = _mm_set1_ps(1.f); 
 	/* main loop */
 	float result = (float(0.0));
 	for (int diag = 2; diag < (ROWS - 1) + COLS; diag++)
@@ -173,46 +205,38 @@ double compute_full_prob<float>(testcase *tc, char *done)
 
 		for (int r = 1; r < ROWS; r += VECTOR_SIZE)
 		{
-			const __m128i N = _mm_set_epi32('N', 'N', 'N', 'N');
-			const __m128 one = _mm_set1_ps(1.f); 
 			__m128i rs = _mm_loadu_si128(reinterpret_cast<__m128i *>(tc->rs+r-1));
 			__m128i hap = _mm_loadu_si128(reinterpret_cast<__m128i *>(tc->hap-diag+r));
+			__m128i cmp = _mm_or_si128(_mm_cmpeq_epi32(rs, hap),
+ 			    _mm_or_si128(_mm_cmpeq_epi32(rs, N), _mm_cmpeq_epi32(hap, N)));
 			__m128 distm = _mm_loadu_ps(pq+r);
-			__m128 one_minus_distm = _mm_sub_ps(one, distm);
-			__m128i cmp = _mm_or_si128(_mm_cmpeq_epi32(rs, hap), 
-							_mm_or_si128(_mm_cmpeq_epi32(rs, N), _mm_cmpeq_epi32(hap, N)));
 
-			distm = _mm_castsi128_ps(
-				_mm_or_si128(
-					_mm_and_si128(cmp, _mm_castps_si128(one_minus_distm)),
-					_mm_andnot_si128(cmp, _mm_castps_si128(distm))));
+			distm = _mm_blendv_ps(distm, _mm_sub_ps(one, distm),
+                _mm_castsi128_ps(cmp));
 
-			_mm_store_ps(M+r, _mm_mul_ps(distm, 
-				_mm_add_ps(_mm_mul_ps(_mm_loadu_ps(Mpp+r-1), _mm_loadu_ps(MM+r)),
-					_mm_mul_ps(_mm_loadu_ps(GM+r),
+			_mm_store_ps(M+r, _mm_mul_ps(distm,
+				_mm_add_ps(_mm_mul_ps(_mm_loadu_ps(Mpp+r-1), _mm_load_ps(MM+r)),
+					_mm_mul_ps(_mm_load_ps(GM+r),
 						_mm_add_ps(_mm_loadu_ps(Xpp+r-1), _mm_loadu_ps(Ypp+r-1))))));
-	
+
 			_mm_store_ps(X+r, _mm_add_ps(
-				_mm_mul_ps(_mm_loadu_ps(Mp+r-1), _mm_loadu_ps(MX+r)),
-				_mm_mul_ps(_mm_loadu_ps(Xp+r-1), _mm_loadu_ps(XX+r))));
+				_mm_mul_ps(_mm_loadu_ps(Mp+r-1), _mm_load_ps(MX+r)),
+				_mm_mul_ps(_mm_loadu_ps(Xp+r-1), _mm_load_ps(XX+r))));
 
 			_mm_store_ps(Y+r, _mm_add_ps(
-				_mm_mul_ps(_mm_loadu_ps(Mp+r), _mm_loadu_ps(MY+r)),
-				_mm_mul_ps(_mm_loadu_ps(Yp+r), _mm_loadu_ps(YY+r))));
+				_mm_mul_ps(_mm_loadu_ps(Mp+r), _mm_load_ps(MY+r)),
+				_mm_mul_ps(_mm_loadu_ps(Yp+r), _mm_load_ps(YY+r))));
 		}
 
 		result += M[ROWS-1] + X[ROWS-1];
-		float *aux;
-		aux = Mpp; Mpp = Mp; Mp = M; M = aux;
-		aux = Xpp; Xpp = Xp; Xp = X; X = aux;
-		aux = Ypp; Ypp = Yp; Yp = Y; Y = aux;
+
+        std::swap(Mpp, Mp); std::swap(Mp, M);
+        std::swap(Xpp, Xp); std::swap(Xp, X);
+        std::swap(Ypp, Yp); std::swap(Yp, Y);
+
 	}
 
 	*done = (result > MIN_ACCEPTED<float>()) ? 1 : 0;
-
-	_mm_free(M-VECTOR_SIZE+1); _mm_free(Mp-VECTOR_SIZE+1); _mm_free(Mpp-VECTOR_SIZE+1); 
-	_mm_free(X-VECTOR_SIZE+1); _mm_free(Xp-VECTOR_SIZE+1); _mm_free(Xpp-VECTOR_SIZE+1); 
-	_mm_free(Y-VECTOR_SIZE+1); _mm_free(Yp-VECTOR_SIZE+1); _mm_free(Ypp-VECTOR_SIZE+1);
 
 	return (double) (log10(result) - log10(INITIAL_CONSTANT<float>()));
 }
