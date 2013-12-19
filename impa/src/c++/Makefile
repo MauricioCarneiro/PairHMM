@@ -2,12 +2,13 @@
 #OMPLDFLAGS=-lgomp
 
 #CFLAGS=-O2 -g -std=c++11 -W -Wall -march=corei7-avx -Wa,-q -pedantic $(OMPCFLAGS) -Wno-unknown-pragmas -Wno-vla
-CFLAGS=-O2 -g -std=c++11 -W -Wall -march=corei7 -mfpmath=sse -msse4.2 -pedantic $(OMPCFLAGS) -Wno-unknown-pragmas
+CFLAGS=-O2 -g -std=c++11 -W -Wall -march=corei7 -mfpmath=sse -msse4.2 -pedantic $(OMPCFLAGS) -Wno-unknown-pragmas -Wno-vla
 
 CXXFLAGS=$(CFLAGS)
 CC=gcc
 CXX=g++
-VALGRIND=pairhmm-dev
+TOGRIND=pairhmm-dev
+GRINDIN=performances/benchmark.in
 BENCH=pairhmm-dev
 
 LDFLAGS=-lm $(OMPLDFLAGS)
@@ -34,8 +35,8 @@ pairhmm-8-sse: pairhmm-8-sse.o
 bench: $(BENCH)
 	./benchmark.sh $(BENCH)
 
-valgrind: $(VALGRIND)
-	valgrind --dsymutil=yes --tool=memcheck --leak-check=no -v $(VALGRIND) < crash.in
+valgrind: $(TOGRIND)
+	valgrind --dsymutil=yes --tool=memcheck -v $(TOGRIND) < $(GRINDIN)
 
 clean:
 	rm -f $(BIN) *.o

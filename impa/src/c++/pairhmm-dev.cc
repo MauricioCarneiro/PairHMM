@@ -97,8 +97,13 @@ inline double MIN_ACCEPTED<double>()
 	return 0.0;
 }
 
+
 template<class NUMBER>
-double compute_full_prob(testcase *tc, char *done)
+double compute_full_prob(testcase *tc, char *done);
+
+
+template<>
+double compute_full_prob<float>(testcase *tc, char *done)
 {
 	int ROWS = tc->rslen + 1;
 	int COLS = tc->haplen + 1;
@@ -106,10 +111,10 @@ double compute_full_prob(testcase *tc, char *done)
 	/* constants */
 	int sz = ((ROWS + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
 
-	NUMBER ph2pr[128], MM[sz + 1], GM[sz + 1], MX[sz + 1], XX[sz + 1], 
+	float ph2pr[128], MM[sz + 1], GM[sz + 1], MX[sz + 1], XX[sz + 1], 
 		MY[sz + 1], YY[sz + 1], pq[sz+1];
 	for (int x = 0; x < 128; x++)
-		ph2pr[x] = pow((NUMBER(10.0)), -(NUMBER(x)) / (NUMBER(10.0)));
+		ph2pr[x] = pow((float(10.0)), -(float(x)) / (float(10.0)));
 	//	cell 0 of MM, GM, ... , YY is never used, since first row is just 
 	//	"hard-coded" in the calculus (i.e.: not computed, just initialized).
 	for (int r = 1; r < ROWS; r++)
@@ -118,49 +123,49 @@ double compute_full_prob(testcase *tc, char *done)
 		int _d = (tc->d)[r-1] & 127;
 		int _c = (tc->c)[r-1] & 127;
 		int _q = (tc->q)[r-1] & 127;
-		//MM[r] = (NUMBER(1.0)) - ph2pr[(_i + _d) & 127];
-		MM[r] = (NUMBER(1.0)) - ph2pr[_i]*ph2pr[_d];
-		GM[r] = (NUMBER(1.0)) - ph2pr[_c];
+		//MM[r] = (float(1.0)) - ph2pr[(_i + _d) & 127];
+		MM[r] = (float(1.0)) - ph2pr[_i]*ph2pr[_d];
+		GM[r] = (float(1.0)) - ph2pr[_c];
 		MX[r] = ph2pr[_i];
 		XX[r] = ph2pr[_c];
-		MY[r] = (r == ROWS - 1) ? (NUMBER(1.0)) : ph2pr[_d];
-		YY[r] = (r == ROWS - 1) ? (NUMBER(1.0)) : ph2pr[_c];
+		MY[r] = (r == ROWS - 1) ? (float(1.0)) : ph2pr[_d];
+		YY[r] = (r == ROWS - 1) ? (float(1.0)) : ph2pr[_c];
 		pq[r] = ph2pr[_q];
 	}
 
-	NUMBER M1[sz], M2[sz], M3[sz], *M, *Mp, *Mpp;
-	NUMBER X1[sz], X2[sz], X3[sz], *X, *Xp, *Xpp;
-	NUMBER Y1[sz], Y2[sz], Y3[sz], *Y, *Yp, *Ypp;
+	float M1[sz], M2[sz], M3[sz], *M, *Mp, *Mpp;
+	float X1[sz], X2[sz], X3[sz], *X, *Xp, *Xpp;
+	float Y1[sz], Y2[sz], Y3[sz], *Y, *Yp, *Ypp;
 	Mpp = M1; Xpp = X1; Ypp = Y1;
 	Mp = M2;  Xp = X2;  Yp = Y2;
 	M = M3;   X = X3;   Y = Y3;
 
 
 	/* first and second diagonals */
-	NUMBER k = INITIAL_CONSTANT<NUMBER>() / (tc->haplen);
+	float k = INITIAL_CONSTANT<float>() / (tc->haplen);
 
-	Mpp[0] = (NUMBER(0.0));
-	Xpp[0] = (NUMBER(0.0));
+	Mpp[0] = (float(0.0));
+	Xpp[0] = (float(0.0));
 	Ypp[0] = k;
-	Mp[0] = (NUMBER(0.0));
-	Xp[0] = (NUMBER(0.0));
+	Mp[0] = (float(0.0));
+	Xp[0] = (float(0.0));
 	Yp[0] = k;
 	for (int r = 1; r < ROWS; r++)
 	{
-		Mpp[r] = (NUMBER(0.0));
-		Xpp[r] = (NUMBER(0.0));
-		Ypp[r] = (NUMBER(0.0));
-		Mp[r] = (NUMBER(0.0));
-		Xp[r] = (NUMBER(0.0));
-		Yp[r] = (NUMBER(0.0));
+		Mpp[r] = (float(0.0));
+		Xpp[r] = (float(0.0));
+		Ypp[r] = (float(0.0));
+		Mp[r] = (float(0.0));
+		Xp[r] = (float(0.0));
+		Yp[r] = (float(0.0));
 	}
 
 	/* main loop */
-	NUMBER result = (NUMBER(0.0));
+	float result = (float(0.0));
 	for (int diag = 2; diag < (ROWS - 1) + COLS; diag++)
 	{
-		M[0] = (NUMBER(0.0));
-		X[0] = (NUMBER(0.0));
+		M[0] = (float(0.0));
+		X[0] = (float(0.0));
 		Y[0] = k;
 
 		for (int rb = 1; rb < ROWS; rb += VECTOR_SIZE)
@@ -169,9 +174,9 @@ double compute_full_prob(testcase *tc, char *done)
 			{
 				int _rs = tc->rs[r-1];
 				int _hap = tc->hap[-diag+r];
-				NUMBER distm = pq[r];
+				float distm = pq[r];
 				if (_rs == _hap || _rs == 'N' || _hap == 'N')
-					distm = (NUMBER(1.0)) - distm;
+					distm = (float(1.0)) - distm;
 
 				M[r] = distm * (Mpp[r-1] * MM[r] + Xpp[r-1] * GM[r] + Ypp[r-1] * GM[r]);
 				X[r] = Mp[r-1] * MX[r] + Xp[r-1] * XX[r];
@@ -180,15 +185,110 @@ double compute_full_prob(testcase *tc, char *done)
 		}
 
 		result += M[ROWS-1] + X[ROWS-1];
-		NUMBER *aux;
+		float *aux;
 		aux = Mpp; Mpp = Mp; Mp = M; M = aux;
 		aux = Xpp; Xpp = Xp; Xp = X; X = aux;
 		aux = Ypp; Ypp = Yp; Yp = Y; Y = aux;
 	}
 
-	*done = (result > MIN_ACCEPTED<NUMBER>()) ? 1 : 0;
+	*done = (result > MIN_ACCEPTED<float>()) ? 1 : 0;
 
-	return (double) (log10(result) - log10(INITIAL_CONSTANT<NUMBER>()));
+	return (double) (log10(result) - log10(INITIAL_CONSTANT<float>()));
+}
+
+
+template<>
+double compute_full_prob<double>(testcase *tc, char *done)
+{
+	int ROWS = tc->rslen + 1;
+	int COLS = tc->haplen + 1;
+
+	/* constants */
+	int sz = ((ROWS + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
+
+	double ph2pr[128], MM[sz + 1], GM[sz + 1], MX[sz + 1], XX[sz + 1], 
+		MY[sz + 1], YY[sz + 1], pq[sz+1];
+	for (int x = 0; x < 128; x++)
+		ph2pr[x] = pow((double(10.0)), -(double(x)) / (double(10.0)));
+	//	cell 0 of MM, GM, ... , YY is never used, since first row is just 
+	//	"hard-coded" in the calculus (i.e.: not computed, just initialized).
+	for (int r = 1; r < ROWS; r++)
+	{
+		int _i = (tc->i)[r-1] & 127;
+		int _d = (tc->d)[r-1] & 127;
+		int _c = (tc->c)[r-1] & 127;
+		int _q = (tc->q)[r-1] & 127;
+		//MM[r] = (double(1.0)) - ph2pr[(_i + _d) & 127];
+		MM[r] = (double(1.0)) - ph2pr[_i]*ph2pr[_d];
+		GM[r] = (double(1.0)) - ph2pr[_c];
+		MX[r] = ph2pr[_i];
+		XX[r] = ph2pr[_c];
+		MY[r] = (r == ROWS - 1) ? (double(1.0)) : ph2pr[_d];
+		YY[r] = (r == ROWS - 1) ? (double(1.0)) : ph2pr[_c];
+		pq[r] = ph2pr[_q];
+	}
+
+	double M1[sz], M2[sz], M3[sz], *M, *Mp, *Mpp;
+	double X1[sz], X2[sz], X3[sz], *X, *Xp, *Xpp;
+	double Y1[sz], Y2[sz], Y3[sz], *Y, *Yp, *Ypp;
+	Mpp = M1; Xpp = X1; Ypp = Y1;
+	Mp = M2;  Xp = X2;  Yp = Y2;
+	M = M3;   X = X3;   Y = Y3;
+
+
+	/* first and second diagonals */
+	double k = INITIAL_CONSTANT<double>() / (tc->haplen);
+
+	Mpp[0] = (double(0.0));
+	Xpp[0] = (double(0.0));
+	Ypp[0] = k;
+	Mp[0] = (double(0.0));
+	Xp[0] = (double(0.0));
+	Yp[0] = k;
+	for (int r = 1; r < ROWS; r++)
+	{
+		Mpp[r] = (double(0.0));
+		Xpp[r] = (double(0.0));
+		Ypp[r] = (double(0.0));
+		Mp[r] = (double(0.0));
+		Xp[r] = (double(0.0));
+		Yp[r] = (double(0.0));
+	}
+
+	/* main loop */
+	double result = (double(0.0));
+	for (int diag = 2; diag < (ROWS - 1) + COLS; diag++)
+	{
+		M[0] = (double(0.0));
+		X[0] = (double(0.0));
+		Y[0] = k;
+
+		for (int rb = 1; rb < ROWS; rb += VECTOR_SIZE)
+		{
+			for (int r = rb; r < rb + VECTOR_SIZE; r++)
+			{
+				int _rs = tc->rs[r-1];
+				int _hap = tc->hap[-diag+r];
+				double distm = pq[r];
+				if (_rs == _hap || _rs == 'N' || _hap == 'N')
+					distm = (double(1.0)) - distm;
+
+				M[r] = distm * (Mpp[r-1] * MM[r] + Xpp[r-1] * GM[r] + Ypp[r-1] * GM[r]);
+				X[r] = Mp[r-1] * MX[r] + Xp[r-1] * XX[r];
+				Y[r] = Mp[r] * MY[r] + Yp[r] * YY[r];
+			}
+		}
+
+		result += M[ROWS-1] + X[ROWS-1];
+		double *aux;
+		aux = Mpp; Mpp = Mp; Mp = M; M = aux;
+		aux = Xpp; Xpp = Xp; Xp = X; X = aux;
+		aux = Ypp; Ypp = Yp; Yp = Y; Y = aux;
+	}
+
+	*done = (result > MIN_ACCEPTED<double>()) ? 1 : 0;
+
+	return (double) (log10(result) - log10(INITIAL_CONSTANT<double>()));
 }
 
 int main()

@@ -16,9 +16,10 @@ precision=${precision#"The biggest difference is: "}
 tiempo=`cat ftime`
 tiempo=`echo "$tiempo*1000" | bc`
 hash=`git rev-parse HEAD | head -c 15`
+modified=`git status --porcelain | grep -m 1 "^ M" | sed "s/^ M.*/-modified/g"`
 rm -f fstdout ftime
-echo $tiempo > performances/$hash
-echo $precision >> performances/$hash
+echo $tiempo > performances/$hash$modified
+echo $precision >> performances/$hash$modified
 
 echo "Precision: $precision"
 echo "Time: $tiempo"
@@ -30,8 +31,11 @@ revisions=`git log --pretty=format:"%H"`
 for rev in $revisions
 do
 	rev=`echo $rev | head -c 15`
+	if [ -f performances/$rev-modified ]; then
+		echo "[$rev+]: "`head -1 performances/$rev`"     "`tail -1 performances/$rev`
+	fi
 	if [ -f performances/$rev ]; then
-		echo "[$rev]: "`head -1 performances/$rev`"     "`tail -1 performances/$rev`
+		echo "[$rev ]: "`head -1 performances/$rev`"     "`tail -1 performances/$rev`
 	fi
 done
 
