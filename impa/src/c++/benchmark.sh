@@ -1,6 +1,6 @@
 #!/bin/bash
 
-program="pairhmm-dev"
+program="$1"
 fileinp="performances/benchmark.in"
 fileout="${fileinp%.in}.out"
 

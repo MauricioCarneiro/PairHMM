@@ -14,7 +14,7 @@
 #define YY 5
 */
 
-#define MAX_TESTCASES_BUNCH_SIZE 100
+#define MAX_TESTCASES_BUNCH_SIZE 10000
 
 /*
 	q: read quality
@@ -204,6 +204,7 @@ int main()
 	double result[MAX_TESTCASES_BUNCH_SIZE];
 	char done[MAX_TESTCASES_BUNCH_SIZE];
 	int num_tests;
+    int batch = 0;
 
 	do
 	{
@@ -218,7 +219,9 @@ int main()
 		}
 		for (int j = 0; j < num_tests; j++)
 			printf("%f\n", result[j]);
+        std::cerr << batch++ << std::endl;
 	} while (num_tests == MAX_TESTCASES_BUNCH_SIZE);
+
 
 	return 0;
 }

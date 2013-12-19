@@ -4,13 +4,15 @@
 #include <chrono>
 #include <iostream>
 
-class Timing {       // Report elapsed lifetime of object
+class Timing {
 public:
-    Timing(): m_start(now()) {}
-    ~Timing() {
+    double elapsed(void) {
         using us = std::chrono::microseconds;
         double t = std::chrono::duration_cast<us>(now()-m_start).count();
-        std::cerr << t/1.0e6 << "\n";
+        return t/1.0e6;
+    }
+    void mark(void) {
+        m_start = now();
     }
 private:
     using time_point =

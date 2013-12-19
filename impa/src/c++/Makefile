@@ -1,16 +1,18 @@
 #OMPCFLAGS=-fopenmp
 #OMPLDFLAGS=-lgomp
 
-#CFLAGS=-O2 -std=c++11 -W -Wall -march=corei7-avx -Wa,-q -pedantic $(OMPCFLAGS) -Wno-unknown-pragmas
-CFLAGS=-O2 -std=c++11 -W -Wall -march=corei7 -mfpmath=sse -msse4.2 -pedantic $(OMPCFLAGS) -Wno-unknown-pragmas
+#CFLAGS=-O2 -g -std=c++11 -W -Wall -march=corei7-avx -Wa,-q -pedantic $(OMPCFLAGS) -Wno-unknown-pragmas -Wno-vla
+CFLAGS=-O2 -g -std=c++11 -W -Wall -march=corei7 -mfpmath=sse -msse4.2 -pedantic $(OMPCFLAGS) -Wno-unknown-pragmas
 
 CXXFLAGS=$(CFLAGS)
 CC=gcc
 CXX=g++
+VALGRIND=pairhmm-dev
+BENCH=pairhmm-dev
 
 LDFLAGS=-lm $(OMPLDFLAGS)
 
-BIN:=pairhmm-6-onlythreediags pairhmm-dev
+BIN:=pairhmm-dev
 
 all: $(BIN)
 
@@ -20,8 +22,20 @@ pairhmm-6-onlythreediags: pairhmm-6-onlythreediags.o
 pairhmm-dev: pairhmm-dev.o
 	$(CXX) -o $@ $^ $(LDFLAGS)
 
-bench: pairhmm-dev
-	./benchmark.sh
+pairhmm-dev-avx: pairhmm-dev-avx.o
+	$(CXX) -o $@ $^ $(LDFLAGS)
+
+pairhmm-7-presse: pairhmm-7-presse.o
+	$(CXX) -o $@ $^ $(LDFLAGS)
+
+pairhmm-8-sse: pairhmm-8-sse.o
+	$(CXX) -o $@ $^ $(LDFLAGS)
+
+bench: $(BENCH)
+	./benchmark.sh $(BENCH)
+
+valgrind: $(VALGRIND)
+	valgrind --dsymutil=yes --tool=memcheck --leak-check=no -v $(VALGRIND) < crash.in
 
 clean:
 	rm -f $(BIN) *.o

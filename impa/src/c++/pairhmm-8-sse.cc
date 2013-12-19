@@ -133,6 +133,14 @@ double compute_full_prob<float>(testcase *tc, char *done)
 	const int mem_size = (sz + VECTOR_SIZE - 1) * sizeof(float);
 	const int align = VECTOR_SIZE * sizeof(float);
 
+    float M1[sz], M2[sz], M3[sz], *M, *Mp, *Mpp;
+    float X1[sz], X2[sz], X3[sz], *X, *Xp, *Xpp;
+    float Y1[sz], Y2[sz], Y3[sz], *Y, *Yp, *Ypp;
+    Mpp = M1; Xpp = X1; Ypp = Y1;
+    Mp = M2;  Xp = X2;  Yp = Y2;
+    M = M3;   X = X3;   Y = Y3;
+
+#if 0
 	float *M = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
 	float *Mp = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
 	float *Mpp = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
@@ -142,6 +150,7 @@ double compute_full_prob<float>(testcase *tc, char *done)
 	float *Y = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
 	float *Yp = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
 	float *Ypp = reinterpret_cast<float *>(_mm_malloc(mem_size, align)) + VECTOR_SIZE - 1;
+#endif
 
 	/* first and second diagonals */
 	float k = INITIAL_CONSTANT<float>() / (tc->haplen);
@@ -169,6 +178,10 @@ double compute_full_prob<float>(testcase *tc, char *done)
 		M[0] = (float(0.0));
 		X[0] = (float(0.0));
 		Y[0] = k;
+
+#if 0
+
+
 
 		for (int r = 1; r < ROWS; r += VECTOR_SIZE)
 		{
@@ -199,6 +212,23 @@ double compute_full_prob<float>(testcase *tc, char *done)
 				_mm_mul_ps(_mm_loadu_ps(Mp+r), _mm_loadu_ps(MY+r)),
 				_mm_mul_ps(_mm_loadu_ps(Yp+r), _mm_loadu_ps(YY+r))));
 		}
+#endif
+
+        for (int rb = 1; rb < ROWS; rb += VECTOR_SIZE)
+        {
+            for (int r = rb; r < rb + VECTOR_SIZE; r++)
+            {
+                int _rs = tc->rs[r-1];
+                int _hap = tc->hap[-diag+r];
+                float distm = pq[r];
+                if (_rs == _hap || _rs == 'N' || _hap == 'N')
+                    distm = (float(1.0)) - distm;
+
+                M[r] = distm * (Mpp[r-1] * MM[r] + Xpp[r-1] * GM[r] + Ypp[r-1] * GM[r]);
+                X[r] = Mp[r-1] * MX[r] + Xp[r-1] * XX[r];
+                Y[r] = Mp[r] * MY[r] + Yp[r] * YY[r];
+            }
+        }
 
 		result += M[ROWS-1] + X[ROWS-1];
 		float *aux;
@@ -209,9 +239,11 @@ double compute_full_prob<float>(testcase *tc, char *done)
 
 	*done = (result > MIN_ACCEPTED<float>()) ? 1 : 0;
 
+#if 0
 	_mm_free(M-VECTOR_SIZE+1); _mm_free(Mp-VECTOR_SIZE+1); _mm_free(Mpp-VECTOR_SIZE+1); 
 	_mm_free(X-VECTOR_SIZE+1); _mm_free(Xp-VECTOR_SIZE+1); _mm_free(Xpp-VECTOR_SIZE+1); 
 	_mm_free(Y-VECTOR_SIZE+1); _mm_free(Yp-VECTOR_SIZE+1); _mm_free(Ypp-VECTOR_SIZE+1);
+#endif
 
 	return (double) (log10(result) - log10(INITIAL_CONSTANT<float>()));
 }
