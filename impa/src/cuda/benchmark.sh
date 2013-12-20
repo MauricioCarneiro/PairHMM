@@ -3,21 +3,21 @@
 fileinp="performances/benchmark.in.cuda"
 fileout="${fileinp%.in.cuda}.out"
 
-prog32="pairhmm32x1"
+prog32="pairhmm-dev-32"
 ./$prog32 $fileinp fout32 > fstdout32
 time32=`grep COMPUTATION: fstdout32`
 time32=${time32#"COMPUTATION: "}
 err32=`../../tools/matcmp $fileout fout32 | grep "The biggest difference is: "`
 err32=${err32#"The biggest difference is: "}
 
-prog64="pairhmm64x1"
+prog64="pairhmm-dev-64"
 ./$prog64 $fileinp fout64 > fstdout64
 time64=`grep COMPUTATION: fstdout64`
 time64=${time64#"COMPUTATION: "}
 err64=`../../tools/matcmp $fileout fout64 | grep "The biggest difference is: "`
 err64=${err64#"The biggest difference is: "}
 
-prog96="pairhmm96x1"
+prog96="pairhmm-dev-96"
 ./$prog96 $fileinp fout96 > fstdout96
 time96=`grep COMPUTATION: fstdout96`
 time96=${time96#"COMPUTATION: "}
