@@ -68,7 +68,7 @@ do
 		err96=${err96#"ERR96: "}
 		printf "Time:       | %-15s | %-15s | %-15s | %s \n" $time32 $time64 $time96 $rev
 		printf "Precision:  | %-15s | %-15s | %-15s |\n" $err32 $err64 $err96
-		if [ first==1 ]; then
+		if [ "$first" -eq "1" ]; then
 			first=0
 			echo "============*=================*=================*=================*"
 		else
