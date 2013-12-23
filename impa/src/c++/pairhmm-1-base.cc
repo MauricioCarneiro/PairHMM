@@ -1,9 +1,11 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <math.h>
+#include <cstdio>
+#include <string>
+#include <cstring>
+#include <cstdlib>
+#include <cmath>
+#include <iostream>
 
-#include "timing.h"
+#include "input.h"
 
 #define MM 0
 #define GapM 1
@@ -11,73 +13,6 @@
 #define XX 3
 #define MY 4
 #define YY 5
-
-/*
-	q: read quality
-	i: insertion penalty
-	d: deletion penalty
-	c: gap continuation penalty
-*/
-
-typedef struct 
-{
-	int rslen, haplen, *q, *i, *d, *c;
-	char *hap, *rs;
-} testcase;
-
-int normalize(char c)
-{
-	return ((int) (c - 33));
-}
-
-int read_testcase(testcase *tc)
-{
-	char *q, *i, *d, *c, *line = NULL;
-	int _q, _i, _d, _c;
-	int x, size = 0;
-	ssize_t read;
-
-	read = getline(&line, (size_t *) &size, stdin);
-	if (read == -1)
-		return -1;
-
-	tc->hap = (char *) malloc(size);
-	tc->rs = (char *) malloc(size);
-	q = (char *) malloc(size);
-	i = (char *) malloc(size);
-	d = (char *) malloc(size);
-	c = (char *) malloc(size);
-
-	if (sscanf(line, "%s %s %s %s %s %s\n", tc->hap, tc->rs, q, i, d, c) != 6)
-		return -1;
-
-	tc->haplen = strlen(tc->hap);
-	tc->rslen = strlen(tc->rs);
-	tc->q = (int *) malloc(sizeof(int) * tc->rslen);
-	tc->i = (int *) malloc(sizeof(int) * tc->rslen);
-	tc->d = (int *) malloc(sizeof(int) * tc->rslen);
-	tc->c = (int *) malloc(sizeof(int) * tc->rslen);
-
-	for (x = 0; x < tc->rslen; x++)
-	{
-		_q = normalize(q[x]);
-		_i = normalize(i[x]);
-		_d = normalize(d[x]);
-		_c = normalize(c[x]);
-		tc->q[x] = (_q < 6) ? 6 : _q;
-		tc->i[x] = _i;
-		tc->d[x] = _d;
-		tc->c[x] = _c;
-	}
-
-	free(q);
-	free(i);
-	free(d);
-	free(c);
-	free(line);
-
-	return 0;
-}
 
 template<class T>
 struct Context{};
@@ -202,7 +137,6 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
 int main()
 {
 	testcase tc;
-    Timing t;
 
 	while (read_testcase(&tc) == 0)
 		printf("%E\n", compute_full_prob<double>(&tc));
