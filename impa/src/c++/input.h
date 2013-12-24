@@ -5,13 +5,12 @@
 
 #define VECTOR_SIZE 8
 
-typedef struct 
+struct testcase
 {
 	int rslen, haplen, *q, *i, *d, *c;
 	char *hap, *rs;
-} testcase;
+};
 
-int normalize(char);
 int read_testcase(testcase *);
 int read_a_bunch_of_testcases(testcase *, int);
 

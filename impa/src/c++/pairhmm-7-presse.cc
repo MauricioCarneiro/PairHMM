@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <iostream>
-
+#include <vector>
 
 #include "input.h"
 
@@ -45,10 +45,11 @@ double compute_full_prob(testcase *tc, char *done)
 	int COLS = tc->haplen + 1;
 
 	/* constants */
-	int sz = ((ROWS + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
+	int sz = 1 + ((tc->rslen + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
 
-	NUMBER ph2pr[128], MM[sz + 1], GM[sz + 1], MX[sz + 1], XX[sz + 1], 
-		MY[sz + 1], YY[sz + 1], pq[sz+1];
+	std::vector<NUMBER> ph2pr(128), MM(sz), GM(sz), MX(sz), 
+		XX(sz), MY(sz), YY(sz), pq(sz);
+
 	for (int x = 0; x < 128; x++)
 		ph2pr[x] = pow((NUMBER(10.0)), -(NUMBER(x)) / (NUMBER(10.0)));
 	//	cell 0 of MM, GM, ... , YY is never used, since first row is just 
@@ -59,8 +60,7 @@ double compute_full_prob(testcase *tc, char *done)
 		int _d = (tc->d)[r-1] & 127;
 		int _c = (tc->c)[r-1] & 127;
 		int _q = (tc->q)[r-1] & 127;
-		//MM[r] = (NUMBER(1.0)) - ph2pr[(_i + _d) & 127];
-		MM[r] = (NUMBER(1.0)) - ph2pr[_i]*ph2pr[_d];
+		MM[r] = (NUMBER(1.0)) - ph2pr[_i] * ph2pr[_d];
 		GM[r] = (NUMBER(1.0)) - ph2pr[_c];
 		MX[r] = ph2pr[_i];
 		XX[r] = ph2pr[_c];
@@ -69,13 +69,10 @@ double compute_full_prob(testcase *tc, char *done)
 		pq[r] = ph2pr[_q];
 	}
 
-	NUMBER M1[sz], M2[sz], M3[sz], *M, *Mp, *Mpp;
-	NUMBER X1[sz], X2[sz], X3[sz], *X, *Xp, *Xpp;
-	NUMBER Y1[sz], Y2[sz], Y3[sz], *Y, *Yp, *Ypp;
-	Mpp = M1; Xpp = X1; Ypp = Y1;
-	Mp = M2;  Xp = X2;  Yp = Y2;
-	M = M3;   X = X3;   Y = Y3;
-
+	std::vector<NUMBER> M1(sz), M2(sz), M3(sz), X1(sz), X2(sz), X3(sz), Y1(sz), Y2(sz), Y3(sz);
+	NUMBER *M=&M3[0], *Mp=&M2[0], *Mpp=&M1[0];
+	NUMBER *X=&X3[0], *Xp=&X2[0], *Xpp=&X1[0];
+	NUMBER *Y=&Y3[0], *Yp=&Y2[0], *Ypp=&Y1[0];
 
 	/* first and second diagonals */
 	NUMBER k = INITIAL_CONSTANT<NUMBER>() / (tc->haplen);

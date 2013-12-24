@@ -22,9 +22,7 @@ int read_testcase(testcase *tc)
     tc->haplen = hap.size();
     tc->rslen = rs.size();
 
-    int h = (tc->rslen+1);
-
-	int sz = ((h + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
+	int sz = 1 + ((tc->rslen + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
 
     tc->hap = new char[tc->haplen + 2 * (sz-1) + 1]();
     tc->hap += (sz-1);
