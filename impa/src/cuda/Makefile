@@ -12,14 +12,14 @@ BIN:=pairhmm-dev
 all:	$(BIN)
 
 pairhmm-1-base:	pairhmm-1-base.cu 
-	$(NVCC) -o $@-32 $^ -DBLOCKWIDTH=32 -DBLOCKHEIGHT=1 $(FLAGS)
-	$(NVCC) -o $@-64 $^ -DBLOCKWIDTH=64 -DBLOCKHEIGHT=1 $(FLAGS)
-	$(NVCC) -o $@-96 $^ -DBLOCKWIDTH=96 -DBLOCKHEIGHT=1 $(FLAGS)
+	$(NVCC) -o $@-32 $^ -DNTHREADS=32 $(FLAGS)
+	$(NVCC) -o $@-64 $^ -DNTHREADS=64 $(FLAGS)
+	$(NVCC) -o $@-96 $^ -DNTHREADS=96 $(FLAGS)
 
 pairhmm-dev:	pairhmm-dev.cu 
-	$(NVCC) -o $@-32 $^ -DBLOCKWIDTH=32 -DBLOCKHEIGHT=1 $(FLAGS)
-	$(NVCC) -o $@-64 $^ -DBLOCKWIDTH=64 -DBLOCKHEIGHT=1 $(FLAGS)
-	$(NVCC) -o $@-96 $^ -DBLOCKWIDTH=96 -DBLOCKHEIGHT=1 $(FLAGS)
+	$(NVCC) -o $@-32 $^ -DNTHREADS=32 $(FLAGS)
+	$(NVCC) -o $@-64 $^ -DNTHREADS=64 $(FLAGS)
+	$(NVCC) -o $@-96 $^ -DNTHREADS=96 $(FLAGS)
 
 clean:
 	rm -f $(foreach bin,$(BIN),$(bin)-32)

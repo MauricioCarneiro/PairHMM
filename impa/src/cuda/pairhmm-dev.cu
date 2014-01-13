@@ -19,10 +19,7 @@
 #define COMPBUFFSIZE 30
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
-#define TX (threadIdx.x)
-#define TY (threadIdx.y)
-#define TID (threadIdx.x + BLOCKWIDTH * threadIdx.y)
-#define NTH (BLOCKHEIGHT * BLOCKWIDTH)
+#define TID (threadIdx.x + 1 * threadIdx.y)
 
 #define MAX_COMPARISONS_PER_SPLIT ((unsigned long) 35000)
 #define MAX_H 5120
@@ -120,7 +117,7 @@ __device__ static inline double MIN_ACCEPTED<double>() {
 
 template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
 __device__ inline void flush_buffer( PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv ) {
-	for (int k = TID; k < pv.buffsz; k += NTH) {
+	for (int k = TID; k < pv.buffsz; k += NTHREADS) {
 		pv.g_lastM[pv.buffstart + k] = pv.buffM[k];
 		pv.g_lastX[pv.buffstart + k] = pv.buffX[k];
 		pv.g_lastY[pv.buffstart + k] = pv.buffY[k];
@@ -129,7 +126,7 @@ __device__ inline void flush_buffer( PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv ) {
 
 template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
 __device__ inline void load_previous_results( int &j, PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv ) {
-	for (int c = ((j == 0) ? 1 : 0) + TID; c < MIN(pv.H + 1 - j * DIAGS, DIAGS) + 1; c += NTH) {
+	for (int c = ((j == 0) ? 1 : 0) + TID; c < MIN(pv.H + 1 - j * DIAGS, DIAGS) + 1; c += NTHREADS) {
 		pv.lastM[c] = pv.g_lastM[j * DIAGS + c - 1];
 		pv.lastX[c] = pv.g_lastX[j * DIAGS + c - 1];
 		pv.lastY[c] = pv.g_lastY[j * DIAGS + c - 1];
@@ -144,13 +141,13 @@ __device__ inline void load_hap_data( int &j, PubVars<ROWS, DIAGS, BUFFSIZE, NUM
 
 	__syncthreads();
 
-	for (int c = ((j == 0) ? 1 : 0) + TID; c < MIN(DIAGS, pv.H + 1 - j * DIAGS); c += NTH)
+	for (int c = ((j == 0) ? 1 : 0) + TID; c < MIN(DIAGS, pv.H + 1 - j * DIAGS); c += NTHREADS)
 		pv.h[ROWS - 1 + c] = pv.chunk[pv.hap.h + j * DIAGS + c - 1];
 }
 
 template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
 __device__ inline void load_read_data( int &i, PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv ) {
-	for (int r = ((i == 0) ? 1 : 0) + TID; r < MIN(ROWS, pv.R + 1 - i * ROWS); r += NTH) {
+	for (int r = ((i == 0) ? 1 : 0) + TID; r < MIN(ROWS, pv.R + 1 - i * ROWS); r += NTHREADS) {
 		pv.r[r] = pv.chunk[pv.rs.r + i * ROWS + r - 1];
 		pv.qidc[r].x = pv.chunk[pv.rs.qidc + 4 * (i * ROWS + r - 1) + 0];
 		pv.qidc[r].y = pv.chunk[pv.rs.qidc + 4 * (i * ROWS + r - 1) + 1];
@@ -221,7 +218,7 @@ __device__ inline void block( int &i, int &j, PubVars<ROWS, DIAGS, BUFFSIZE, NUM
 	for (int diag = 0; diag < DIAGS; diag++)
 	{
 		int r, c;
-		for (r = TX; r < nRows; r += BLOCKWIDTH)
+		for (r = TID; r < nRows; r += NTHREADS)
 		{
 			c = diag - r + j * DIAGS;
 			if (c >= 0 && c <= (int)pv.H)
@@ -284,12 +281,13 @@ __device__ inline void block( int &i, int &j, PubVars<ROWS, DIAGS, BUFFSIZE, NUM
 
 template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
 __global__ void compare( Memory mem, NUM *g_lastLinesArr, int *g_lastLinesIndex, int *g_compIndex ) {
+
 	__shared__ PubVars<ROWS, DIAGS, BUFFSIZE, NUM> pv;
 	__shared__ int compIndex;
 	__shared__ bool flag_zero;
 
-	for (int i = TID; i < 128; i += NTH)
-		pv.ph2pr[i] = pow((NUM(10.0)), -(NUM(i)) / (NUM(10.0)));
+	for (int i = TID; i < 128; i += NTHREADS)
+		pv.ph2pr[i] = pow(NUM(10.0), -NUM(i) / NUM(10.0));
 
 	if (TID == 0) {
 		int lastLinesIndex = atomicAdd(g_lastLinesIndex, 1);
@@ -508,16 +506,16 @@ int main( int argc, char **argv ) {
 		cudaMemcpy(d_mem.flag, h_small.flag, MAX_COMPARISONS_PER_SPLIT, cudaMemcpyHostToDevice);
 
 		dim3 gridDim(MAX_SIMULTANEOUS_BLOCKS);
-		dim3 blockDim(BLOCKWIDTH, BLOCKHEIGHT);
+		dim3 blockDim(NTHREADS);
 		cudaEventRecord(kernel_start, 0);
 
 		cudaMemcpy(g_compIndex, &compIndex, sizeof(int), cudaMemcpyHostToDevice);
 		cudaMemcpy(g_lastLinesIndex, &lastLinesIndex, sizeof(int), cudaMemcpyHostToDevice);
-		compare<BLOCKWIDTH, COMPDIAGS, COMPBUFFSIZE, float><<<gridDim, blockDim>>>(d_mem, (float *) g_lastlines, g_lastLinesIndex, g_compIndex);
+		compare<NTHREADS, COMPDIAGS, COMPBUFFSIZE, float><<<gridDim, blockDim>>>(d_mem, (float *) g_lastlines, g_lastLinesIndex, g_compIndex);
 
 		cudaMemcpy(g_compIndex, &compIndex, sizeof(int), cudaMemcpyHostToDevice);
 		cudaMemcpy(g_lastLinesIndex, &lastLinesIndex, sizeof(int), cudaMemcpyHostToDevice);
-		compare<BLOCKWIDTH, COMPDIAGS, COMPBUFFSIZE, double><<<gridDim, blockDim>>>(d_mem, (double *) g_lastlines, g_lastLinesIndex, g_compIndex);
+		compare<NTHREADS, COMPDIAGS, COMPBUFFSIZE, double><<<gridDim, blockDim>>>(d_mem, (double *) g_lastlines, g_lastLinesIndex, g_compIndex);
 
 		cudaEventRecord(kernel_stop, 0);
 		cudaEventSynchronize(kernel_stop);
