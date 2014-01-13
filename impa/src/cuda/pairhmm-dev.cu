@@ -13,7 +13,21 @@
 #include <sstream>
 #include <iostream>
 
-#define BIGGEST_NUMBER_REPRESENTATION double
+#define BIGGEST_NUM double
+
+#define COMPDIAGS 60
+#define COMPBUFFSIZE 30
+
+#define MIN(a,b) (((a)<(b))?(a):(b))
+#define TX (threadIdx.x)
+#define TY (threadIdx.y)
+#define TID (threadIdx.x + BLOCKWIDTH * threadIdx.y)
+#define NTH (BLOCKHEIGHT * BLOCKWIDTH)
+
+#define MAX_COMPARISONS_PER_SPLIT ((unsigned long) 35000)
+#define MAX_H 5120
+#define MAX_R 1536
+#define MAX_SIMULTANEOUS_BLOCKS 150
 
 typedef struct
 {
@@ -40,33 +54,15 @@ typedef struct
 	char *chunk;
 	unsigned long *cmpH;
 	unsigned long *cmpR;
-	BIGGEST_NUMBER_REPRESENTATION *res;
+	BIGGEST_NUM *res;
 	char *flag;
 	unsigned long ng, nh, nr, chunk_sz, nres;
 } Memory;
 
-double right_now(void);
-void init_memory(const char *fn, Memory *m);
-void output(BIGGEST_NUMBER_REPRESENTATION *r, unsigned long nr, const char *filename);
-
 typedef unsigned long ul;
 typedef unsigned char uc;
 
-#define COMPDIAGS 60
-#define COMPBUFFSIZE 30
-
-#define MIN(a,b) (((a)<(b))?(a):(b))
-#define TX (threadIdx.x)
-#define TY (threadIdx.y)
-#define TID (threadIdx.x + BLOCKWIDTH * threadIdx.y)
-#define NTH (BLOCKHEIGHT * BLOCKWIDTH)
-
-#define MAX_COMPARISONS_PER_SPLIT ((unsigned long) 35000)
-#define MAX_H 5120
-#define MAX_R 1536
-#define MAX_SIMULTANEOUS_BLOCKS 150
-
-template <int ROWS, int DIAGS, int BUFFSIZE, typename NUMBER>
+template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
 struct PubVars {
 	ul H, R;
 	char h[ROWS+DIAGS-1];
@@ -77,20 +73,24 @@ struct PubVars {
 	ReadSequence rs;
 	char *chunk;
 
-	NUMBER ph2pr[128];
-	NUMBER m1[ROWS], m2[ROWS], m3[ROWS];
-	NUMBER x1[ROWS], x2[ROWS], x3[ROWS];
-	NUMBER y1[ROWS], y2[ROWS], y3[ROWS];
-	NUMBER *m, *mp, *mpp;
-	NUMBER *x, *xp, *xpp;
-	NUMBER *y, *yp, *ypp;
-	NUMBER *g_lastM, *g_lastX, *g_lastY;
-	NUMBER lastM[DIAGS+1], lastX[DIAGS+1], lastY[DIAGS+1];
-	NUMBER buffM[BUFFSIZE], buffX[BUFFSIZE], buffY[BUFFSIZE];
+	NUM ph2pr[128];
+	NUM m1[ROWS], m2[ROWS], m3[ROWS];
+	NUM x1[ROWS], x2[ROWS], x3[ROWS];
+	NUM y1[ROWS], y2[ROWS], y3[ROWS];
+	NUM *m, *mp, *mpp;
+	NUM *x, *xp, *xpp;
+	NUM *y, *yp, *ypp;
+	NUM *g_lastM, *g_lastX, *g_lastY;
+	NUM lastM[DIAGS+1], lastX[DIAGS+1], lastY[DIAGS+1];
+	NUM buffM[BUFFSIZE], buffX[BUFFSIZE], buffY[BUFFSIZE];
 	ul buffsz;
 	ul buffstart;
-	NUMBER result;
+	NUM result;
 };
+
+double right_now(void);
+void init_memory(const char *fn, Memory *m);
+void output(BIGGEST_NUM *r, unsigned long nr, const char *filename);
 
 template<class T>
 __device__ static inline T INITIAL_CONSTANT();
@@ -105,7 +105,6 @@ __device__ static inline double INITIAL_CONSTANT<double>() {
 	return ldexp(1.0, 1020);
 }
 
-
 template<class T>
 __device__ static inline T MIN_ACCEPTED();
 
@@ -119,8 +118,8 @@ __device__ static inline double MIN_ACCEPTED<double>() {
 	return 0.0;
 }
 
-template <int ROWS, int DIAGS, int BUFFSIZE, typename NUMBER>
-__device__ inline void flush_buffer( PubVars<ROWS, DIAGS, BUFFSIZE, NUMBER> &pv ) {
+template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
+__device__ inline void flush_buffer( PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv ) {
 	for (int k = TID; k < pv.buffsz; k += NTH) {
 		pv.g_lastM[pv.buffstart + k] = pv.buffM[k];
 		pv.g_lastX[pv.buffstart + k] = pv.buffX[k];
@@ -128,8 +127,8 @@ __device__ inline void flush_buffer( PubVars<ROWS, DIAGS, BUFFSIZE, NUMBER> &pv 
 	}
 }
 
-template <int ROWS, int DIAGS, int BUFFSIZE, typename NUMBER>
-__device__ inline void load_previous_results( int &j, PubVars<ROWS, DIAGS, BUFFSIZE, NUMBER> &pv ) {
+template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
+__device__ inline void load_previous_results( int &j, PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv ) {
 	for (int c = ((j == 0) ? 1 : 0) + TID; c < MIN(pv.H + 1 - j * DIAGS, DIAGS) + 1; c += NTH) {
 		pv.lastM[c] = pv.g_lastM[j * DIAGS + c - 1];
 		pv.lastX[c] = pv.g_lastX[j * DIAGS + c - 1];
@@ -137,9 +136,8 @@ __device__ inline void load_previous_results( int &j, PubVars<ROWS, DIAGS, BUFFS
 	}
 }
 
-
-template <int ROWS, int DIAGS, int BUFFSIZE, typename NUMBER>
-__device__ inline void load_hap_data( int &j, PubVars<ROWS, DIAGS, BUFFSIZE, NUMBER> &pv ) {
+template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
+__device__ inline void load_hap_data( int &j, PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv ) {
 	if (TID < DIAGS)
 		for (int c = TID; c < ROWS - 1; c += DIAGS)
 			pv.h[c] = pv.h[c + DIAGS];
@@ -150,8 +148,8 @@ __device__ inline void load_hap_data( int &j, PubVars<ROWS, DIAGS, BUFFSIZE, NUM
 		pv.h[ROWS - 1 + c] = pv.chunk[pv.hap.h + j * DIAGS + c - 1];
 }
 
-template <int ROWS, int DIAGS, int BUFFSIZE, typename NUMBER>
-__device__ inline void load_read_data( int &i, PubVars<ROWS, DIAGS, BUFFSIZE, NUMBER> &pv ) {
+template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
+__device__ inline void load_read_data( int &i, PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv ) {
 	for (int r = ((i == 0) ? 1 : 0) + TID; r < MIN(ROWS, pv.R + 1 - i * ROWS); r += NTH) {
 		pv.r[r] = pv.chunk[pv.rs.r + i * ROWS + r - 1];
 		pv.qidc[r].x = pv.chunk[pv.rs.qidc + 4 * (i * ROWS + r - 1) + 0];
@@ -161,57 +159,57 @@ __device__ inline void load_read_data( int &i, PubVars<ROWS, DIAGS, BUFFSIZE, NU
 	}
 }
 
-template <int ROWS, int DIAGS, int BUFFSIZE, typename NUMBER>
-__device__ inline void notfirstline_firstcolum( int &r, PubVars<ROWS, DIAGS, BUFFSIZE, NUMBER> &pv, NUMBER &_m, NUMBER &_x ) {
-	pv.m[r] = (NUMBER(0.0));
+template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
+__device__ inline void notfirstline_firstcolum( int &r, PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv, NUM &_m, NUM &_x ) {
+	pv.m[r] = (NUM(0.0));
 	pv.x[r] = _m * pv.ph2pr[pv.qidc[r].y] + _x * pv.ph2pr[pv.qidc[r].w];
-	pv.y[r] = (NUMBER(0.0));
+	pv.y[r] = (NUM(0.0));
 }
 
-template <int ROWS, int DIAGS, int BUFFSIZE, typename NUMBER>
-__device__ inline void notfirstline_notfirstcolumn( int &r, int &i, int &diag, PubVars<ROWS, DIAGS, BUFFSIZE, NUMBER> &pv, NUMBER &M_m, NUMBER &M_x, NUMBER &M_y, NUMBER &X_m, NUMBER &X_x, NUMBER &Y_m, NUMBER &Y_y ) {
-	NUMBER t1, t2, t3, dist;
+template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
+__device__ inline void notfirstline_notfirstcolumn( int &r, int &i, int &diag, PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv, NUM &M_m, NUM &M_x, NUM &M_y, NUM &X_m, NUM &X_x, NUM &Y_m, NUM &Y_y ) {
+	NUM t1, t2, t3, dist;
 
-	t1 = (NUMBER(1.0)) - pv.ph2pr[(pv.qidc[r].y + pv.qidc[r].z) & 127];
-	t2 = (NUMBER(1.0)) - pv.ph2pr[pv.qidc[r].w];
+	t1 = (NUM(1.0)) - pv.ph2pr[(pv.qidc[r].y + pv.qidc[r].z) & 127];
+	t2 = (NUM(1.0)) - pv.ph2pr[pv.qidc[r].w];
 	t3 = pv.ph2pr[pv.qidc[r].x];
 
-	dist = (pv.r[r] == pv.h[ROWS - 1 + diag - r] || pv.r[r] == 'N' || pv.h[ROWS - 1 + diag - r] == 'N') ? (NUMBER(1.0)) - t3 : t3;
+	dist = (pv.r[r] == pv.h[ROWS - 1 + diag - r] || pv.r[r] == 'N' || pv.h[ROWS - 1 + diag - r] == 'N') ? (NUM(1.0)) - t3 : t3;
 		pv.m[r] = dist * (M_m * t1 + M_x * t2 + M_y * t2);
 
 	t1 = pv.ph2pr[pv.qidc[r].y];
 	t2 = pv.ph2pr[pv.qidc[r].w];
 	pv.x[r] = X_m * t1 + X_x * t2;
 
-	t1 = ((unsigned)r + i * ROWS == pv.R) ? (NUMBER(1.0)) : pv.ph2pr[pv.qidc[r].z];
-	t2 = ((unsigned)r + i * ROWS == pv.R) ? (NUMBER(1.0)) : pv.ph2pr[pv.qidc[r].w];
+	t1 = ((unsigned)r + i * ROWS == pv.R) ? (NUM(1.0)) : pv.ph2pr[pv.qidc[r].z];
+	t2 = ((unsigned)r + i * ROWS == pv.R) ? (NUM(1.0)) : pv.ph2pr[pv.qidc[r].w];
 	pv.y[r] = Y_m * t1 + Y_y * t2;
 }
 
-template <int ROWS, int DIAGS, int BUFFSIZE, typename NUMBER>
-__device__ inline void firstline_firstcolum( PubVars<ROWS, DIAGS, BUFFSIZE, NUMBER> &pv ) {
-	pv.m[0] = (NUMBER(0.0));
-	pv.x[0] = (NUMBER(0.0));
-	pv.y[0] = INITIAL_CONSTANT<NUMBER>() / pv.H;
+template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
+__device__ inline void firstline_firstcolum( PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv ) {
+	pv.m[0] = (NUM(0.0));
+	pv.x[0] = (NUM(0.0));
+	pv.y[0] = INITIAL_CONSTANT<NUM>() / pv.H;
 }
 
-template <int ROWS, int DIAGS, int BUFFSIZE, typename NUMBER>
-__device__ inline void firstline_notfirstcolum( PubVars<ROWS, DIAGS, BUFFSIZE, NUMBER> &pv ) {
-	pv.m[0] = (NUMBER(0.0));
-	pv.x[0] = (NUMBER(0.0));
-	pv.y[0] = INITIAL_CONSTANT<NUMBER>() / pv.H;
+template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
+__device__ inline void firstline_notfirstcolum( PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv ) {
+	pv.m[0] = (NUM(0.0));
+	pv.x[0] = (NUM(0.0));
+	pv.y[0] = INITIAL_CONSTANT<NUM>() / pv.H;
 }
 
-template <int ROWS, int DIAGS, int BUFFSIZE, typename NUMBER>
-__device__ inline void rotatediags(	PubVars<ROWS, DIAGS, BUFFSIZE, NUMBER> &pv ) {
-	NUMBER *sw;
+template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
+__device__ inline void rotatediags(	PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv ) {
+	NUM *sw;
 	sw = pv.mpp; pv.mpp = pv.mp; pv.mp = pv.m; pv.m = sw;
 	sw = pv.xpp; pv.xpp = pv.xp; pv.xp = pv.x; pv.x = sw;
 	sw = pv.ypp; pv.ypp = pv.yp; pv.yp = pv.y; pv.y = sw;
 }
 
-template <int ROWS, int DIAGS, int BUFFSIZE, typename NUMBER>
-__device__ inline void block( int &i, int &j, PubVars<ROWS, DIAGS, BUFFSIZE, NUMBER> &pv ) {
+template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
+__device__ inline void block( int &i, int &j, PubVars<ROWS, DIAGS, BUFFSIZE, NUM> &pv ) {
 	if (i > 0)
 		load_previous_results(j, pv);
 
@@ -249,20 +247,17 @@ __device__ inline void block( int &i, int &j, PubVars<ROWS, DIAGS, BUFFSIZE, NUM
 
 		r = nRows - 1;
 		c = diag - r + j * DIAGS;
+
 		if ((TID == 0) && (c >= 0) && (c <= (int)pv.H))
-		{
-			if (i < pv.nblockrows - 1) // buffer!!
+			if (i < pv.nblockrows - 1)
 			{
 				pv.buffM[pv.buffsz] = pv.m[r];
 				pv.buffX[pv.buffsz] = pv.x[r];
 				pv.buffY[pv.buffsz] = pv.y[r];
 				pv.buffsz++;
 			}
-			else // sum the result!!
-			{
+			else
 				pv.result += (pv.m[r] + pv.x[r]);
-			}
-		}
 
 		__syncthreads();
 
@@ -287,14 +282,14 @@ __device__ inline void block( int &i, int &j, PubVars<ROWS, DIAGS, BUFFSIZE, NUM
 	return;
 }
 
-template <int ROWS, int DIAGS, int BUFFSIZE, typename NUMBER>
-__global__ void compare( Memory mem, NUMBER *g_lastLinesArr, int *g_lastLinesIndex, int *g_compIndex ) {
-	__shared__ PubVars<ROWS, DIAGS, BUFFSIZE, NUMBER> pv;
+template <int ROWS, int DIAGS, int BUFFSIZE, typename NUM>
+__global__ void compare( Memory mem, NUM *g_lastLinesArr, int *g_lastLinesIndex, int *g_compIndex ) {
+	__shared__ PubVars<ROWS, DIAGS, BUFFSIZE, NUM> pv;
 	__shared__ int compIndex;
 	__shared__ bool flag_zero;
 
 	for (int i = TID; i < 128; i += NTH)
-		pv.ph2pr[i] = pow((NUMBER(10.0)), -(NUMBER(i)) / (NUMBER(10.0)));
+		pv.ph2pr[i] = pow((NUM(10.0)), -(NUM(i)) / (NUM(10.0)));
 
 	if (TID == 0) {
 		int lastLinesIndex = atomicAdd(g_lastLinesIndex, 1);
@@ -357,9 +352,9 @@ __global__ void compare( Memory mem, NUMBER *g_lastLinesArr, int *g_lastLinesInd
 		}
 
 		if (TID == 0) {
-			if (pv.result > MIN_ACCEPTED<NUMBER>()) {
+			if (pv.result > MIN_ACCEPTED<NUM>()) {
 				mem.flag[compIndex] = 1;
-				mem.res[compIndex] = log10(pv.result) - log10(INITIAL_CONSTANT<NUMBER>());
+				mem.res[compIndex] = log10(pv.result) - log10(INITIAL_CONSTANT<NUM>());
 			}
 		}
 
@@ -456,7 +451,7 @@ int main( int argc, char **argv ) {
 	h_small.chunk = (char *) malloc(MAX_COMPARISONS_PER_SPLIT * (MAX_H + MAX_R * 5));
 	h_small.cmpH = (ul *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(ul));
 	h_small.cmpR = (ul *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(ul));
-	h_small.res = (BIGGEST_NUMBER_REPRESENTATION *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(BIGGEST_NUMBER_REPRESENTATION));
+	h_small.res = (BIGGEST_NUM *) malloc(MAX_COMPARISONS_PER_SPLIT * sizeof(BIGGEST_NUM));
 	h_small.flag = (char *) malloc(MAX_COMPARISONS_PER_SPLIT);
 	h_small.g = NULL;
 
@@ -472,7 +467,7 @@ int main( int argc, char **argv ) {
 
 	cudaMalloc(&g_compIndex, sizeof(int));
 	cudaMalloc(&g_lastLinesIndex, sizeof(int));
-	cudaMalloc(&g_lastlines, 3 * sizeof(BIGGEST_NUMBER_REPRESENTATION) * MAX_H * MAX_SIMULTANEOUS_BLOCKS);
+	cudaMalloc(&g_lastlines, 3 * sizeof(BIGGEST_NUM) * MAX_H * MAX_SIMULTANEOUS_BLOCKS);
 
 	cudaMalloc(&(d_mem.r), MAX_COMPARISONS_PER_SPLIT * sizeof(ReadSequence));
 	cudaMalloc(&(d_mem.h), MAX_COMPARISONS_PER_SPLIT * sizeof(Haplotype));
@@ -480,7 +475,7 @@ int main( int argc, char **argv ) {
 	cudaMalloc(&(d_mem.cmpH), MAX_COMPARISONS_PER_SPLIT * sizeof(ul));
 	cudaMalloc(&(d_mem.cmpR), MAX_COMPARISONS_PER_SPLIT * sizeof(ul));
 	cudaMalloc(&(d_mem.flag), MAX_COMPARISONS_PER_SPLIT);
-	cudaMalloc(&(d_mem.res), MAX_COMPARISONS_PER_SPLIT * sizeof(BIGGEST_NUMBER_REPRESENTATION));
+	cudaMalloc(&(d_mem.res), MAX_COMPARISONS_PER_SPLIT * sizeof(BIGGEST_NUM));
 	d_mem.g = NULL;
 
 	if (!g_lastLinesIndex || !g_lastlines || !g_compIndex || !d_mem.r || !d_mem.h || !d_mem.chunk || !d_mem.cmpH || !d_mem.cmpR || !d_mem.res) {
@@ -527,7 +522,7 @@ int main( int argc, char **argv ) {
 		cudaEventRecord(kernel_stop, 0);
 		cudaEventSynchronize(kernel_stop);
 
-		cudaMemcpy(h_big.res + already, d_mem.res, d_mem.nres * sizeof(BIGGEST_NUMBER_REPRESENTATION), cudaMemcpyDeviceToHost);
+		cudaMemcpy(h_big.res + already, d_mem.res, d_mem.nres * sizeof(BIGGEST_NUM), cudaMemcpyDeviceToHost);
 		already += d_mem.nres;
 		cudaEventElapsedTime(&k_time, kernel_start, kernel_stop);
 		times.kernel += k_time;
@@ -617,7 +612,7 @@ void init_memory(const char *fn, Memory *m) {
 	bzero(m->chunk, chunk_sz);
 
 	m->nres = nres;
-	m->res = (BIGGEST_NUMBER_REPRESENTATION *) malloc(m->nres * sizeof(BIGGEST_NUMBER_REPRESENTATION));
+	m->res = (BIGGEST_NUM *) malloc(m->nres * sizeof(BIGGEST_NUM));
 	m->cmpH = (unsigned long *) malloc(m->nres * sizeof(unsigned long));
 	m->cmpR = (unsigned long *) malloc(m->nres * sizeof(unsigned long));
 
@@ -703,7 +698,7 @@ void init_memory(const char *fn, Memory *m) {
 	return;
 }
 
-void output(BIGGEST_NUMBER_REPRESENTATION *r, unsigned long nr, const char *filename) {
+void output(BIGGEST_NUM *r, unsigned long nr, const char *filename) {
 	FILE *f;
 	unsigned long x;
 	f = fopen(filename, "w");
