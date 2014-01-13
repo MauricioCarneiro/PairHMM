@@ -6,7 +6,8 @@ NVCC=$(CUDA)/bin/nvcc
 
 FLAGS=--ptxas-options=-v -L$(LIBS) -I$(INCS) -O2 -gencode arch=compute_20,code=sm_20 -gencode arch=compute_30,code=sm_30 -gencode arch=compute_35,code=sm_35 -lm
 
-BIN:=pairhmm-1-base pairhmm-dev
+#BIN:=pairhmm-1-base pairhmm-dev
+BIN:=pairhmm-dev
 
 all:	$(BIN)
 
