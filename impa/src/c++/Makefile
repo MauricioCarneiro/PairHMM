@@ -7,13 +7,13 @@ CFLAGS=-O2 -g -std=c++11 -W -Wall -march=corei7 -mfpmath=sse -msse4.2 -pedantic 
 CXXFLAGS=$(CFLAGS)
 CC=gcc
 CXX=g++
-TOGRIND=pairhmm-dev
-GRINDIN=performances/benchmark.in
-BENCH=pairhmm-dev
+TOGRIND=pairhmm-7-presse
+GRINDIN=smallTest.in
+BENCH=pairhmm-7-presse
 
 LDFLAGS=-lm $(OMPLDFLAGS)
 
-BIN:=pairhmm-dev
+BIN:=pairhmm-7-presse
 
 all: $(BIN)
 
@@ -36,7 +36,7 @@ bench: $(BENCH)
 	./benchmark.sh $(BENCH)
 
 valgrind: $(TOGRIND)
-	valgrind --dsymutil=yes --tool=memcheck -v $(TOGRIND) < $(GRINDIN)
+	valgrind --dsymutil=yes --tool=memcheck --leak-check=no -v $(TOGRIND) < $(GRINDIN)
 
 clean:
 	rm -f $(BIN) *.o

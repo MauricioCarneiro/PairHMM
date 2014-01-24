@@ -32,7 +32,7 @@ for rev in $revisions
 do
 	rev=`echo $rev | head -c 15`
 	if [ -f performances/$rev-modified ]; then
-		echo "[$rev+]: "`head -1 performances/$rev`"     "`tail -1 performances/$rev`
+		echo "[$rev+]: "`head -1 performances/$rev-modified`"     "`tail -1 performances/$rev-modified`
 	fi
 	if [ -f performances/$rev ]; then
 		echo "[$rev ]: "`head -1 performances/$rev`"     "`tail -1 performances/$rev`

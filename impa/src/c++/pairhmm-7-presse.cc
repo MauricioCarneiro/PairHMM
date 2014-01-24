@@ -2,7 +2,9 @@
 #include <cstring>
 #include <cstdlib>
 #include <cmath>
+#include <vector>
 #include <iostream>
+#include "timing.h"
 
 #define MAX_TESTCASES_BUNCH_SIZE 100
 #define VECTOR_SIZE 8
@@ -103,8 +105,8 @@ double compute_full_prob(testcase *tc, char *done)
 	/* constants */
 	int sz = ((ROWS + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
 
-	NUMBER ph2pr[128], MM[sz + 1], GM[sz + 1], MX[sz + 1], XX[sz + 1], 
-		MY[sz + 1], YY[sz + 1], pq[sz+1];
+    std::vector<NUMBER> ph2pr(128), MM(sz + 1), GM(sz + 1), MX(sz + 1), 
+        XX(sz + 1), MY(sz + 1), YY(sz + 1), pq(sz+1);
 	for (int x = 0; x < 128; x++)
 		ph2pr[x] = pow((NUMBER(10.0)), -(NUMBER(x)) / (NUMBER(10.0)));
 	//	cell 0 of MM, GM, ... , YY is never used, since first row is just 
@@ -125,13 +127,12 @@ double compute_full_prob(testcase *tc, char *done)
 		pq[r] = ph2pr[_q];
 	}
 
-	NUMBER M1[sz], M2[sz], M3[sz], *M, *Mp, *Mpp;
-	NUMBER X1[sz], X2[sz], X3[sz], *X, *Xp, *Xpp;
-	NUMBER Y1[sz], Y2[sz], Y3[sz], *Y, *Yp, *Ypp;
-	Mpp = M1; Xpp = X1; Ypp = Y1;
-	Mp = M2;  Xp = X2;  Yp = Y2;
-	M = M3;   X = X3;   Y = Y3;
-
+    std::vector<NUMBER> M1(sz), M2(sz), M3(sz), X1(sz), X2(sz), 
+        X3(sz), Y1(sz), Y2(sz), Y3(sz);
+    NUMBER *M, *Mp, *Mpp, *X, *Xp, *Xpp, *Y, *Yp, *Ypp;
+    Mpp = &M1[0]; Xpp = &X1[0]; Ypp = &Y1[0];
+    Mp = &M2[0];  Xp = &X2[0];  Yp = &Y2[0];
+    M = &M3[0];   X = &X3[0];   Y = &Y3[0];
 
 	/* first and second diagonals */
 	NUMBER k = INITIAL_CONSTANT<NUMBER>() / (tc->haplen);
@@ -194,10 +195,13 @@ int main()
 	double result[MAX_TESTCASES_BUNCH_SIZE];
 	char done[MAX_TESTCASES_BUNCH_SIZE];
 	int num_tests;
+    Timing timer;
+    double kernel_time = 0.;
 
 	do
 	{
 		num_tests = read_a_bunch_of_testcases(tc, MAX_TESTCASES_BUNCH_SIZE);
+        timer.mark();
 
 		#pragma omp parallel for schedule(dynamic)
 		for (int j = 0; j < num_tests; j++)
@@ -206,9 +210,12 @@ int main()
 			if (!done[j])
 				result[j] = compute_full_prob<double>(tc + j, done + j);
 		}
+        kernel_time += timer.elapsed();
 		for (int j = 0; j < num_tests; j++)
 			printf("%f\n", result[j]);
 	} while (num_tests == MAX_TESTCASES_BUNCH_SIZE);
+    fflush(stdout);
+    fprintf(stderr, "%g\n", kernel_time);
 
 	return 0;
 }
