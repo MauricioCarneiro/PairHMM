@@ -10,17 +10,15 @@ class TestcaseIterator {
 
   Testcase fetch_next_element();
   std::pair<size_t, size_t> parse_test_size();
-  Read parse_read();
+  Read<uint8_t> parse_read();
   Haplotype parse_haplotype();
   std::string parse_string();
+  std::vector<Read<uint8_t>> parse_all_reads(size_t num_reads);
+  std::vector<Haplotype> parse_all_haplotypes(size_t num_haplotypes);
 
  public:
   
-  TestcaseIterator() :
-    input_stream {nullptr},
-    current {}
-  {}
-
+  TestcaseIterator();
   TestcaseIterator(std::istream* const input);
   TestcaseIterator(const TestcaseIterator&) = delete;
   TestcaseIterator(TestcaseIterator&& original);
