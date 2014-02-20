@@ -10,7 +10,9 @@ CXX=g++
 
 LDFLAGS=-lm $(OMPLDFLAGS)
 
-BIN:=pairhmm-1-base pairhmm-2-omp pairhmm-3-hybrid-float-double pairhmm-4-hybrid-diagonal pairhmm-5-hybrid-diagonal-homogeneus pairhmm-6-onlythreediags pairhmm-7-presse pairhmm-8-sse #pairhmm-dev
+#BIN:=pairhmm-1-base pairhmm-2-omp pairhmm-3-hybrid-float-double pairhmm-4-hybrid-diagonal pairhmm-5-hybrid-diagonal-homogeneus pairhmm-6-onlythreediags pairhmm-7-presse pairhmm-8-sse #pairhmm-dev
+
+BIN:=pairhmm-dbg
 
 all: $(BIN)
 
@@ -40,6 +42,9 @@ pairhmm-8-sse:	pairhmm-8-sse.cc input.o
 
 pairhmm-dev: pairhmm-dev.o input.o
 	$(CXX) -o $@ $^ $(LDFLAGS)
+
+pairhmm-dbg: pairhmm-dbg.o input.o
+	$(CXX) -o $@ $^ $(LDFLAGS) -D DEBUG_MODE
 
 bench: pairhmm-dev
 	./benchmark.sh
