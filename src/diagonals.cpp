@@ -4,8 +4,8 @@
 
 using namespace std;
 
-template<class Precision>
-ostream& operator<<(ostream& out, const Diagonals<Precision>& diagonals) {
+template<class PRECISION>
+ostream& operator<<(ostream& out, const Diagonals<PRECISION>& diagonals) {
   out << "M   -> "; for (auto x : diagonals.m) out << x << ","; out << endl;
   out << "Mp  -> "; for (auto x : diagonals.mp) out << x << ","; out << endl;
   out << "Mpp -> "; for (auto x : diagonals.mpp) out << x << ","; out << endl;
