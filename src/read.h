@@ -7,7 +7,7 @@
 
 #include "utils.h"
 
-template<typename QUAL_TYPE>
+template<class QUAL_TYPE>
 struct Read {
   size_t original_length;
   std::vector<uint8_t> bases;
@@ -15,6 +15,8 @@ struct Read {
   std::vector<QUAL_TYPE> ins_quals;
   std::vector<QUAL_TYPE> del_quals;
   std::vector<QUAL_TYPE> gcp_quals;
+
+  Read() = default;
 
   Read(const std::vector<uint8_t>& bases_,
        const std::vector<QUAL_TYPE>& quals_,
@@ -44,9 +46,16 @@ struct Read {
     gcp_quals {convert_bytes<std::vector<uint8_t>>(gcp_quals_,  -QUAL_OFFSET)}
   {}
 
-  size_t get_original_length() const  { return original_length;}
 };
 
-std::ostream& operator<<(std::ostream& out, const Read<uint8_t>& read);
+template<class QUAL_TYPE>
+std::ostream& operator<<(std::ostream& out, const Read<QUAL_TYPE>& read) {
+  out << convert_bytes<std::string>(read.bases) << " ";
+  out << convert_bytes<std::string>(read.base_quals, QUAL_OFFSET) << " ";
+  out << convert_bytes<std::string>(read.ins_quals, QUAL_OFFSET) << " ";
+  out << convert_bytes<std::string>(read.del_quals, QUAL_OFFSET) << " ";
+  out << convert_bytes<std::string>(read.gcp_quals, QUAL_OFFSET) << " ";
+  return out;
+}
 
 #endif
