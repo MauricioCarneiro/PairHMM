@@ -9,4 +9,4 @@ clean:
 	$(MAKE) -C $(CODE_DIR) clean
 
 check:
-	valgrind --leak-check=yes ./pairhmm test_data/tiny.in
+	valgrind --leak-check=yes ./pairhmm test_data/tiny.in > /dev/null

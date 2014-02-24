@@ -9,9 +9,8 @@
 
 using namespace std;
 
-
 int main (const int argc, char const * const argv[]) {
-  auto pairhmm = Pairhmm<float>{};
+  auto pairhmm = Pairhmm{};
   InputReader<TestcaseIterator> reader {};
   if (argc == 2) 
     reader.from_file(argv[1]);

@@ -1,6 +1,6 @@
 CXXFLAGS=-c -Wall -std=c++11 -g -o0
 LDFLAGS=
-SOURCES= testcase.cpp testcase_iterator.cpp haplotype.cpp main.cpp diagonals.cpp
+SOURCES= testcase.cpp testcase_iterator.cpp haplotype.cpp main.cpp diagonals.cpp pairhmm.cpp
 OBJECTS=$(SOURCES:.cpp=.o)
 EXECUTABLE=../pairhmm
 

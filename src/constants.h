@@ -1,14 +1,14 @@
 #ifndef __CONSTANTS__
 #define __CONSTANTS__
 
-template<class Precision>
+template<class PRECISION>
 struct Constants {
-  Precision mm;
-  Precision gm;
-  Precision mx;
-  Precision xx;
-  Precision my;
-  Precision yy;
+  PRECISION mm;
+  PRECISION gm;
+  PRECISION mx;
+  PRECISION xx;
+  PRECISION my;
+  PRECISION yy;
 };
 
 #endif
