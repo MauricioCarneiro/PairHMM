@@ -6,13 +6,15 @@
 #include "pairhmm_impl.h"
 #include "testcase.h"
 
+template <typename FAST, typename CORRECT>
 class Pairhmm {
   private:
-    PairhmmImpl<float> phmm_float;
-    PairhmmImpl<double> phmm_double;
-
-  public: 
+    FAST fast;
+    CORRECT correct;
+  public:
     std::vector<double> calculate(const Testcase& testcase);
 };
+
+#include "pairhmm.hpp"
 
 #endif

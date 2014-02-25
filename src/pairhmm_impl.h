@@ -82,9 +82,7 @@ class PairhmmImpl {
     recalculate(padded_pairs, results, testcase.haplotypes.size());
   }
 
-
-
- private:
+ protected:
   std::vector<Constants<PRECISION>> constants;
   Diagonals<PRECISION> diagonals;
   std::vector<PRECISION> ph2pr;
