@@ -37,12 +37,6 @@ struct Diagonals {
     }
   }
 
-  void zero() {
-    std::fill(m.begin(), m.end(), static_cast<PRECISION>(0)); std::fill(mp.begin(), mp.end(), static_cast<PRECISION>(0)); std::fill(mpp.begin(), mpp.end(), static_cast<PRECISION>(0));
-    std::fill(x.begin(), x.end(), static_cast<PRECISION>(0)); std::fill(xp.begin(), xp.end(), static_cast<PRECISION>(0)); std::fill(xpp.begin(), xpp.end(), static_cast<PRECISION>(0));
-    std::fill(y.begin(), y.end(), static_cast<PRECISION>(0)); std::fill(yp.begin(), yp.end(), static_cast<PRECISION>(0)); std::fill(ypp.begin(), ypp.end(), static_cast<PRECISION>(0));
-  }
-
   void rotate() {
     std::swap(mpp, mp);
     std::swap(xpp, xp);
@@ -52,6 +46,13 @@ struct Diagonals {
     std::swap(yp, y);
   }
     
+  void update(const PRECISION first_row_value) {
+    std::fill(m.begin(), m.end(), static_cast<PRECISION>(0)); std::fill(mp.begin(), mp.end(), static_cast<PRECISION>(0)); std::fill(mpp.begin(), mpp.end(), static_cast<PRECISION>(0));
+    std::fill(x.begin(), x.end(), static_cast<PRECISION>(0)); std::fill(xp.begin(), xp.end(), static_cast<PRECISION>(0)); std::fill(xpp.begin(), xpp.end(), static_cast<PRECISION>(0));
+    std::fill(y.begin(), y.end(), static_cast<PRECISION>(0)); std::fill(yp.begin(), yp.end(), static_cast<PRECISION>(0)); std::fill(ypp.begin(), ypp.end(), static_cast<PRECISION>(0));
+    ypp[0] = yp[0] = y[0] = first_row_value;
+  }
+
 };
 
 template<class PRECISION>

@@ -18,7 +18,7 @@ struct Testcase {
     haplotypes {std::move(haplotypes_)}
   {};  
 
-  uint32_t calculate_max_read_length() const;
+  size_t size() const {return haplotypes.size() * reads.size();}
 };
 
 std::ostream& operator<<(std::ostream& out, const Testcase& testcase); 
