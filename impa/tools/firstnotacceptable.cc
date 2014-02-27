@@ -51,11 +51,11 @@ void findfst(cch *fn1, cch *fn2, int &vpos, dbl &v, dbl &v1, dbl &v2, dbl bound)
 
 void check_args(int argc, char **argv)
 {
-    FILE *f1, *f2, *f3;
+    FILE *f1, *f2;
 
-    if (argc != 6)
+    if (argc != 4)
     {
-        printf("Usage: firstnotacceptable <file1> <file2> <highest acceptable difference> <txt input> <txt output>\n");
+        printf("Usage: firstnotacceptable <file1> <file2> <highest acceptable difference>\n");
         exit(0);
     }
 
@@ -73,31 +73,8 @@ void check_args(int argc, char **argv)
     }
     fclose(f2);
 
-    if (!(f3 = fopen(argv[4], "r")))
-    {
-        printf("Cannot open %s\n", argv[4]);
-        exit(0);
-    }
-    fclose(f3);
-
     return;
 }
-
-void print_isolated_case(const char *fin, int row, const char *fout)
-{
-	ifstream f1(fin, ifstream::in);
-	string s1;
-
-	for (int x = 1; x < row; x++)
-		getline(f1, s1);
-	getline(f1, s1);
-	f1.close();
-
-	ofstream f2(fout);
-	f2 << s1;
-	f2.close();
-}
-
 
 int main(int argc, char **argv)
 {
@@ -112,8 +89,5 @@ int main(int argc, char **argv)
     printf("Occurs at row    : %d\n", row);
     printf("%s value: %e\n", argv[1], v1);
     printf("%s value: %e\n", argv[2], v2);
-    printf("--------------------------------------------------------\n");
-    printf("Isolated case printed to %s\n", argv[5]);
-	print_isolated_case(argv[4], row, argv[5]);
 }
 

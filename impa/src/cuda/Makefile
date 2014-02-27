@@ -13,16 +13,16 @@ all:	$(BIN)
 
 pairhmm-1-base:	pairhmm-1-base.cu 
 	$(NVCC) -o $@-32 $^ -DNTHREADS=32 $(FLAGS)
-	$(NVCC) -o $@-64 $^ -DNTHREADS=64 $(FLAGS)
-	$(NVCC) -o $@-96 $^ -DNTHREADS=96 $(FLAGS)
+	#$(NVCC) -o $@-64 $^ -DNTHREADS=64 $(FLAGS)
+	#$(NVCC) -o $@-96 $^ -DNTHREADS=96 $(FLAGS)
 
 pairhmm-dev:	pairhmm-dev.cu 
 	$(NVCC) -o $@-32 $^ -DNTHREADS=32 $(FLAGS)
-	$(NVCC) -o $@-64 $^ -DNTHREADS=64 $(FLAGS)
-	$(NVCC) -o $@-96 $^ -DNTHREADS=96 $(FLAGS)
+	#$(NVCC) -o $@-64 $^ -DNTHREADS=64 $(FLAGS)
+	#$(NVCC) -o $@-96 $^ -DNTHREADS=96 $(FLAGS)
 
 clean:
 	rm -f $(foreach bin,$(BIN),$(bin)-32)
-	rm -f $(foreach bin,$(BIN),$(bin)-64)
-	rm -f $(foreach bin,$(BIN),$(bin)-96)
+	#rm -f $(foreach bin,$(BIN),$(bin)-64)
+	#rm -f $(foreach bin,$(BIN),$(bin)-96)
 
