@@ -21,8 +21,8 @@ using std::cerr;
 #define PH2PR(n) (pow(NUM(10.0), -NUM(n) / NUM(10.0)))
 
 #define MAX_HAPLEN 3072
-#define NBLOCKS 15
-#define NUM_OF_TESTCASES_PER_ITERATION 1000
+#define NBLOCKS 50
+#define NUM_OF_TESTCASES_PER_ITERATION 10000
 
 template<class T> __device__ static inline T INITIAL_CONSTANT();
 template<> __device__ static inline float INITIAL_CONSTANT<float>() { return 1e32f; }
@@ -180,89 +180,64 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 				}
 			} // end of "if (FIRST_THREAD) 
 
-			__syncthreads();
-
 			int num_of_diagonals = (pair.haplen+1) + (pair.rslen+1) - 1;
 			for (int d = 2; d < num_of_diagonals; d++) 
 			{
-				int col = d - TID; //col is the column for which the current thread is doing the calculations... column 0 is for the character '', the haplotype "starts" at column 1; so the number of columns is pair.haplen +1 
-				if (FIRST_THREAD)
-				{
-					if (group_of_rows == 0) 
-					{
-						m = NUM(0.0);
-						x = NUM(0.0);
-						y = k;
-					}
-					else
-					{
-						hap = 0;
-						NUM m_up_left = NUM(0.0); 
-						NUM x_up_left = NUM(0.0); 
-						NUM y_up_left = NUM(0.0);
-						NUM m_up = NUM(0.0);
-						NUM x_up = NUM(0.0);
-						NUM m_left = s_mp[0];
-						NUM y_left = s_yp[0];
-
-						//NOTE NOTE NOTE: we are on the first thread, d >= 2 and col = d - 0 ... THEN: col is going to be >= 2 always in here.
-						if (col <= pair.haplen)
-						{
-							hap = g_chunk[pair.offset_hap + (col-1)]; // GLOBAL MEMORY ACCESS
-
-							m_up_left = g_lastM[col-1];
-							x_up_left = g_lastX[col-1];
-							y_up_left = g_lastY[col-1];
-							m_up = g_lastM[col];
-							x_up = g_lastX[col];
-						}
-
-						coef = pq;
-						if (rs == hap || rs == 'N' || hap == 'N')
-							coef = NUM(1.0) - coef;
-
-						m = coef * (m_up_left * mm + x_up_left * gm + y_up_left * gm);
-						x = m_up * mx + x_up * xx;
-						y = m_left * my + y_left * yy;
-					}
-				} // end of "if (FIRST_THREAD)"
-				else // i.e.: if (NOT FIRST_THREAD)
-				{
-					NUM m_up_left = NUM(0.0); 
-					NUM x_up_left = NUM(0.0); 
-					NUM y_up_left = NUM(0.0);
-					NUM m_up = NUM(0.0);
-					NUM x_up = NUM(0.0);
-					NUM m_left = s_mp[0];
-					NUM y_left = s_yp[0];
-					hap = 0;
-					if (col > 0 && col <= pair.haplen) // ?? haplotype should be padded and this "if", removed.
-						hap = g_chunk[pair.offset_hap + (col-1)]; // GLOBAL MEMORY ACCESS ?? should read only last byte. 
-
-					coef = pq;
-					if (rs == hap || rs == 'N' || hap == 'N')
-						coef = NUM(1.0) - coef;
-
-					m = coef * (s_mpp[TID-1] * mm + s_xpp[TID-1] * gm + s_ypp[TID-1] * gm);
-					x = s_mp[TID-1] * mx + s_xp[TID-1] * xx;
-					y = s_mp[TID] * my + s_yp[TID] * yy;
-				}
-
-				// At this point: each thread has computed m, x and y. Thread 0 has its
-				// own way of doing that.
-				// ?? this if can be simplified by breaking the outter for into two for's,
-				// separating the last iteration from the not-last iterations
-				if ((TID == (nThreads - 1)) && (group_of_rows < n_groups_of_rows - 1) && col >= 0 && col <= pair.haplen)
-				{
-					g_lastX[col] = x;
-					g_lastY[col] = y;
-					g_lastM[col] = m;
-				}
-
-				if (col >= 0 && col <= pair.haplen)
-					sum_m_x += m + x;
-
 				__syncthreads();
+
+				int col = d - TID;
+				hap = 0;
+				NUM m_up_left = NUM(0.0), x_up_left = NUM(0.0), y_up_left = NUM(0.0);
+				NUM m_up = NUM(0.0), x_up = NUM(0.0);
+				NUM m_left = s_mp[0], y_left = s_yp[0];
+				
+				if (FIRST_THREAD) {
+					if (group_of_rows == 0) {
+						yy = NUM(1.0);
+						my = NUM(0.0);
+					}
+					else {
+						if (col <= pair.haplen) {
+							hap = g_chunk[pair.offset_hap + (col-1)]; // GLOBAL MEMORY ACCESS
+							m_up_left = g_lastM[col-1]; // GLOBAL MEMORY ACCESS
+							x_up_left = g_lastX[col-1]; // GLOBAL MEMORY ACCESS
+							y_up_left = g_lastY[col-1]; // GLOBAL MEMORY ACCESS
+							m_up = g_lastM[col]; // GLOBAL MEMORY ACCESS
+							x_up = g_lastX[col]; // GLOBAL MEMORY ACCESS
+							m_left = s_mp[0];
+							y_left = s_yp[0];
+						}
+					}
+				} 
+				else {
+					if (col > 0 && col <= pair.haplen) // ?? haplotype should be padded and this "if", removed.
+						hap = g_chunk[pair.offset_hap + (col-1)]; // GLOBAL MEMORY ACCESS
+					m_up_left = s_mpp[TID-1]; 
+					x_up_left = s_xpp[TID-1];
+					y_up_left = s_ypp[TID-1];
+					m_up = s_mp[TID-1];
+					x_up = s_xp[TID-1];
+					m_left = s_mp[TID];
+					y_left = s_yp[TID];
+				}
+
+				coef = pq;
+				if (rs == hap || rs == 'N' || hap == 'N')
+					coef = NUM(1.0) - coef;
+				m = coef * (m_up_left * mm + x_up_left * gm + y_up_left * gm);
+				x = m_up * mx + x_up * xx;
+				y = m_left * my + y_left * yy;
+
+
+				if ((TID == (nThreads-1)) && (group_of_rows < n_groups_of_rows - 1) && (col >= 0) && (col <= pair.haplen))
+				{
+					g_lastX[col] = x; // GLOBAL MEMORY ACCESS
+					g_lastY[col] = y; // GLOBAL MEMORY ACCESS
+					g_lastM[col] = m; // GLOBAL MEMORY ACCESS
+				}
+
+				if (/*col >= 0 && */col <= pair.haplen)
+					sum_m_x += m + x;
 
 				s_xpp[TID] = s_xp[TID];	
 				s_ypp[TID] = s_yp[TID];	
@@ -271,14 +246,14 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 				s_yp[TID] = y; 
 				s_mp[TID] = m;
 
-				__syncthreads();
-			} // end of the for (d = ...) (i.e.: the for that iterates over the diagonals)
+//				__syncthreads();
+			} // end of the for (d = 2 to {number of diagonals}) 
 
 			if (row == pair.rslen) 
 			{
 				pair.result = double(log10(sum_m_x) - log10(INITIAL_CONSTANT<NUM>()));
 				pair.status = (sum_m_x >= MIN_ACCEPTED<NUM>()) ? DONE : NOT_DONE;
-				g_pair[s_pair_index] = pair;
+				g_pair[s_pair_index] = pair; // GLOBAL MEMORY ACCESS
 			}
 		} // end of the for (group_of rows = ...)
 	} // end of the for (;;)
