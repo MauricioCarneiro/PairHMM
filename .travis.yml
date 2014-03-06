@@ -1,9 +1,12 @@
 language: cpp
 compiler: gcc
-script: make
+script: 
+  - make clean
+  - make test
 before_script:
-    - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test 
-    - sudo apt-get -qq update
-    - sudo apt-get -qq install g++-4.8 valgrind
-    - export CXX="g++-4.8" 
-after_script: make check
+  - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test 
+  - sudo apt-get -qq update
+  - sudo apt-get -qq install g++-4.8 valgrind
+  - export CXX="g++-4.8" 
+after_script: 
+  - make check

@@ -16,7 +16,7 @@ struct Read {
   std::vector<QUAL_TYPE> del_quals;
   std::vector<QUAL_TYPE> gcp_quals;
 
-  Read() = default;
+  explicit Read() = default;
 
   Read(const std::vector<uint8_t>& bases_,
        const std::vector<QUAL_TYPE>& quals_,

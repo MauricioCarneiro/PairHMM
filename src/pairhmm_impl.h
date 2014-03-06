@@ -41,6 +41,8 @@ class PairhmmImpl {
   size_t max_original_read_length = 0;  // updated during calculate()
   size_t max_padded_read_length = 0;    // updated during calculate()
 
+  const std::vector<Haplotype>& get_padded_haplotypes() { return padded_haplotypes; }
+
   PairhmmImpl(const size_t initial_size = INITIAL_SIZE) :
     constants {initial_size},
     diagonals {initial_size},
@@ -51,41 +53,41 @@ class PairhmmImpl {
 
   std::vector<double> calculate (const Testcase& testcase) {
     max_original_read_length = calculate_max_read_length(testcase.reads);
-    const auto padded_haplotypes = pad_haplotypes(testcase.haplotypes);
+    padded_haplotypes = pad_haplotypes(testcase.haplotypes);
     const auto padded_reads = pad_reads(testcase.reads);
     max_padded_read_length = calculate_max_read_length(padded_reads);
-    resize_constants(max_padded_read_length);
+    constants.resize(max_padded_read_length);
     diagonals.resize(max_padded_read_length);
-    return calculate(padded_reads, padded_haplotypes);
+    return calculate(padded_reads);
   }
 
-  void recalculate (const Testcase& testcase, std::vector<double>& results, const size_t max_original_read_length_, const size_t max_padded_read_length_) {
+  void recalculate (const Testcase& testcase, std::vector<double>& results, const size_t max_original_read_length_, const size_t max_padded_read_length_, const std::vector<Haplotype>& previously_padded_haplotypes) {
     max_original_read_length = max_original_read_length_;
     max_padded_read_length = max_padded_read_length_;
-    auto padded_pairs = std::vector<IndexedPair>{};
-    padded_pairs.reserve(results.size());
-    auto padded_read_cache = std::unordered_map<uint32_t, Read<PRECISION>>{};
-    padded_read_cache.reserve(testcase.reads.size());
-    auto padded_haplotype_cache = std::unordered_map<uint32_t, Haplotype>{};
-    padded_haplotype_cache.reserve(testcase.haplotypes.size());
-    auto master_idx = 0u;
-    for (auto r : results) {
-      if (r == FAILED_RUN_RESULT) {
-        const auto read_idx = master_idx / testcase.haplotypes.size();
-        const auto hap_idx = master_idx % testcase.haplotypes.size();
-        const auto& padded_read = from_cache(padded_read_cache, read_idx, testcase.reads[read_idx]);
-        const auto& padded_haplotype = from_cache(padded_haplotype_cache, hap_idx, testcase.haplotypes[hap_idx]);
-        padded_pairs.emplace_back(master_idx, &padded_read, &padded_haplotype);
+    auto master_idx = 0;
+    auto padded_read = Read<PRECISION>{}; 
+    for (auto read : testcase.reads) {
+      auto has_padded_read = false;
+      for (auto hap_idx = 0u; hap_idx != testcase.haplotypes.size(); ++hap_idx) {
+        if (results[master_idx] == FAILED_RUN_RESULT) {
+          if (!has_padded_read) {
+            padded_read = pad_read(read); // making a copy here so I can keep it across haplotype iterations
+            constants.update(padded_read);
+            has_padded_read = true;
+          }
+          diagonals.update(INITIAL_CONSTANT/previously_padded_haplotypes[hap_idx].original_length);
+          results[master_idx] = compute_full_prob(padded_read, previously_padded_haplotypes[hap_idx]);
+        }
+        ++master_idx;
       }
-      ++master_idx;
     }
-    recalculate(padded_pairs, results, testcase.haplotypes.size());
   }
 
  protected:
-  std::vector<Constants<PRECISION>> constants;
+  Constants<PRECISION> constants;
   Diagonals<PRECISION> diagonals;
   std::vector<PRECISION> ph2pr;
+  std::vector<Haplotype> padded_haplotypes;
 
   static constexpr auto MAX_PH2PR_INDEX = 128;
   static constexpr auto INITIAL_CONSTANT = constants_with_precision::INITIAL_CONSTANT_WITH_PRECISION<PRECISION>();
@@ -106,9 +108,9 @@ class PairhmmImpl {
   };
 
   template<class T>
-  void pad (T& v, size_t padding) const {
-    v.insert(v.end(), padding, 0);
-  }
+    void pad (T& v, size_t padding) const {
+      v.insert(v.end(), padding, 0);
+    }
 
   Haplotype pad_and_reverse_haplotype(const Haplotype& haplotype, const size_t left_padding, const size_t right_padding) const {
     const auto padded_length = left_padding + haplotype.bases.size() + right_padding;
@@ -128,16 +130,16 @@ class PairhmmImpl {
   }
 
   template<class Result_Type, const bool convert = true>
-  std::vector<Result_Type> pad_and_convert_qual(const std::vector<uint8_t>& qual, const size_t left_padding, const size_t right_padding = 0) const {
-    const auto padded_length = left_padding + qual.size() + right_padding;
-    auto p = std::vector<Result_Type>{};
-    p.reserve(padded_length);
-    pad(p, left_padding);
-    for (const auto q : qual)
-      p.push_back(convert ? ph2pr[q] : q);
-    pad(p, right_padding);
-    return p;
-  }
+    std::vector<Result_Type> pad_and_convert_qual(const std::vector<uint8_t>& qual, const size_t left_padding, const size_t right_padding = 0) const {
+      const auto padded_length = left_padding + qual.size() + right_padding;
+      auto p = std::vector<Result_Type>{};
+      p.reserve(padded_length);
+      pad(p, left_padding);
+      for (const auto q : qual)
+        p.push_back(convert ? ph2pr[q] : q);
+      pad(p, right_padding);
+      return p;
+    }
 
   Read<PRECISION> pad_read(const Read<uint8_t>& read) const {
     const auto left_padding = 1;
@@ -168,35 +170,12 @@ class PairhmmImpl {
   }
 
   template <class T>
-  size_t calculate_max_read_length(const std::vector<Read<T>>& reads) const {
-    auto max_read_length = 0u;
-    for (const auto& read : reads)
-      max_read_length = max_read_length >= read.bases.size() ? max_read_length : read.bases.size();
-    return max_read_length;
-  }
-
-  void resize_constants(const size_t new_size) {
-    if (constants.capacity() < new_size) 
-      constants.resize(new_size);
-  }
-
-  void update_constants(const Read<PRECISION>& read) {
-    const auto rows = read.bases.size();
-    for (auto i = 1u; i != rows; ++i) {
-      constants[i].mm = static_cast<PRECISION>(1) - (read.ins_quals[i] + read.del_quals[i]);
-      constants[i].gm = static_cast<PRECISION>(1) - read.gcp_quals[i];
-      constants[i].mx = read.ins_quals[i];
-      constants[i].xx = read.gcp_quals[i];
-      constants[i].my = i < (rows - 1) ? read.del_quals[i] : static_cast<PRECISION>(1);
-      constants[i].yy = i < (rows - 1) ? read.gcp_quals[i] : static_cast<PRECISION>(1);
+    size_t calculate_max_read_length(const std::vector<Read<T>>& reads) const {
+      auto max_read_length = 0u;
+      for (const auto& read : reads)
+        max_read_length = max_read_length >= read.bases.size() ? max_read_length : read.bases.size();
+      return max_read_length;
     }
-  }
-
-  void update_diagonals(const Haplotype& hap) {
-    diagonals.zero();
-    const auto first_row_value = INITIAL_CONSTANT / hap.original_length;
-    diagonals.ypp[0] = diagonals.yp[0] = diagonals.y[0] = first_row_value;
-  }
 
   inline PRECISION calculate_prior(const char read_base, const char hap_base, const PRECISION base_qual) const {
     return  ((read_base == hap_base) || (read_base == 'N') || (hap_base == 'N')) ? 
@@ -217,9 +196,9 @@ class PairhmmImpl {
         const auto read_base = read.bases[r];
         const auto hap_base = haplotype.bases[hap_idx];
         const auto prior = calculate_prior(read_base, hap_base, read.base_quals[r]);
-        diagonals.m[r] = prior * ((diagonals.mpp[r-1] * constants[r].mm) + (constants[r].gm * (diagonals.xpp[r-1] + diagonals.ypp[r-1])));
-        diagonals.x[r] = diagonals.mp[r-1] * constants[r].mx + diagonals.xp[r-1] * constants[r].xx; 
-        diagonals.y[r] = diagonals.mp[r] * constants[r].my + diagonals.yp[r] * constants[r].yy; 
+        diagonals.m[r] = prior * ((diagonals.mpp[r-1] * constants.index[r].mm) + (constants.index[r].gm * (diagonals.xpp[r-1] + diagonals.ypp[r-1])));
+        diagonals.x[r] = diagonals.mp[r-1] * constants.index[r].mx + diagonals.xp[r-1] * constants.index[r].xx; 
+        diagonals.y[r] = diagonals.mp[r] * constants.index[r].my + diagonals.yp[r] * constants.index[r].yy; 
       }
       result += diagonals.m[rows-1] + diagonals.x[rows-1];
       diagonals.rotate();
@@ -229,41 +208,17 @@ class PairhmmImpl {
       log10(static_cast<double>(result)) - log10(static_cast<double>(INITIAL_CONSTANT));
   }
 
-  std::vector<double> calculate (const std::vector<Read<PRECISION>>& padded_reads, const std::vector<Haplotype>& padded_haplotypes) {
+  std::vector<double> calculate (const std::vector<Read<PRECISION>>& padded_reads) {
     auto results = std::vector<double>{};
     results.reserve(padded_reads.size() * padded_haplotypes.size());
     for (const auto& read : padded_reads) {
-      update_constants(read);
+      constants.update(read);
       for (const auto& hap : padded_haplotypes) {
-        update_diagonals(hap);
+        diagonals.update(INITIAL_CONSTANT / hap.original_length);
         results.push_back(compute_full_prob(read, hap));
       }
     }
     return results;
-  }
-
-  void recalculate (const std::vector<IndexedPair>& padded_pairs, std::vector<double>& results, const size_t n_haplotypes) {
-    auto last_read_idx = -1;
-    for (const auto& pp : padded_pairs) {
-      auto read_idx = pp.index / n_haplotypes;
-      if (read_idx != last_read_idx) 
-        update_constants(*pp.read);    // only update if this is a new read (reads come in sorted)! 
-      update_diagonals(*pp.haplotype); // should always update
-      results[pp.index] = compute_full_prob(*pp.read, *pp.haplotype);
-      last_read_idx = read_idx;
-    }
-  }
-
-  const Read<PRECISION>& from_cache(std::unordered_map<uint32_t, Read<PRECISION>>& cache, const uint32_t index, const Read<uint8_t>& original) {
-    if (cache.count(index) == 0) 
-      cache.emplace(index, pad_read(original));
-    return cache.at(index);
-  }
-
-  const Haplotype& from_cache(std::unordered_map<uint32_t, Haplotype>& cache, const uint32_t index, const Haplotype& original) {
-    if (cache.count(index) == 0) 
-      cache.emplace(index, pad_haplotype(original));
-    return cache.at(index);
   }
 
 };
