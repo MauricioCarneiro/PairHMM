@@ -4,8 +4,12 @@
 #include <iostream>
 #include <iomanip>
 #include <vector>
+#include <cstdlib>
 
-#include "cuPrintf.cu"
+#include <ctime>
+#include <sys/time.h>
+
+//#include "cuPrintf.cu"
 
 using std::string;
 using std::vector;
@@ -14,6 +18,7 @@ using std::cout;
 using std::cerr;
 
 #define TID threadIdx.x
+#define BID blockIdx.x
 #define NOT_DONE 0
 #define DONE 1
 #define GAP_TO(sz, n) ((n - ((sz) % n)) % n)
@@ -21,7 +26,7 @@ using std::cerr;
 #define PH2PR(n) (pow(NUM(10.0), -NUM(n) / NUM(10.0)))
 
 #define MAX_HAPLEN 3072
-#define NBLOCKS 50
+#define NBLOCKS 100
 #define NUM_OF_TESTCASES_PER_ITERATION 10000
 
 template<class T> __device__ static inline T INITIAL_CONSTANT();
@@ -36,36 +41,45 @@ struct Pair {
 	int offset_hap, offset_rs, offset_qidc, haplen, rslen, status;
 };
 
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+
+inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
+{
+	if (code != cudaSuccess) 
+	{
+		cerr << "Error code: " << code << "\n";
+		cerr << "Description: " << cudaGetErrorString(code) << "\n";
+		cerr << "Line: " << line << "\n";
+		exit(code);
+	}
+}
+
 template <int nThreads, typename NUM> 
-__global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pair, int *g_pair_index, NUM *g_last_lines, int *g_last_lines_index) {
+__global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pair, int *g_pair_index, NUM *g_last_lines) {
 
 	// *******************************************************************************************
 	// *********************************** <PERSISTENT VALUES> ***********************************
 
-	__shared__ NUM *s_lastM;
-	if (FIRST_THREAD)
-		s_lastM = g_last_lines + 3 * MAX_HAPLEN * atomicAdd(g_last_lines_index, 1); // GLOBAL MEMORY ACCESS
-
-	__syncthreads(); // ?? maybe we can remove this syncthreads by moving this computation later
-
-	NUM *g_lastM = s_lastM;
+	NUM *g_lastM = g_last_lines + 3 * MAX_HAPLEN * BID;
 	NUM *g_lastX = g_lastM + MAX_HAPLEN;
 	NUM *g_lastY = g_lastX + MAX_HAPLEN;
-
+	
 	__shared__ NUM s_xp[nThreads], s_yp[nThreads], s_mp[nThreads];
 	__shared__ NUM s_xpp[nThreads], s_ypp[nThreads], s_mpp[nThreads];
 
 	// *********************************** </PERSISTENT VALUES> **********************************
 	// *******************************************************************************************
 
-	for (;;) {
+	for (;;)
+	{
 
 		// *******************************************************************************************
 		// ************************************** <PICK A PAIR> **************************************
 		__shared__ Pair s_pair;
 		__shared__ int s_pair_index;
 
-		if (FIRST_THREAD) {
+		if (FIRST_THREAD)
+		{
 			s_pair_index = atomicAdd(g_pair_index, 1);
 			if (s_pair_index < num_of_pairs)
 				s_pair = g_pair[s_pair_index];
@@ -87,8 +101,8 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 		// *******************************************************************************************
 
 		int n_groups_of_rows = ((pair.rslen + 1) + (nThreads - 1)) / nThreads;
-		for (int group_of_rows = 0; group_of_rows < n_groups_of_rows; group_of_rows++) {
-
+		for (int group_of_rows = 0; group_of_rows < n_groups_of_rows; group_of_rows++)
+		{
 			int row = group_of_rows * nThreads + TID;
 
 			/******************************************************************************************
@@ -96,7 +110,8 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 			char rs;
 			char4 qidc;
 			NUM mm, gm, mx, xx, my, yy, pq;
-			if (row > 0 && row <= pair.rslen) {
+			if (row > 0 && row <= pair.rslen)
+			{
 				rs = (g_chunk + pair.offset_rs)[row-1]; // GLOBAL MEMORY ACCESS
 				qidc = reinterpret_cast<char4 *>(g_chunk + pair.offset_qidc)[row-1]; // GLOBAL MEMORY ACCESS //?? each byte in the qidc char4 should be masked with 127 during chunk creation
 				mm = NUM(1.0) - PH2PR(qidc.y) * PH2PR(qidc.z);
@@ -191,13 +206,17 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 				NUM m_up = NUM(0.0), x_up = NUM(0.0);
 				NUM m_left = s_mp[0], y_left = s_yp[0];
 				
-				if (FIRST_THREAD) {
-					if (group_of_rows == 0) {
+				if (FIRST_THREAD)
+				{
+					if (group_of_rows == 0)
+					{
 						yy = NUM(1.0);
 						my = NUM(0.0);
 					}
-					else {
-						if (col <= pair.haplen) {
+					else
+					{
+						if (col <= pair.haplen)
+						{
 							hap = g_chunk[pair.offset_hap + (col-1)]; // GLOBAL MEMORY ACCESS
 							m_up_left = g_lastM[col-1]; // GLOBAL MEMORY ACCESS
 							x_up_left = g_lastX[col-1]; // GLOBAL MEMORY ACCESS
@@ -209,7 +228,8 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 						}
 					}
 				} 
-				else {
+				else
+				{
 					if (col > 0 && col <= pair.haplen) // ?? haplotype should be padded and this "if", removed.
 						hap = g_chunk[pair.offset_hap + (col-1)]; // GLOBAL MEMORY ACCESS
 					m_up_left = s_mpp[TID-1]; 
@@ -228,7 +248,6 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 				x = m_up * mx + x_up * xx;
 				y = m_left * my + y_left * yy;
 
-
 				if ((TID == (nThreads-1)) && (group_of_rows < n_groups_of_rows - 1) && (col >= 0) && (col <= pair.haplen))
 				{
 					g_lastX[col] = x; // GLOBAL MEMORY ACCESS
@@ -245,8 +264,6 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 				s_xp[TID] = x; 
 				s_yp[TID] = y; 
 				s_mp[TID] = m;
-
-//				__syncthreads();
 			} // end of the for (d = 2 to {number of diagonals}) 
 
 			if (row == pair.rslen) 
@@ -279,9 +296,9 @@ int create_chunk(vector<Pair> &pairs, string &chunk)
 		for (int x = 0; x < rs.size(); x++)
 		{
 			char tq = q[x] - 33; if (tq < 6) tq = 6; tq = (tq & 127);
-			char ti = i[x] - 33;
-			char td = d[x] - 33;
-			char tc = c[x] - 33;
+			char ti = (i[x] - 33) & 127;
+			char td = (d[x] - 33) & 127;
+			char tc = (c[x] - 33) & 127;
 			tchunk += string(1, tq) + string(1, ti) + string(1, td) + string(1, tc);
 			tchunk_sz += 4;
 		}
@@ -307,13 +324,58 @@ int create_chunk(vector<Pair> &pairs, string &chunk)
 	  assert(tchunk_sz == tchunk.size());
 
 		current_offset += tchunk.size();
+		string("").swap(hap);
+		string("").swap(rs);
+		string("").swap(q);
+		string("").swap(i);
+		string("").swap(d);
+		string("").swap(c);
+		string("").swap(i1);
+		string("").swap(i2);
 	}
 
 	return pairs.size();
 }
 
+class Timing
+{
+public:
+	Timing(string t) : st(now()), tot(0.0), title(t)
+	{
+	}
+
+	~Timing()
+	{
+		std::cerr << title << tot << " seconds\n";
+	}
+
+	void start()
+	{
+		st = now();
+	}
+
+	void acc()
+	{
+		tot += (now() - st);
+	}
+
+private:
+	static double now()
+	{
+		struct timeval v;
+		gettimeofday(&v, (struct timezone *) NULL);
+		return v.tv_sec + v.tv_usec/1.0e6;
+	}
+
+	double st, tot;
+	string title;
+};
+
 int main(void)
 {
+	Timing TotalTime(string("TOTAL: "));
+	Timing ComputationTime(string("COMPUTATION: "));
+
 	dim3 gridDim(NBLOCKS);
 	dim3 blockDim(NTHREADS);
 
@@ -322,52 +384,53 @@ int main(void)
 
 	while (create_chunk(pairs, chunk))
 	{
+		ComputationTime.start();
+
 		char *g_chunk;
 		int padd_sz = 128;
-		assert( cudaMalloc(&g_chunk, chunk.size() + 2 * padd_sz) == cudaSuccess);
+		gpuErrchk( cudaMalloc(&g_chunk, chunk.size() + 2 * padd_sz) );
 
-		assert( cudaMemset(g_chunk, 0, padd_sz) == cudaSuccess);
-		assert( cudaMemset(g_chunk + padd_sz + chunk.size(), 0, padd_sz) == cudaSuccess);
-		assert( cudaMemcpy(g_chunk + padd_sz, chunk.c_str(), chunk.size(), cudaMemcpyHostToDevice) == cudaSuccess);
+		gpuErrchk( cudaMemset(g_chunk, 0, padd_sz) );
+		gpuErrchk( cudaMemset(g_chunk + padd_sz + chunk.size(), 0, padd_sz) );
+		gpuErrchk( cudaMemcpy(g_chunk + padd_sz, chunk.c_str(), chunk.size(), cudaMemcpyHostToDevice) );
 		g_chunk += padd_sz;
 
 		Pair *g_pair;
-		assert( cudaMalloc(&g_pair, pairs.size() * sizeof(Pair)) == cudaSuccess);
-		assert( cudaMemcpy(g_pair, &(pairs[0]), pairs.size() * sizeof(Pair), cudaMemcpyHostToDevice) == cudaSuccess);
+		gpuErrchk( cudaMalloc(&g_pair, pairs.size() * sizeof(Pair)) );
+		gpuErrchk( cudaMemcpy(g_pair, &(pairs[0]), pairs.size() * sizeof(Pair), cudaMemcpyHostToDevice) );
 
-		int *g_pair_index, *g_last_lines_index;
-		assert( cudaMalloc(&g_pair_index, sizeof(int)) == cudaSuccess);
-		assert( cudaMalloc(&g_last_lines_index, sizeof(int)) == cudaSuccess);
+		int *g_pair_index;
+		gpuErrchk( cudaMalloc(&g_pair_index, sizeof(int)) );
 
-		cudaPrintfInit();
+		//cudaPrintfInit();
 
 		void *g_last_lines;
-		assert( cudaMalloc(&g_last_lines, NBLOCKS * MAX_HAPLEN * 3 * sizeof(double)) == cudaSuccess);
+		gpuErrchk( cudaMalloc(&g_last_lines, NBLOCKS * MAX_HAPLEN * 3 * sizeof(double)) );
 
-		assert( cudaMemset(g_pair_index, 0, sizeof(int)) == cudaSuccess);
-		assert( cudaMemset(g_last_lines_index, 0, sizeof(int)) == cudaSuccess);
-		compute_full_scores<32, float><<<gridDim, blockDim>>>(g_chunk, pairs.size(), g_pair, g_pair_index, reinterpret_cast<float *>(g_last_lines), g_last_lines_index);
+		gpuErrchk( cudaMemset(g_pair_index, 0, sizeof(int)) );
+		compute_full_scores<NTHREADS, float><<<gridDim, blockDim>>>(g_chunk, pairs.size(), g_pair, g_pair_index, reinterpret_cast<float *>(g_last_lines));
 
-		assert( cudaMemset(g_pair_index, 0, sizeof(int)) == cudaSuccess);
-		assert( cudaMemset(g_last_lines_index, 0, sizeof(int)) == cudaSuccess);
-		compute_full_scores<32, double><<<gridDim, blockDim>>>(g_chunk, pairs.size(), g_pair, g_pair_index, reinterpret_cast<double *>(g_last_lines), g_last_lines_index);
+		gpuErrchk( cudaMemset(g_pair_index, 0, sizeof(int)) );
+		compute_full_scores<NTHREADS, double><<<gridDim, blockDim>>>(g_chunk, pairs.size(), g_pair, g_pair_index, reinterpret_cast<double *>(g_last_lines));
 
-		cudaPrintfDisplay();
-		cudaPrintfEnd();
+		//cudaPrintfDisplay();
+		//cudaPrintfEnd();
 
-		assert( cudaMemcpy(&(pairs[0]), g_pair, pairs.size() * sizeof(Pair), cudaMemcpyDeviceToHost) == cudaSuccess);
+		gpuErrchk( cudaMemcpy(&(pairs[0]), g_pair, pairs.size() * sizeof(Pair), cudaMemcpyDeviceToHost) );
 
-	
 		cout << std::setprecision(16);
 		for (int p = 0; p < pairs.size(); p++)
 			cout << pairs[p].result << "\n";
 
-		assert( cudaFree(g_last_lines) == cudaSuccess);
-		assert( cudaFree(g_last_lines_index) == cudaSuccess);
-		assert( cudaFree(g_pair) == cudaSuccess);
-		assert( cudaFree(g_pair_index) == cudaSuccess);
-		assert( cudaFree(g_chunk-padd_sz) == cudaSuccess);
+		gpuErrchk( cudaFree(g_last_lines) );
+		gpuErrchk( cudaFree(g_pair) );
+		gpuErrchk( cudaFree(g_pair_index) );
+		gpuErrchk( cudaFree(g_chunk-padd_sz) );
+
+		ComputationTime.acc();
 	}
+
+	TotalTime.acc();
 
 	return 0;
 }

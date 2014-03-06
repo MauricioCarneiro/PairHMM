@@ -21,8 +21,11 @@ timeformatter:	.FORCE
 firstnotacceptable:	.FORCE
 	g++ firstnotacceptable.cc -O2 -W -Wall -fopenmp -pedantic -o firstnotacceptable -lgomp -lm
 
+maxlen: .FORCE
+	g++ max-len.cc -O2 -o max-len
+
 clean:
-	rm -f matcmp statistics curr2cuda extract_answers timeformatter firstnotacceptable adaptcsv
+	rm -f max-len matcmp statistics curr2cuda extract_answers timeformatter firstnotacceptable adaptcsv
 
 .FORCE:
 
