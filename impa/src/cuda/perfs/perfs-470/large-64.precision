@@ -1,0 +1,9 @@
+Getting dimensions of ../../../../../test_data/largeTest.out: Done! H = 14166061; W = 1
+Getting dimensions of large-64.out: Done! H = 14166061; W = 1
+Looking for the biggest point-to-point difference
+--------------------------------------------------------
+The biggest difference is: inf
+Occurs at:                 11971, 0
+../../../../../test_data/largeTest.out value is:        -78.394196
+large-64.out value is:        -inf
+--------------------------------------------------------

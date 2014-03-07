@@ -1,0 +1,9 @@
+Getting dimensions of test_data/mediumTest.out: Done! H = 1000000; W = 1
+Getting dimensions of medium-32.out: Done! H = 1000000; W = 1
+Looking for the biggest point-to-point difference
+--------------------------------------------------------
+The biggest difference is: 0.000004
+Occurs at:                 4951, 0
+test_data/mediumTest.out value is:        -40.303444
+medium-32.out value is:        -40.303448
+--------------------------------------------------------
