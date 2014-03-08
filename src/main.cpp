@@ -12,7 +12,10 @@
 using namespace std;
 
 int main (const int argc, char const * const argv[]) {
-  auto pairhmm = Pairhmm<PairhmmImpl<float>, PairhmmImpl<double>>{};
+  auto pairhmm = Pairhmm<
+    PairhmmImpl<float, Diagonals<float>, Constants<float>>,
+    PairhmmImpl<double, Diagonals<double>, Constants<double>>
+  >{};
   InputReader<TestcaseIterator> reader {};
   if (argc == 2)
     reader.from_file(argv[1]);

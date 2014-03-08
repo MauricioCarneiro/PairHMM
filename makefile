@@ -9,7 +9,7 @@ clean:
 	$(MAKE) -C $(CODE_DIR) clean
 
 test: project_code
-	@./pairhmm < test_data/tiny.in | paste - test_data/tiny.out  | awk 'BEGIN {m = 0; n = NR} {a = $$2-$$1; a = a < 0? -a: a; if (a > m) {m = a; n = NR} } END { printf("max error %g at line %d\n", m, n)} '
+	@./pairhmm < test_data/10s.in | paste - test_data/10s.out  | awk 'BEGIN {m = 0; n = NR} {a = $$2-$$1; a = a < 0? -a: a; if (a > m) {m = a; n = NR} } END { printf("max error %g at line %d\n", m, n)} '
 
 check:
 	valgrind --leak-check=yes ./pairhmm test_data/tiny.in > /dev/null

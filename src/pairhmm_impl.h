@@ -12,7 +12,7 @@
 #include "constants.h"
 #include "diagonals.h"
 
-#define P(x) x 
+#define P(x) x
 
 namespace constants_with_precision {
   template <class T>
@@ -34,7 +34,7 @@ namespace constants_with_precision {
   constexpr float MIN_ACCEPTED_WITH_PRECISION<float>() {return 1e-28f;}
 }
 
-template <class PRECISION>
+template <class PRECISION, class DIAGONALS, class CONSTANTS>
 class PairhmmImpl {
 
  public:
@@ -47,8 +47,8 @@ class PairhmmImpl {
     constants {initial_size},
     diagonals {initial_size},
     ph2pr{} {
-    for (auto i=static_cast<PRECISION>(0); i!=MAX_PH2PR_INDEX; ++i) 
-      ph2pr.push_back(pow(static_cast<PRECISION>(10.0), (-i) / static_cast<PRECISION>(10.0))); 
+    for (auto i=static_cast<PRECISION>(0); i!=MAX_PH2PR_INDEX; ++i)
+      ph2pr.push_back(pow(static_cast<PRECISION>(10.0), (-i) / static_cast<PRECISION>(10.0)));
   }
 
   std::vector<double> calculate (const Testcase& testcase) {
@@ -65,7 +65,7 @@ class PairhmmImpl {
     max_original_read_length = max_original_read_length_;
     max_padded_read_length = max_padded_read_length_;
     auto master_idx = 0;
-    auto padded_read = Read<PRECISION>{}; 
+    auto padded_read = Read<PRECISION>{};
     for (auto read : testcase.reads) {
       auto has_padded_read = false;
       for (auto hap_idx = 0u; hap_idx != testcase.haplotypes.size(); ++hap_idx) {
@@ -84,15 +84,15 @@ class PairhmmImpl {
   }
 
  protected:
-  Constants<PRECISION> constants;
-  Diagonals<PRECISION> diagonals;
+  CONSTANTS constants;
+  DIAGONALS diagonals;
   std::vector<PRECISION> ph2pr;
   std::vector<Haplotype> padded_haplotypes;
 
   static constexpr auto MAX_PH2PR_INDEX = 128;
   static constexpr auto INITIAL_CONSTANT = constants_with_precision::INITIAL_CONSTANT_WITH_PRECISION<PRECISION>();
   static constexpr auto INITIAL_SIZE = 250;
-  static constexpr auto MIN_ACCEPTED = constants_with_precision::MIN_ACCEPTED_WITH_PRECISION<PRECISION>();  
+  static constexpr auto MIN_ACCEPTED = constants_with_precision::MIN_ACCEPTED_WITH_PRECISION<PRECISION>();
   static constexpr auto FAILED_RUN_RESULT = std::numeric_limits<double>::min();
 
   struct IndexedPair {
@@ -115,7 +115,7 @@ class PairhmmImpl {
   Haplotype pad_and_reverse_haplotype(const Haplotype& haplotype, const size_t left_padding, const size_t right_padding) const {
     const auto padded_length = left_padding + haplotype.bases.size() + right_padding;
     auto p = Haplotype{};
-    p.original_length = haplotype.bases.size();  
+    p.original_length = haplotype.bases.size();
     p.bases.reserve(padded_length);
     pad(p.bases, left_padding);
     p.bases.insert(p.bases.end(), haplotype.bases.rbegin(), haplotype.bases.rend());
@@ -156,7 +156,7 @@ class PairhmmImpl {
   std::vector<Read<PRECISION>> pad_reads(const std::vector<Read<uint8_t>>& reads) const {
     auto padded_reads = std::vector<Read<PRECISION>>{};
     padded_reads.reserve(reads.size());
-    for (auto& read : reads) 
+    for (auto& read : reads)
       padded_reads.push_back(pad_read(read));
     return padded_reads;
   }
@@ -164,7 +164,7 @@ class PairhmmImpl {
   std::vector<Haplotype> pad_haplotypes(const std::vector<Haplotype>& haplotypes) const {
     auto padded_haplotypes = std::vector<Haplotype>{};
     padded_haplotypes.reserve(haplotypes.size());
-    for (const auto& haplotype : haplotypes) 
+    for (const auto& haplotype : haplotypes)
       padded_haplotypes.push_back(pad_haplotype(haplotype));
     return padded_haplotypes;
   }
@@ -176,12 +176,6 @@ class PairhmmImpl {
         max_read_length = max_read_length >= read.bases.size() ? max_read_length : read.bases.size();
       return max_read_length;
     }
-
-  inline PRECISION calculate_prior(const char read_base, const char hap_base, const PRECISION base_qual) const {
-    return  ((read_base == hap_base) || (read_base == 'N') || (hap_base == 'N')) ? 
-      static_cast<PRECISION>(1) - base_qual : 
-      base_qual;
-  }
 
   double compute_full_prob(const Read<PRECISION>& read, const Haplotype& haplotype) {
     const auto rows = read.bases.size();        // number of rows in the diagonals (padded read length)
@@ -195,15 +189,16 @@ class PairhmmImpl {
         const auto hap_idx = mrl+hl-d+r-1;
         const auto read_base = read.bases[r];
         const auto hap_base = haplotype.bases[hap_idx];
-        const auto prior = calculate_prior(read_base, hap_base, read.base_quals[r]);
+        const auto base_qual = read.base_quals[r];
+        const auto prior = ((read_base == hap_base) || (read_base == 'N') || (hap_base == 'N')) ?  static_cast<PRECISION>(1) - base_qual : base_qual;
         diagonals.m[r] = prior * ((diagonals.mpp[r-1] * constants.index[r].mm) + (constants.index[r].gm * (diagonals.xpp[r-1] + diagonals.ypp[r-1])));
-        diagonals.x[r] = diagonals.mp[r-1] * constants.index[r].mx + diagonals.xp[r-1] * constants.index[r].xx; 
-        diagonals.y[r] = diagonals.mp[r] * constants.index[r].my + diagonals.yp[r] * constants.index[r].yy; 
+        diagonals.x[r] = diagonals.mp[r-1] * constants.index[r].mx + diagonals.xp[r-1] * constants.index[r].xx;
+        diagonals.y[r] = diagonals.mp[r] * constants.index[r].my + diagonals.yp[r] * constants.index[r].yy;
       }
       result += diagonals.m[rows-1] + diagonals.x[rows-1];
       diagonals.rotate();
     }
-    return result < MIN_ACCEPTED ? 
+    return result < MIN_ACCEPTED ?
       FAILED_RUN_RESULT :                       // if we underflowed return failed constant to rerun with higher precision if desired
       log10(static_cast<double>(result)) - log10(static_cast<double>(INITIAL_CONSTANT));
   }
