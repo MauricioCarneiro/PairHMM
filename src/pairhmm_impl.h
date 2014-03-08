@@ -34,7 +34,7 @@ namespace constants_with_precision {
   constexpr float MIN_ACCEPTED_WITH_PRECISION<float>() {return 1e-28f;}
 }
 
-template <class PRECISION, class DIAGONALS, class CONSTANTS>
+template <class PRECISION, class DIAGONALS, class CONSTANTS, int VECSIZE = 1>
 class PairhmmImpl {
 
  public:
@@ -125,12 +125,12 @@ class PairhmmImpl {
 
   const Haplotype pad_haplotype(const Haplotype& haplotype) const {
     const auto left_padding = max_original_read_length + 1;
-    const auto right_padding = max_original_read_length;
+    const auto right_padding = max_original_read_length + (VECSIZE-1);
     return pad_and_reverse_haplotype(haplotype, left_padding, right_padding);
   }
 
   template<class Result_Type, const bool convert = true>
-    std::vector<Result_Type> pad_and_convert_qual(const std::vector<uint8_t>& qual, const size_t left_padding, const size_t right_padding = 0) const {
+    std::vector<Result_Type> pad_and_convert_qual(const std::vector<uint8_t>& qual, const size_t left_padding, const size_t right_padding) const {
       const auto padded_length = left_padding + qual.size() + right_padding;
       auto p = std::vector<Result_Type>{};
       p.reserve(padded_length);
@@ -143,13 +143,14 @@ class PairhmmImpl {
 
   Read<PRECISION> pad_read(const Read<uint8_t>& read) const {
     const auto left_padding = 1;
+    const auto right_padding = VECSIZE-1; // enough for worst-case
     auto padded_read = Read<PRECISION>{};
     padded_read.original_length = read.bases.size();
-    padded_read.bases      = pad_and_convert_qual<uint8_t, false>(read.bases, left_padding);
-    padded_read.base_quals = pad_and_convert_qual<PRECISION>(read.base_quals, left_padding);
-    padded_read.ins_quals  = pad_and_convert_qual<PRECISION>(read.ins_quals, left_padding);
-    padded_read.del_quals  = pad_and_convert_qual<PRECISION>(read.del_quals, left_padding);
-    padded_read.gcp_quals  = pad_and_convert_qual<PRECISION>(read.gcp_quals, left_padding);
+    padded_read.bases      = pad_and_convert_qual<uint8_t, false>(read.bases, left_padding, right_padding);
+    padded_read.base_quals = pad_and_convert_qual<PRECISION>(read.base_quals, left_padding, right_padding);
+    padded_read.ins_quals  = pad_and_convert_qual<PRECISION>(read.ins_quals, left_padding, right_padding);
+    padded_read.del_quals  = pad_and_convert_qual<PRECISION>(read.del_quals, left_padding, right_padding);
+    padded_read.gcp_quals  = pad_and_convert_qual<PRECISION>(read.gcp_quals, left_padding, right_padding);
     return padded_read;
   }
 
@@ -185,15 +186,15 @@ class PairhmmImpl {
     const auto fd = mrl - rl;                   // first diagonal to compute (saves compute of all-0 diagonals when read is shorter than the padding - which will be the maximum read length in the testcase)
     auto result = 0.l;                          // result accumulator
     for (auto d = fd; d != mrl + hl - 1; ++d) { // d for diagonal
+      const auto hap_offset = mrl+hl-1;
       for (auto r = 1u; r != rows; ++r) {       // r for row
-        const auto hap_idx = mrl+hl-d+r-1;
         const auto read_base = read.bases[r];
-        const auto hap_base = haplotype.bases[hap_idx];
+        const auto hap_base = haplotype.bases[hap_offset+r-d];
         const auto base_qual = read.base_quals[r];
         const auto prior = ((read_base == hap_base) || (read_base == 'N') || (hap_base == 'N')) ?  static_cast<PRECISION>(1) - base_qual : base_qual;
-        diagonals.m[r] = prior * ((diagonals.mpp[r-1] * constants.index[r].mm) + (constants.index[r].gm * (diagonals.xpp[r-1] + diagonals.ypp[r-1])));
-        diagonals.x[r] = diagonals.mp[r-1] * constants.index[r].mx + diagonals.xp[r-1] * constants.index[r].xx;
-        diagonals.y[r] = diagonals.mp[r] * constants.index[r].my + diagonals.yp[r] * constants.index[r].yy;
+        diagonals.m[r] = prior * ((diagonals.mpp[r-1] * constants.mm[r]) + (constants.gm[r] * (diagonals.xpp[r-1] + diagonals.ypp[r-1])));
+        diagonals.x[r] = diagonals.mp[r-1] * constants.mx[r] + diagonals.xp[r-1] * constants.xx[r];
+        diagonals.y[r] = diagonals.mp[r] * constants.my[r] + diagonals.yp[r] * constants.yy[r];
       }
       result += diagonals.m[rows-1] + diagonals.x[rows-1];
       diagonals.rotate();

@@ -1,4 +1,4 @@
-CXXFLAGS=-c -Wall -std=c++11 -g -O0
+CXXFLAGS=-c -Wall -std=c++11 -g -O4
 LDFLAGS=
 SOURCES= testcase.cpp testcase_iterator.cpp haplotype.cpp main.cpp diagonals.cpp
 OBJECTS=$(SOURCES:.cpp=.o)
