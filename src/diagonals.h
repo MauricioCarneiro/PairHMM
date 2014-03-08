@@ -4,17 +4,17 @@
 #include <vector>
 #include <iostream>
 
-template<class PRECISION>
+template<class PRECISION, class ALLOCATOR = std::allocator<PRECISION>>
 struct Diagonals {
-  std::vector<PRECISION> m;
-  std::vector<PRECISION> mp;
-  std::vector<PRECISION> mpp;
-  std::vector<PRECISION> x;
-  std::vector<PRECISION> xp;
-  std::vector<PRECISION> xpp;
-  std::vector<PRECISION> y;
-  std::vector<PRECISION> yp;
-  std::vector<PRECISION> ypp;
+  std::vector<PRECISION, ALLOCATOR> m;
+  std::vector<PRECISION, ALLOCATOR> mp;
+  std::vector<PRECISION, ALLOCATOR> mpp;
+  std::vector<PRECISION, ALLOCATOR> x;
+  std::vector<PRECISION, ALLOCATOR> xp;
+  std::vector<PRECISION, ALLOCATOR> xpp;
+  std::vector<PRECISION, ALLOCATOR> y;
+  std::vector<PRECISION, ALLOCATOR> yp;
+  std::vector<PRECISION, ALLOCATOR> ypp;
 
   Diagonals() = default;
   Diagonals(const size_t read_length) :
@@ -30,7 +30,7 @@ struct Diagonals {
   {}
 
   void resize(const size_t new_size) {
-    if (new_size > m.capacity()) {
+    if (new_size > m.capacity()) { // only grow?
       m.resize(new_size); mp.resize(new_size); mpp.resize(new_size);
       x.resize(new_size); xp.resize(new_size); xpp.resize(new_size);
       y.resize(new_size); yp.resize(new_size); ypp.resize(new_size);
@@ -41,11 +41,11 @@ struct Diagonals {
     std::swap(mpp, mp);
     std::swap(xpp, xp);
     std::swap(ypp, yp);
-    std::swap(mp, m); 
+    std::swap(mp, m);
     std::swap(xp, x);
     std::swap(yp, y);
   }
-    
+
   void update(const PRECISION first_row_value) {
     std::fill(m.begin(), m.end(), static_cast<PRECISION>(0)); std::fill(mp.begin(), mp.end(), static_cast<PRECISION>(0)); std::fill(mpp.begin(), mpp.end(), static_cast<PRECISION>(0));
     std::fill(x.begin(), x.end(), static_cast<PRECISION>(0)); std::fill(xp.begin(), xp.end(), static_cast<PRECISION>(0)); std::fill(xpp.begin(), xpp.end(), static_cast<PRECISION>(0));
@@ -56,6 +56,6 @@ struct Diagonals {
 };
 
 template<class PRECISION>
-std::ostream& operator<<(std::ostream& out, const Diagonals<PRECISION>& diagonals); 
+std::ostream& operator<<(std::ostream& out, const Diagonals<PRECISION>& diagonals);
 
 #endif

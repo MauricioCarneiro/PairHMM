@@ -1,6 +1,6 @@
-#include <cstdint>
-#include <vector>
-#include <iostream>
+#ifndef ALIGNED_ALLOCATOR_H
+#define ALIGNED_ALLOCATOR_H
+
 #include <stdexcept>
 #include <xmmintrin.h>
 
@@ -13,13 +13,11 @@
  * https://gist.githubusercontent.com/donny-dont/1471329/raw/8f063f5f4326d301b14fe6b781495be54ca48941/aligned_allocator.cpp
  */
 
-#define TRACE_ALLOC
-
 // T is the element type
 // Alighment is the alignment, in bytes
 // Offset \in [0,Alighment-1] is the offset to the first aligned byte
 template <typename T, std::size_t Alignment, std::size_t Offset = 0>
-class aligned_allocator
+class Aligned_allocator
 {
 	public:
 
@@ -49,10 +47,10 @@ class aligned_allocator
 
 		// The following must be the same for all allocators.
 		template <typename U> struct rebind {
-			typedef aligned_allocator<U, Alignment, Offset> other;
+			typedef Aligned_allocator<U, Alignment, Offset> other;
 		};
 
-		bool operator!=(const aligned_allocator& other) const {
+		bool operator!=(const Aligned_allocator& other) const {
 			return !(*this == other);
 		}
 
@@ -68,20 +66,20 @@ class aligned_allocator
 		// Returns true if and only if storage allocated from *this
 		// can be deallocated from other, and vice versa.
 		// Always returns true for stateless allocators.
-		bool operator==(const aligned_allocator& other) const {
+		bool operator==(const Aligned_allocator& other) const {
 			return true;
 		}
 
 
 		// Default constructor, copy constructor, rebinding constructor, and destructor.
 		// Empty for stateless allocators.
-		aligned_allocator() { }
+		Aligned_allocator() { }
 
-		aligned_allocator(const aligned_allocator&) { }
+		Aligned_allocator(const Aligned_allocator&) { }
 
-		template <typename U> aligned_allocator(const aligned_allocator<U, Alignment>&) { }
+		template <typename U> Aligned_allocator(const Aligned_allocator<U, Alignment>&) { }
 
-		~aligned_allocator() { }
+		~Aligned_allocator() { }
 
 
 		// The following will be different for each allocator.
@@ -100,38 +98,35 @@ class aligned_allocator
 			// The Standardization Committee recommends that std::length_error
 			// be thrown in the case of integer overflow.
 			if (n > max_size()) {
-				throw std::length_error("aligned_allocator<T>::allocate() - Integer overflow.");
+				throw std::length_error("Aligned_allocator<T>::allocate() - Integer overflow.");
 			}
 
 			// Mallocator wraps malloc().
 			const std::size_t o = Offset > 0? Alignment - Offset: 0;
 			void * const pv = _mm_malloc(n * sizeof(T) + o, Alignment);
+			// Allocators should throw std::bad_alloc in the case of memory allocation failure.
+			if (pv == NULL) {
+				throw std::bad_alloc();
+			}
 #ifdef TRACE_ALLOC
 std::cerr << "Alloc " << n << '\n';
 #endif
-			// Allocators should throw std::bad_alloc in the case of memory allocation failure.
-			if (pv == NULL)
-			{
-				throw std::bad_alloc();
-			}
-
 			return reinterpret_cast<T *>(reinterpret_cast<char *>(pv)+o);
 		}
 
 		void deallocate(T * const p, const std::size_t n) const
 		{
 			const std::size_t o = Offset > 0? Alignment - Offset: 0;
-			_mm_free(reinterpret_cast<char *>(p)-o);
 #ifdef TRACE_ALLOC
 std::cerr << "Free " << n << '\n';
 #endif
+			_mm_free(reinterpret_cast<char *>(p)-o);
 		}
 
 
 		// The following will be the same for all allocators that ignore hints.
 		template <typename U>
-		T * allocate(const std::size_t n, const U * /* const hint */) const
-		{
+		T * allocate(const std::size_t n, const U * /* const hint */) const {
 			return allocate(n);
 		}
 		// Allocators are not required to be assignable, so
@@ -142,16 +137,19 @@ std::cerr << "Free " << n << '\n';
 		// base class assignment operator is inaccessible" within
 		// the STL headers, but that warning is useless.
 	private:
-		aligned_allocator& operator=(const aligned_allocator&);
+		Aligned_allocator& operator=(const Aligned_allocator&);
 };
 
+#endif
+
+#if 0
 int main()
 {
-	std::vector<float, aligned_allocator<float, 16> > aligned_16_0;
-	std::vector<float, aligned_allocator<float, 16, 4> > aligned_16_4;
-	std::vector<float, aligned_allocator<float, 16, 8> > aligned_16_8;
-	std::vector<float, aligned_allocator<float, 16, 12> > aligned_16_12;
-    for (int i = 0; i < 1024*1024; i++) { // hopefully cause realloc
+	std::vector<float, Aligned_allocator<float, 16> > aligned_16_0;
+	std::vector<float, Aligned_allocator<float, 16, 4> > aligned_16_4;
+	std::vector<float, Aligned_allocator<float, 16, 8> > aligned_16_8;
+	std::vector<float, Aligned_allocator<float, 16, 12> > aligned_16_12;
+    for (int i = 0; i < 1024*1024; i++) {
         aligned_16_0.push_back(float(i));
         aligned_16_4.push_back(float(i));
         aligned_16_8.push_back(float(i));
@@ -163,3 +161,6 @@ int main()
     std::cerr << reinterpret_cast<unsigned long int>(&aligned_16_12[3]) % 16 << '\n';
     return 0;
 }
+#endif
+
+

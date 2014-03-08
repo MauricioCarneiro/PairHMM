@@ -8,13 +8,14 @@
 #include "pairhmm.h"
 #include "pairhmm_impl.h"
 #include "chronos.h"
+#include "aligned_allocator.h"
 
 using namespace std;
 
 int main (const int argc, char const * const argv[]) {
   auto pairhmm = Pairhmm<
-    PairhmmImpl<float, Diagonals<float>, Constants<float>>,
-    PairhmmImpl<double, Diagonals<double>, Constants<double>>
+    PairhmmImpl<float, Diagonals<float, Aligned_allocator<float, 16, 4>>, Constants<float>>,
+    PairhmmImpl<double, Diagonals<double, Aligned_allocator<double, 16, 8>>, Constants<double>>
   >{};
   InputReader<TestcaseIterator> reader {};
   if (argc == 2)
