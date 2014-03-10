@@ -1,5 +1,5 @@
-#CXXFLAGS=-c -Wall -std=c++11 -g -O4 -march=corei7 -pedantic
-CXXFLAGS=-c -Wall -std=c++11 -g -O4 -march=corei7-avx -Wa,-q -pedantic
+#CXXFLAGS=-c -Wall -std=c++11 -g -mfpmath=sse -O4 -march=corei7 -pedantic
+CXXFLAGS=-c -Wall -std=c++11 -msse -mfpmath=sse -ffast-math -O4 -march=corei7-avx -Wa,-q -pedantic
 LDFLAGS=
 SOURCES= testcase.cpp testcase_iterator.cpp main.cpp diagonals.cpp
 OBJECTS=$(SOURCES:.cpp=.o)

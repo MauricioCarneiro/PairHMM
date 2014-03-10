@@ -8,7 +8,10 @@
 class PairhmmSSEFloatImpl: public PairhmmImpl<float, Diagonals<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>, 4> {
  using Base = PairhmmImpl<float, Diagonals<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>, 4>;
 public:
-  PairhmmSSEFloatImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} {}
+  PairhmmSSEFloatImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} {
+    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+  }
   virtual ~PairhmmSSEFloatImpl() { }
 protected:
   virtual double do_compute_full_prob(const Read<float,float>& read, const Haplotype<float>& haplotype) override {

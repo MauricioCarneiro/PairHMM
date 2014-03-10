@@ -16,10 +16,8 @@ using namespace std;
 
 int main (const int argc, char const * const argv[]) {
   auto pairhmm = Pairhmm<
-    //PairhmmImpl<float, Diagonals<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>>,
-    //PairhmmImpl<double, Diagonals<double, Aligned_allocator<double, 16, 8>>, Constants<double, Aligned_allocator<double, 16, 8>>>
-    //PairhmmVecImpl<float, Diagonals<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>, 4>,
-    //PairhmmVecImpl<double, Diagonals<double, Aligned_allocator<double, 16, 8>>, Constants<double, Aligned_allocator<double, 16, 8>>, 2>
+    //PairhmmImpl<double, Diagonals<double>, Constants<double>>,
+    //PairhmmVecImpl<float, Diagonals<float>, Constants<float>, 4>,
     //PairhmmSSEFloatImpl,
     PairhmmAVXFloatImpl,
     //PairhmmImpl<float, Diagonals<float>, Constants<float>>,

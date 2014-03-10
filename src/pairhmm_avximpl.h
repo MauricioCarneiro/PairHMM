@@ -8,7 +8,10 @@
 class PairhmmAVXFloatImpl: public PairhmmImpl<float, Diagonals<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8> {
  using Base = PairhmmImpl<float, Diagonals<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8>;
 public:
-  PairhmmAVXFloatImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} {}
+  PairhmmAVXFloatImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} {
+    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+  }
   virtual ~PairhmmAVXFloatImpl() { }
 protected:
   virtual double do_compute_full_prob(const Read<float,float>& read, const Haplotype<float>& haplotype) override {
