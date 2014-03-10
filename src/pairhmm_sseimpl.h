@@ -49,18 +49,6 @@ protected:
         _mm_store_ps(&diags.y[r], _mm_add_ps(
             _mm_mul_ps(_mm_loadu_ps(&diags.mp[r]), _mm_loadu_ps(&consts.my[r])),
             _mm_mul_ps(_mm_loadu_ps(&diags.yp[r]), _mm_loadu_ps(&consts.yy[r]))));
-
-# if 0
-        for (auto v = 0; v < VECSIZE; v++) {
-          const auto read_base = read.bases[r+v];
-          const auto hap_base = haplotype.bases[hap_last+r+v-d];
-          const auto base_qual = read.base_quals[r+v];
-          const auto prior = ((read_base == hap_base) || (read_base == 'N') || (hap_base == 'N')) ?  static_cast<PRECISION>(1) - base_qual : base_qual;
-          diags.m[r+v] = prior * ((diags.mpp[r+v-1] * consts.mm[r+v]) + (consts.gm[r+v] * (diags.xpp[r+v-1] + diags.ypp[r+v-1])));
-          diags.x[r+v] = diags.mp[r+v-1] * consts.mx[r+v] + diags.xp[r+v-1] * consts.xx[r+v];
-          diags.y[r+v] = diags.mp[r+v] * consts.my[r+v] + diags.yp[r+v] * consts.yy[r+v];
-        }
-#endif
       }
       result += diags.m[rows-1] + diags.x[rows-1];
       diags.rotate();

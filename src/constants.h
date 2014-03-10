@@ -5,7 +5,7 @@
 
 #include "read.h"
 
-template<class PRECISION, class ALLOCATOR>
+template<class PRECISION, class ALLOCATOR = std::allocator<PRECISION>>
 struct Constants {
 
   Constants(const std::size_t initial_size): mm(initial_size), gm(initial_size), mx(initial_size), 
