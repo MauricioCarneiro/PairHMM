@@ -2,6 +2,10 @@
 #include <vector>
 #include <cmath>
 
+#ifndef DENORMALS
+#include <xmmintrin.h>
+#endif
+
 #include "input_reader.h"
 #include "testcase_iterator.h"
 #include "testcase.h"
@@ -15,6 +19,10 @@
 using namespace std;
 
 int main (const int argc, char const * const argv[]) {
+#ifndef DENORMALS
+    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+#endif
   auto pairhmm = Pairhmm<
     //PairhmmScalarImpl<float>,
     //PairhmmScalarImpl<double>

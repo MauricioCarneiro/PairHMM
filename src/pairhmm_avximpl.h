@@ -8,10 +8,7 @@
 class PairhmmAVXFloatImpl: public PairhmmImpl<float, Diagonals3<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8> {
  using Base = PairhmmImpl<float, Diagonals3<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8>;
 public:
-  PairhmmAVXFloatImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} {
-    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
-    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
-  }
+  PairhmmAVXFloatImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} { }
   virtual ~PairhmmAVXFloatImpl() { }
 protected:
   virtual double do_compute_full_prob(const Read<float,float>& read, const Haplotype<float>& haplotype) override {
@@ -58,10 +55,7 @@ protected:
 class PairhmmAVXDoubleImpl: public PairhmmImpl<double, Diagonals3<double, Aligned_allocator<double, 32, 8>>, Constants<double, Aligned_allocator<double, 32, 8>>, 4> {
  using Base = PairhmmImpl<double, Diagonals3<double, Aligned_allocator<double, 32, 8>>, Constants<double, Aligned_allocator<double, 32, 8>>, 4>;
 public:
-  PairhmmAVXDoubleImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} {
-    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
-    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
-  }
+  PairhmmAVXDoubleImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} { }
   virtual ~PairhmmAVXDoubleImpl() { }
 protected:
   virtual double do_compute_full_prob(const Read<double,double>& read, const Haplotype<double>& haplotype) override {
@@ -108,10 +102,7 @@ protected:
 class PairhmmAVXFloat2DiagsImpl: public PairhmmImpl<float, Diagonals2<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8> {
  using Base = PairhmmImpl<float, Diagonals2<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8>;
 public:
-  PairhmmAVXFloat2DiagsImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} {
-    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
-    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
-  }
+  PairhmmAVXFloat2DiagsImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} { }
   virtual ~PairhmmAVXFloat2DiagsImpl() { }
 protected:
   virtual double do_compute_full_prob(const Read<float,float>& read, const Haplotype<float>& haplotype) override {
@@ -165,10 +156,7 @@ protected:
 class PairhmmAVXDouble2DiagsImpl: public PairhmmImpl<double, Diagonals2<double, Aligned_allocator<double, 32, 8>>, Constants<double, Aligned_allocator<double, 32, 8>>, 4> {
  using Base = PairhmmImpl<double, Diagonals2<double, Aligned_allocator<double, 32, 8>>, Constants<double, Aligned_allocator<double, 32, 8>>, 4>;
 public:
-  PairhmmAVXDouble2DiagsImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} {
-    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
-    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
-  }
+  PairhmmAVXDouble2DiagsImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} { }
   virtual ~PairhmmAVXDouble2DiagsImpl() { }
 protected:
   virtual double do_compute_full_prob(const Read<double,double>& read, const Haplotype<double>& haplotype) override {

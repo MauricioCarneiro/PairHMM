@@ -8,10 +8,7 @@ template <class PRECISION>
 class PairhmmScalarImpl: public PairhmmImpl<PRECISION, Diagonals3<PRECISION>, Constants<PRECISION>, 1>  {
   using Base =  PairhmmImpl<PRECISION,Diagonals3<PRECISION>, Constants<PRECISION>, 1>;
 public:
-  PairhmmScalarImpl(const size_t initial_size = Base::INITIAL_SIZE): Base {initial_size} {
-    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
-    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
-  }
+  PairhmmScalarImpl(const size_t initial_size = Base::INITIAL_SIZE): Base {initial_size} { }
   virtual ~PairhmmScalarImpl() { }
 protected:
   double do_compute_full_prob(const Read<PRECISION,PRECISION>& read, const Haplotype<PRECISION>& haplotype) override {
