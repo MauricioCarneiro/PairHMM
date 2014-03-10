@@ -1,5 +1,5 @@
-#ifndef __TESTCASE__
-#define __TESTCASE__
+#ifndef TESTCASE_H
+#define TESTCASE_H
 
 #include <ostream>
 #include <vector>
@@ -8,12 +8,12 @@
 #include "haplotype.h"
 
 struct Testcase {
-  std::vector<Read<uint8_t>> reads;
-  std::vector<Haplotype> haplotypes;
+  std::vector<Read<uint8_t,uint8_t>> reads;
+  std::vector<Haplotype<uint8_t>> haplotypes;
 
   Testcase() {};
-  Testcase(std::vector<Read<uint8_t>>& reads_, std::vector<Haplotype>& haplotypes_) = delete;
-  Testcase(std::vector<Read<uint8_t>>&& reads_, std::vector<Haplotype>&& haplotypes_) :
+  Testcase(std::vector<Read<uint8_t,uint8_t>>& reads_, std::vector<Haplotype<uint8_t>>& haplotypes_) = delete;
+  Testcase(std::vector<Read<uint8_t,uint8_t>>&& reads_, std::vector<Haplotype<uint8_t>>&& haplotypes_) :
     reads {std::move(reads_)},
     haplotypes {std::move(haplotypes_)}
   {};  

@@ -1,5 +1,5 @@
-#ifndef __CONSTANTS__
-#define __CONSTANTS__
+#ifndef CONSTANTS_H
+#define CONSTANTS_H
 
 #include <vector> 
 
@@ -22,7 +22,8 @@ struct Constants {
     }
   }
 
-  void update(const Read<PRECISION>& read) {
+  template <class BASE_TYPE>
+  void update(const Read<PRECISION, BASE_TYPE>& read) {
     const auto rows = read.bases.size();
     for (auto i = 1u; i != rows; ++i) {
       mm[i] = static_cast<PRECISION>(1) - (read.ins_quals[i] + read.del_quals[i]);

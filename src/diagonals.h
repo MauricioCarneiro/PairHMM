@@ -1,5 +1,5 @@
-#ifndef __DIAGONALS__
-#define __DIAGONALS__
+#ifndef DIAGONALS_H
+#define DIAGONALS_H
 
 #include <vector>
 #include <iostream>

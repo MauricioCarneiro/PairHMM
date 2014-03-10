@@ -7,8 +7,9 @@
 #include "testcase.h"
 #include "pairhmm.h"
 #include "pairhmm_impl.h"
+#include "pairhmm_vecimpl.h"
+#include "pairhmm_sseimpl.h"
 #include "chronos.h"
-#include "aligned_allocator.h"
 
 using namespace std;
 
@@ -16,6 +17,9 @@ int main (const int argc, char const * const argv[]) {
   auto pairhmm = Pairhmm<
     PairhmmImpl<float, Diagonals<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>>,
     PairhmmImpl<double, Diagonals<double, Aligned_allocator<double, 16, 8>>, Constants<double, Aligned_allocator<double, 16, 8>>>
+    //PairhmmVecImpl<float, Diagonals<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>, 4>,
+    //PairhmmSSEFloatImpl,
+    //PairhmmVecImpl<double, Diagonals<double, Aligned_allocator<double, 16, 8>>, Constants<double, Aligned_allocator<double, 16, 8>>, 2>
   >{};
   InputReader<TestcaseIterator> reader {};
   if (argc == 2)
