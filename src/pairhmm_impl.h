@@ -63,8 +63,8 @@ public:
     m_padded_haplotypes = pad_haplotypes(testcase.haplotypes);
     const auto padded_reads = pad_reads(testcase.reads);
     m_max_padded_read_length = calculate_max_read_length(padded_reads);
-    m_constants.resize(m_max_padded_read_length);
-    m_diagonals.resize(m_max_padded_read_length);
+    m_constants.reserve(m_max_padded_read_length);
+    m_diagonals.reserve(m_max_padded_read_length);
     return calculate(padded_reads);
   }
 

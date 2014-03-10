@@ -11,15 +11,13 @@ struct Constants {
   Constants(const std::size_t initial_size): mm(initial_size), gm(initial_size), mx(initial_size),
     xx(initial_size), my(initial_size), yy(initial_size) {}
 
-  void resize(const std::size_t new_size) {
-    if (mm.size() < new_size) {
-      mm.resize(new_size);
-      gm.resize(new_size);
-      mx.resize(new_size);
-      xx.resize(new_size);
-      my.resize(new_size);
-      yy.resize(new_size);
-    }
+  void reserve(const std::size_t new_size) {
+    mm.reserve(new_size);
+    gm.reserve(new_size);
+    mx.reserve(new_size);
+    xx.reserve(new_size);
+    my.reserve(new_size);
+    yy.reserve(new_size);
   }
 
   template <class BASE_TYPE>

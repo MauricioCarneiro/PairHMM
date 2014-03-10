@@ -29,12 +29,10 @@ struct Diagonals3 {
     ypp (read_length, static_cast<PRECISION>(0))
   {}
 
-  void resize(const size_t new_size) {
-    if (new_size > m.size()) {
-      m.resize(new_size); mp.resize(new_size); mpp.resize(new_size);
-      x.resize(new_size); xp.resize(new_size); xpp.resize(new_size);
-      y.resize(new_size); yp.resize(new_size); ypp.resize(new_size);
-    }
+  void reserve(const size_t new_size) {
+    m.reserve(new_size); mp.reserve(new_size); mpp.reserve(new_size);
+    x.reserve(new_size); xp.reserve(new_size); xpp.reserve(new_size);
+    y.reserve(new_size); yp.reserve(new_size); ypp.reserve(new_size);
   }
 
   void rotate() {
@@ -74,12 +72,10 @@ struct Diagonals2 {
     yp  (read_length, static_cast<PRECISION>(0))
   {}
 
-  void resize(const size_t new_size) {
-    if (new_size > m.size()) {
-      m.resize(new_size); mp.resize(new_size);
-      x.resize(new_size); xp.resize(new_size);
-      y.resize(new_size); yp.resize(new_size);
-    }
+  void reserve(const size_t new_size) {
+    m.reserve(new_size); mp.reserve(new_size);
+    x.reserve(new_size); xp.reserve(new_size);
+    y.reserve(new_size); yp.reserve(new_size);
   }
 
   void rotate() {
