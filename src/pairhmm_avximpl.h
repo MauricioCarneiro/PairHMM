@@ -36,15 +36,15 @@ protected:
           _mm256_or_ps(_mm256_cmp_ps(read_base, N, _CMP_EQ_UQ), _mm256_cmp_ps(hap_base, N, _CMP_EQ_UQ)));
         __m256 prior = _mm256_blendv_ps(base_qual, one_minus_base_qual, cmp);
         _mm256_store_ps(&diags.m[r], _mm256_mul_ps(prior,
-            _mm256_add_ps(_mm256_mul_ps(_mm256_loadu_ps(&diags.mpp[r-1]), _mm256_loadu_ps(&consts.mm[r])),
-                _mm256_mul_ps(_mm256_loadu_ps(&consts.gm[r]),
+            _mm256_add_ps(_mm256_mul_ps(_mm256_loadu_ps(&diags.mpp[r-1]), _mm256_load_ps(&consts.mm[r])),
+                _mm256_mul_ps(_mm256_load_ps(&consts.gm[r]),
                     _mm256_add_ps(_mm256_loadu_ps(&diags.xpp[r-1]), _mm256_loadu_ps(&diags.ypp[r-1]))))));
         _mm256_store_ps(&diags.x[r], _mm256_add_ps(
-            _mm256_mul_ps(_mm256_loadu_ps(&diags.mp[r-1]), _mm256_loadu_ps(&consts.mx[r])),
-            _mm256_mul_ps(_mm256_loadu_ps(&diags.xp[r-1]), _mm256_loadu_ps(&consts.xx[r]))));
+            _mm256_mul_ps(_mm256_loadu_ps(&diags.mp[r-1]), _mm256_load_ps(&consts.mx[r])),
+            _mm256_mul_ps(_mm256_loadu_ps(&diags.xp[r-1]), _mm256_load_ps(&consts.xx[r]))));
         _mm256_store_ps(&diags.y[r], _mm256_add_ps(
-            _mm256_mul_ps(_mm256_loadu_ps(&diags.mp[r]), _mm256_loadu_ps(&consts.my[r])),
-            _mm256_mul_ps(_mm256_loadu_ps(&diags.yp[r]), _mm256_loadu_ps(&consts.yy[r]))));
+            _mm256_mul_ps(_mm256_load_ps(&diags.mp[r]), _mm256_load_ps(&consts.my[r])),
+            _mm256_mul_ps(_mm256_load_ps(&diags.yp[r]), _mm256_load_ps(&consts.yy[r]))));
       }
       result += diags.m[rows-1] + diags.x[rows-1];
       diags.rotate();
@@ -86,15 +86,15 @@ protected:
           _mm256_or_pd(_mm256_cmp_pd(read_base, N, _CMP_EQ_UQ), _mm256_cmp_pd(hap_base, N, _CMP_EQ_UQ)));
         __m256d prior = _mm256_blendv_pd(base_qual, one_minus_base_qual, cmp);
         _mm256_store_pd(&diags.m[r], _mm256_mul_pd(prior,
-            _mm256_add_pd(_mm256_mul_pd(_mm256_loadu_pd(&diags.mpp[r-1]), _mm256_loadu_pd(&consts.mm[r])),
-                _mm256_mul_pd(_mm256_loadu_pd(&consts.gm[r]),
+            _mm256_add_pd(_mm256_mul_pd(_mm256_loadu_pd(&diags.mpp[r-1]), _mm256_load_pd(&consts.mm[r])),
+                _mm256_mul_pd(_mm256_load_pd(&consts.gm[r]),
                     _mm256_add_pd(_mm256_loadu_pd(&diags.xpp[r-1]), _mm256_loadu_pd(&diags.ypp[r-1]))))));
         _mm256_store_pd(&diags.x[r], _mm256_add_pd(
-            _mm256_mul_pd(_mm256_loadu_pd(&diags.mp[r-1]), _mm256_loadu_pd(&consts.mx[r])),
-            _mm256_mul_pd(_mm256_loadu_pd(&diags.xp[r-1]), _mm256_loadu_pd(&consts.xx[r]))));
+            _mm256_mul_pd(_mm256_loadu_pd(&diags.mp[r-1]), _mm256_load_pd(&consts.mx[r])),
+            _mm256_mul_pd(_mm256_loadu_pd(&diags.xp[r-1]), _mm256_load_pd(&consts.xx[r]))));
         _mm256_store_pd(&diags.y[r], _mm256_add_pd(
-            _mm256_mul_pd(_mm256_loadu_pd(&diags.mp[r]), _mm256_loadu_pd(&consts.my[r])),
-            _mm256_mul_pd(_mm256_loadu_pd(&diags.yp[r]), _mm256_loadu_pd(&consts.yy[r]))));
+            _mm256_mul_pd(_mm256_load_pd(&diags.mp[r]), _mm256_load_pd(&consts.my[r])),
+            _mm256_mul_pd(_mm256_load_pd(&diags.yp[r]), _mm256_load_pd(&consts.yy[r]))));
       }
       result += diags.m[rows-1] + diags.x[rows-1];
       diags.rotate();
@@ -131,7 +131,7 @@ protected:
       __m256 ypp = _mm256_loadu_ps(&diags.y[0]);
       __m256 mpp = _mm256_loadu_ps(&diags.m[0]);
       for (auto r = 1u; r < rows; r += 8) {       // r for row
-        __m256 read_base = _mm256_loadu_ps(&read.bases[r]);
+        __m256 read_base = _mm256_loadu_ps(&read.bases[r]); // maybe we should align read.bases and read.base_quals??
         __m256 hap_base = _mm256_loadu_ps(&haplotype.bases[hap_last+r-d]);
         __m256 base_qual = _mm256_loadu_ps(&read.base_quals[r]);
         __m256 one_minus_base_qual = _mm256_sub_ps(one, base_qual);
@@ -140,17 +140,17 @@ protected:
         __m256 prior = _mm256_blendv_ps(base_qual, one_minus_base_qual, cmp);
         __m256 mpp_tmp = _mm256_loadu_ps(&diags.m[r+8-1]);
         _mm256_store_ps(&diags.m[r], _mm256_mul_ps(prior,
-            _mm256_add_ps(_mm256_mul_ps(mpp, _mm256_loadu_ps(&consts.mm[r])),
-                _mm256_mul_ps(_mm256_loadu_ps(&consts.gm[r]), _mm256_add_ps(xpp, ypp)))));
+            _mm256_add_ps(_mm256_mul_ps(mpp, _mm256_load_ps(&consts.mm[r])),
+                _mm256_mul_ps(_mm256_load_ps(&consts.gm[r]), _mm256_add_ps(xpp, ypp)))));
         mpp = mpp_tmp;
         xpp = _mm256_loadu_ps(&diags.x[r+8-1]);
         _mm256_store_ps(&diags.x[r], _mm256_add_ps(
-            _mm256_mul_ps(_mm256_loadu_ps(&diags.mp[r-1]), _mm256_loadu_ps(&consts.mx[r])),
-            _mm256_mul_ps(_mm256_loadu_ps(&diags.xp[r-1]), _mm256_loadu_ps(&consts.xx[r]))));
+            _mm256_mul_ps(_mm256_loadu_ps(&diags.mp[r-1]), _mm256_load_ps(&consts.mx[r])),
+            _mm256_mul_ps(_mm256_loadu_ps(&diags.xp[r-1]), _mm256_load_ps(&consts.xx[r]))));
         ypp = _mm256_loadu_ps(&diags.y[r+8-1]);
         _mm256_store_ps(&diags.y[r], _mm256_add_ps(
-            _mm256_mul_ps(_mm256_loadu_ps(&diags.mp[r]), _mm256_loadu_ps(&consts.my[r])),
-            _mm256_mul_ps(_mm256_loadu_ps(&diags.yp[r]), _mm256_loadu_ps(&consts.yy[r]))));
+            _mm256_mul_ps(_mm256_load_ps(&diags.mp[r]), _mm256_load_ps(&consts.my[r])),
+            _mm256_mul_ps(_mm256_load_ps(&diags.yp[r]), _mm256_load_ps(&consts.yy[r]))));
       }
       result += diags.m[rows-1] + diags.x[rows-1];
       diags.rotate();
@@ -197,17 +197,17 @@ protected:
         __m256d prior = _mm256_blendv_pd(base_qual, one_minus_base_qual, cmp);
         __m256d mpp_tmp = _mm256_loadu_pd(&diags.m[r+4-1]);
         _mm256_store_pd(&diags.m[r], _mm256_mul_pd(prior,
-            _mm256_add_pd(_mm256_mul_pd(mpp, _mm256_loadu_pd(&consts.mm[r])),
-                _mm256_mul_pd(_mm256_loadu_pd(&consts.gm[r]), _mm256_add_pd(xpp, ypp)))));
+            _mm256_add_pd(_mm256_mul_pd(mpp, _mm256_load_pd(&consts.mm[r])),
+                _mm256_mul_pd(_mm256_load_pd(&consts.gm[r]), _mm256_add_pd(xpp, ypp)))));
         mpp = mpp_tmp;
         xpp = _mm256_loadu_pd(&diags.x[r+4-1]);
         _mm256_store_pd(&diags.x[r], _mm256_add_pd(
-            _mm256_mul_pd(_mm256_loadu_pd(&diags.mp[r-1]), _mm256_loadu_pd(&consts.mx[r])),
-            _mm256_mul_pd(_mm256_loadu_pd(&diags.xp[r-1]), _mm256_loadu_pd(&consts.xx[r]))));
+            _mm256_mul_pd(_mm256_loadu_pd(&diags.mp[r-1]), _mm256_load_pd(&consts.mx[r])),
+            _mm256_mul_pd(_mm256_loadu_pd(&diags.xp[r-1]), _mm256_load_pd(&consts.xx[r]))));
         ypp = _mm256_loadu_pd(&diags.y[r+4-1]);
         _mm256_store_pd(&diags.y[r], _mm256_add_pd(
-            _mm256_mul_pd(_mm256_loadu_pd(&diags.mp[r]), _mm256_loadu_pd(&consts.my[r])),
-            _mm256_mul_pd(_mm256_loadu_pd(&diags.yp[r]), _mm256_loadu_pd(&consts.yy[r]))));
+            _mm256_mul_pd(_mm256_load_pd(&diags.mp[r]), _mm256_load_pd(&consts.my[r])),
+            _mm256_mul_pd(_mm256_load_pd(&diags.yp[r]), _mm256_load_pd(&consts.yy[r]))));
       }
       result += diags.m[rows-1] + diags.x[rows-1];
       diags.rotate();
