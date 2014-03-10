@@ -20,6 +20,7 @@ int main (const int argc, char const * const argv[]) {
     //PairhmmScalarImpl<double>
     //PairhmmSSEFloatImpl,
     //PairhmmAVXFloatImpl,
+    //PairhmmAVXDoubleImpl
     PairhmmAVXFloat2DiagsImpl,
     PairhmmAVXDouble2DiagsImpl
   >{};
