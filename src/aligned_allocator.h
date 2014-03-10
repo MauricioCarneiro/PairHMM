@@ -114,8 +114,8 @@ std::cerr << "Alloc " << n << '\n';
 			return reinterpret_cast<T *>(reinterpret_cast<char *>(pv)+o);
 		}
 
-		void deallocate(T * const p, const std::size_t n) const
-		{
+		void deallocate(T * const p, const std::size_t n) const {
+            (void) n;
 			const std::size_t o = Offset > 0? Alignment - Offset: 0;
 #ifdef TRACE_ALLOC
 std::cerr << "Free " << n << '\n';

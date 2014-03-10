@@ -1,24 +1,24 @@
 #ifndef CONSTANTS_H
 #define CONSTANTS_H
 
-#include <vector> 
+#include <vector>
 
 #include "read.h"
 
 template<class PRECISION, class ALLOCATOR = std::allocator<PRECISION>>
 struct Constants {
 
-  Constants(const std::size_t initial_size): mm(initial_size), gm(initial_size), mx(initial_size), 
+  Constants(const std::size_t initial_size): mm(initial_size), gm(initial_size), mx(initial_size),
     xx(initial_size), my(initial_size), yy(initial_size) {}
 
   void resize(const std::size_t new_size) {
-    if (mm.capacity() < new_size) {  // only grow?
-      mm.resize(new_size); 
-      gm.resize(new_size); 
-      mx.resize(new_size); 
-      xx.resize(new_size); 
-      my.resize(new_size); 
-      yy.resize(new_size); 
+    if (mm.size() < new_size) {
+      mm.resize(new_size);
+      gm.resize(new_size);
+      mx.resize(new_size);
+      xx.resize(new_size);
+      my.resize(new_size);
+      yy.resize(new_size);
     }
   }
 

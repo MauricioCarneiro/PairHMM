@@ -5,7 +5,7 @@
 using namespace std;
 
 template<class PRECISION>
-ostream& operator<<(ostream& out, const Diagonals<PRECISION>& diagonals) {
+ostream& operator<<(ostream& out, const Diagonals3<PRECISION>& diagonals) {
   out << "M   -> "; for (auto x : diagonals.m) out << x << ","; out << endl;
   out << "Mp  -> "; for (auto x : diagonals.mp) out << x << ","; out << endl;
   out << "Mpp -> "; for (auto x : diagonals.mpp) out << x << ","; out << endl;

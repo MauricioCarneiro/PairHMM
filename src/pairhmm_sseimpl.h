@@ -5,8 +5,8 @@
 #include "aligned_allocator.h"
 #include "pairhmm_impl.h"
 
-class PairhmmSSEFloatImpl: public PairhmmImpl<float, Diagonals<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>, 4> {
- using Base = PairhmmImpl<float, Diagonals<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>, 4>;
+class PairhmmSSEFloatImpl: public PairhmmImpl<float, Diagonals3<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>, 4> {
+ using Base = PairhmmImpl<float, Diagonals3<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>, 4>;
 public:
   PairhmmSSEFloatImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} {
     _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);

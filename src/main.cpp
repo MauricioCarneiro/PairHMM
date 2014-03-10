@@ -6,7 +6,7 @@
 #include "testcase_iterator.h"
 #include "testcase.h"
 #include "pairhmm.h"
-#include "pairhmm_impl.h"
+#include "pairhmm_scalarimpl.h"
 #include "pairhmm_vecimpl.h"
 #include "pairhmm_sseimpl.h"
 #include "pairhmm_avximpl.h"
@@ -16,12 +16,12 @@ using namespace std;
 
 int main (const int argc, char const * const argv[]) {
   auto pairhmm = Pairhmm<
-    //PairhmmImpl<double, Diagonals<double>, Constants<double>>,
-    //PairhmmVecImpl<float, Diagonals<float>, Constants<float>, 4>,
+    //PairhmmScalarImpl<float>,
+    //PairhmmScalarImpl<double>
     //PairhmmSSEFloatImpl,
-    PairhmmAVXFloatImpl,
-    //PairhmmImpl<float, Diagonals<float>, Constants<float>>,
-    PairhmmImpl<double, Diagonals<double>, Constants<double>>
+    //PairhmmAVXFloatImpl,
+    PairhmmAVXFloat2DiagsImpl,
+    PairhmmAVXDouble2DiagsImpl
   >{};
   InputReader<TestcaseIterator> reader {};
   if (argc == 2)
