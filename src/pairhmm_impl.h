@@ -63,12 +63,12 @@ public:
     m_padded_haplotypes = pad_haplotypes(testcase.haplotypes);
     const auto padded_reads = pad_reads(testcase.reads);
     m_max_padded_read_length = calculate_max_read_length(padded_reads);
-    m_constants.reserve(m_max_padded_read_length);
-    m_diagonals.reserve(m_max_padded_read_length);
+    m_constants.reserve(m_max_padded_read_length+(VECSIZE-1));
+    m_diagonals.reserve(m_max_padded_read_length+(VECSIZE-1));
     return calculate(padded_reads);
   }
 
-  void recalculate (const Testcase& testcase, std::vector<double>& results, const size_t max_original_read_length, 
+  void recalculate (const Testcase& testcase, std::vector<double>& results, const size_t max_original_read_length,
       const size_t max_padded_read_length) {
     m_max_original_read_length = max_original_read_length;
     m_max_padded_read_length = max_padded_read_length;
