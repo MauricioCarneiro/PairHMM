@@ -1,5 +1,5 @@
-#ifndef __INPUT_READER__
-#define __INPUT_READER__
+#ifndef INPUT_READER_H
+#define INPUT_READER_H
 
 #include <iostream>
 #include <fstream>
