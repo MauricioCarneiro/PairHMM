@@ -34,20 +34,16 @@ namespace constants_with_precision {
 }
 
 template <class PRECISION, class DIAGONALS, class CONSTANTS, int VECSIZE = 1>
-class PairhmmImpl {
-  size_t m_max_original_read_length = 0;  // updated during calculate()
-  size_t m_max_padded_read_length = 0;    // updated during calculate()
+class PairhmmBase {
 
-public:
+ public:
   size_t max_padded_read_length(void) const { return m_max_padded_read_length; }
   size_t max_original_read_length(void) const { return m_max_original_read_length; }
-
   void set_max_padded_read_length(size_t length) const { m_max_padded_read_length = length; }
   void set_max_original_read_length(size_t length) const { m_max_original_read_length = length; }
-
   const std::vector<Haplotype<PRECISION>>& padded_haplotypes() const { return m_padded_haplotypes; }
 
-  PairhmmImpl(const size_t initial_size = INITIAL_SIZE) :
+  PairhmmBase(const size_t initial_size = INITIAL_SIZE) :
     m_constants {initial_size},
     m_diagonals {initial_size},
     m_ph2pr{} {
@@ -56,7 +52,7 @@ public:
       m_ph2pr.push_back(pow(static_cast<PRECISION>(10.0), (-i) / static_cast<PRECISION>(10.0)));
   }
 
-  virtual ~PairhmmImpl() { }
+  virtual ~PairhmmBase() { }
 
   std::vector<double> calculate (const Testcase& testcase) {
     m_max_original_read_length = calculate_max_read_length(testcase.reads);
@@ -95,14 +91,21 @@ public:
  protected:
   CONSTANTS m_constants;
   DIAGONALS m_diagonals;
+
+  static constexpr auto INITIAL_SIZE = 250;
+  static constexpr auto INITIAL_CONSTANT = constants_with_precision::INITIAL_CONSTANT_WITH_PRECISION<PRECISION>();
+  static constexpr auto MIN_ACCEPTED = constants_with_precision::MIN_ACCEPTED_WITH_PRECISION<PRECISION>();
+  static constexpr auto FAILED_RUN_RESULT = std::numeric_limits<double>::min();
+
+  virtual double do_compute_full_prob(const Read<PRECISION,PRECISION>& read, const Haplotype<PRECISION>& haplotype) = 0;
+
+ private:
+  size_t m_max_original_read_length = 0;  // updated during calculate()
+  size_t m_max_padded_read_length = 0;    // updated during calculate()
   std::vector<PRECISION> m_ph2pr;
   std::vector<Haplotype<PRECISION>> m_padded_haplotypes;
 
   static constexpr auto MAX_PH2PR_INDEX = 128;
-  static constexpr auto INITIAL_CONSTANT = constants_with_precision::INITIAL_CONSTANT_WITH_PRECISION<PRECISION>();
-  static constexpr auto INITIAL_SIZE = 250;
-  static constexpr auto MIN_ACCEPTED = constants_with_precision::MIN_ACCEPTED_WITH_PRECISION<PRECISION>();
-  static constexpr auto FAILED_RUN_RESULT = std::numeric_limits<double>::min();
 
   template<class T>
     void pad (T& v, size_t padding) const {
@@ -194,9 +197,6 @@ public:
     return results;
   }
 
-protected:
-
-  virtual double do_compute_full_prob(const Read<PRECISION,PRECISION>& read, const Haplotype<PRECISION>& haplotype) = 0;
 
 };
 

@@ -12,7 +12,7 @@ $(EXECUTABLE): $(OBJECTS)
 
 diagonals.o: diagonals.cpp diagonals.h
 main.o: main.cpp input_reader.h testcase_iterator.h testcase.h read.h \
- utils.h haplotype.h pairhmm.h pairhmm_impl.h constants.h diagonals.h  pairhmm_scalarimpl.h pairhmm_vecimpl.h pairhmm_sseimpl.h pairhmm_avximpl.h
+ utils.h haplotype.h pairhmm.h pairhmm_base.h constants.h diagonals.h  pairhmm_scalarimpl.h pairhmm_vecimpl.h pairhmm_sseimpl.h pairhmm_avximpl.h
 testcase.o: testcase.cpp testcase.h read.h utils.h haplotype.h
 testcase_iterator.o: testcase_iterator.cpp testcase_iterator.h testcase.h \
  read.h utils.h haplotype.h

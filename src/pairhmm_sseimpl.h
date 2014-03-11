@@ -3,10 +3,10 @@
 
 #include <xmmintrin.h>
 #include "aligned_allocator.h"
-#include "pairhmm_impl.h"
+#include "pairhmm_base.h"
 
-class PairhmmSSEFloatImpl: public PairhmmImpl<float, Diagonals3<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>, 4> {
- using Base = PairhmmImpl<float, Diagonals3<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>, 4>;
+class PairhmmSSEFloatImpl: public PairhmmBase<float, Diagonals3<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>, 4> {
+ using Base = PairhmmBase<float, Diagonals3<float, Aligned_allocator<float, 16, 4>>, Constants<float, Aligned_allocator<float, 16, 4>>, 4>;
 public:
   PairhmmSSEFloatImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} { }
   virtual ~PairhmmSSEFloatImpl() { }

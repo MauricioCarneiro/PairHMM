@@ -23,10 +23,11 @@ int main (const int argc, char const * const argv[]) {
     _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
     _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
 #endif
-  auto pairhmm = Pairhmm<
+  auto pairhmm = Pairhmm<    // this should be detected in runtime (we generate all versions and run the best supported one)
     //PairhmmScalarImpl<float>,
     //PairhmmScalarImpl<double>
     //PairhmmSSEFloatImpl,
+    //PairhmmScalarImpl<double>
     //PairhmmAVXFloatImpl,
     //PairhmmAVXDoubleImpl
     PairhmmAVXFloat2DiagsImpl,
@@ -35,15 +36,15 @@ int main (const int argc, char const * const argv[]) {
   InputReader<TestcaseIterator> reader {};
   if (argc == 2)
     reader.from_file(argv[1]);
-  double computation_time = 0.f;
-  Chronos time;
+  auto computation_time = 0.f;
+  auto timer = Chronos{};
   for (auto& testcase : reader) {
-    time.reset();
+    timer.reset();
     auto results = pairhmm.calculate(testcase);
-    computation_time += time.elapsed();
+    computation_time += timer.elapsed();
     for (auto x : results)
       cout << x << endl;
   }
-  std::cerr << "done in " << computation_time << "ms\n";
+  std::clog << "computation time: " << computation_time << "ms\n";
   return 0;
 }

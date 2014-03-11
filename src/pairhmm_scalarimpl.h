@@ -2,11 +2,11 @@
 #define PAIRHMM_SCALARIMPL_H
 
 #include <xmmintrin.h>
-#include "pairhmm_impl.h"
+#include "pairhmm_base.h"
 
 template <class PRECISION>
-class PairhmmScalarImpl: public PairhmmImpl<PRECISION, Diagonals3<PRECISION>, Constants<PRECISION>, 1>  {
-  using Base =  PairhmmImpl<PRECISION,Diagonals3<PRECISION>, Constants<PRECISION>, 1>;
+class PairhmmScalarImpl: public PairhmmBase<PRECISION, Diagonals3<PRECISION>, Constants<PRECISION>, 1>  {
+  using Base =  PairhmmBase<PRECISION,Diagonals3<PRECISION>, Constants<PRECISION>, 1>;
 public:
   PairhmmScalarImpl(const size_t initial_size = Base::INITIAL_SIZE): Base {initial_size} { }
   virtual ~PairhmmScalarImpl() { }

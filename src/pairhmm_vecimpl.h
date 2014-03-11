@@ -1,11 +1,11 @@
 #ifndef PAIRHMM_VECIMPL_H
 #define PAIRHMM_VECIMPL_H
 
-#include "pairhmm_impl.h"
+#include "pairhmm_base.h"
 
 template <class PRECISION, class DIAGONALS, class CONSTANTS, int VECSIZE = 1>
-class PairhmmVecImpl: public PairhmmImpl<PRECISION, DIAGONALS, CONSTANTS, VECSIZE> {
- using Base = PairhmmImpl<PRECISION,DIAGONALS,CONSTANTS,VECSIZE>;
+class PairhmmVecImpl: public PairhmmBase<PRECISION, DIAGONALS, CONSTANTS, VECSIZE> {
+ using Base = PairhmmBase<PRECISION,DIAGONALS,CONSTANTS,VECSIZE>;
  public:
   PairhmmVecImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} {}
   virtual ~PairhmmVecImpl() { }

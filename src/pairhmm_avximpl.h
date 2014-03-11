@@ -3,10 +3,10 @@
 
 #include <immintrin.h>
 #include "aligned_allocator.h"
-#include "pairhmm_impl.h"
+#include "pairhmm_base.h"
 
-class PairhmmAVXFloatImpl: public PairhmmImpl<float, Diagonals3<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8> {
- using Base = PairhmmImpl<float, Diagonals3<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8>;
+class PairhmmAVXFloatImpl: public PairhmmBase<float, Diagonals3<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8> {
+ using Base = PairhmmBase<float, Diagonals3<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8>;
 public:
   PairhmmAVXFloatImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} { }
   virtual ~PairhmmAVXFloatImpl() { }
@@ -52,8 +52,8 @@ protected:
   }
 };
 
-class PairhmmAVXDoubleImpl: public PairhmmImpl<double, Diagonals3<double, Aligned_allocator<double, 32, 8>>, Constants<double, Aligned_allocator<double, 32, 8>>, 4> {
- using Base = PairhmmImpl<double, Diagonals3<double, Aligned_allocator<double, 32, 8>>, Constants<double, Aligned_allocator<double, 32, 8>>, 4>;
+class PairhmmAVXDoubleImpl: public PairhmmBase<double, Diagonals3<double, Aligned_allocator<double, 32, 8>>, Constants<double, Aligned_allocator<double, 32, 8>>, 4> {
+ using Base = PairhmmBase<double, Diagonals3<double, Aligned_allocator<double, 32, 8>>, Constants<double, Aligned_allocator<double, 32, 8>>, 4>;
 public:
   PairhmmAVXDoubleImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} { }
   virtual ~PairhmmAVXDoubleImpl() { }
@@ -99,8 +99,8 @@ protected:
   }
 };
 
-class PairhmmAVXFloat2DiagsImpl: public PairhmmImpl<float, Diagonals2<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8> {
- using Base = PairhmmImpl<float, Diagonals2<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8>;
+class PairhmmAVXFloat2DiagsImpl: public PairhmmBase<float, Diagonals2<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8> {
+ using Base = PairhmmBase<float, Diagonals2<float, Aligned_allocator<float, 32, 4>>, Constants<float, Aligned_allocator<float, 32, 4>>, 8>;
 public:
   PairhmmAVXFloat2DiagsImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} { }
   virtual ~PairhmmAVXFloat2DiagsImpl() { }
@@ -153,8 +153,8 @@ protected:
 };
 
 
-class PairhmmAVXDouble2DiagsImpl: public PairhmmImpl<double, Diagonals2<double, Aligned_allocator<double, 32, 8>>, Constants<double, Aligned_allocator<double, 32, 8>>, 4> {
- using Base = PairhmmImpl<double, Diagonals2<double, Aligned_allocator<double, 32, 8>>, Constants<double, Aligned_allocator<double, 32, 8>>, 4>;
+class PairhmmAVXDouble2DiagsImpl: public PairhmmBase<double, Diagonals2<double, Aligned_allocator<double, 32, 8>>, Constants<double, Aligned_allocator<double, 32, 8>>, 4> {
+ using Base = PairhmmBase<double, Diagonals2<double, Aligned_allocator<double, 32, 8>>, Constants<double, Aligned_allocator<double, 32, 8>>, 4>;
 public:
   PairhmmAVXDouble2DiagsImpl(const size_t initial_size = Base::INITIAL_SIZE) : Base {initial_size} { }
   virtual ~PairhmmAVXDouble2DiagsImpl() { }
