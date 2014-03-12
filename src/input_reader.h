@@ -20,6 +20,8 @@ class InputReader {
   Iterator begin() { return Iterator{input_stream}; };
   Iterator end()   { return Iterator{}; };
 
+  bool eof() { return input_stream->eof(); }
+
   void from_file(const std::string& filename) {
     file_stream.open(filename);
     input_stream = &file_stream;

@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include <future>
 
 #ifndef DENORMALS
 #include <xmmintrin.h>
@@ -18,6 +19,27 @@
 
 using namespace std;
 
+constexpr size_t TESTCASES_TO_READ = 100000;
+
+vector<Testcase> read_testcases(InputReader<TestcaseIterator>& reader, const size_t n) {
+  auto result = vector<Testcase>{};
+  if (n > 0) {
+    result.reserve(n);
+    auto i = 0u;
+    for (const auto& testcase : reader) {
+      result.push_back(testcase);
+      if (++i == n)
+        break;
+    }
+  }
+  return result;
+}
+
+template<class F, class A>
+vector<double> calculate(const Pairhmm<F,A>& phmm, Testcase testcase) {
+  return phmm.calculate(testcase);
+}
+
 int main (const int argc, char const * const argv[]) {
 #ifndef DENORMALS
     _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
@@ -33,17 +55,25 @@ int main (const int argc, char const * const argv[]) {
     PairhmmAVXFloat2DiagsImpl,
     PairhmmAVXDouble2DiagsImpl
   >{};
+  auto computation_time = 0.f;
+  auto timer = Chronos{};
   InputReader<TestcaseIterator> reader {};
   if (argc == 2)
     reader.from_file(argv[1]);
-  auto computation_time = 0.f;
-  auto timer = Chronos{};
-  for (auto& testcase : reader) {
+
+  while (!reader.eof()) {
+    clog << "reading " << TESTCASES_TO_READ << " testcases..." << endl;
+    const auto testcases = read_testcases(reader, TESTCASES_TO_READ);
+    auto results = vector<future<vector<double>>>{}; // inefficient, rewrite this as a class
+    clog << "computing... " << endl;
     timer.reset();
-    auto results = pairhmm.calculate(testcase);
+    for (const auto& testcase : testcases) 
+      results.push_back(async(launch::async, &Pairhmm<PairhmmAVXFloat2DiagsImpl, PairhmmAVXDouble2DiagsImpl>::calculate, pairhmm, testcase));
     computation_time += timer.elapsed();
-    for (auto x : results)
-      cout << x << endl;
+    clog << "results generated... " << endl;
+    for (auto i = 0u; i != results.size(); ++i)
+      for(const auto& x : results[i].get()) 
+        cout << x << endl;
   }
   std::clog << "computation time: " << computation_time << "ms\n";
   return 0;
