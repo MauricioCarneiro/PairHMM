@@ -1,0 +1,9 @@
+Getting dimensions of test_data/mediumTest.out: Done! H = 1000000; W = 1
+Getting dimensions of reports/medium-96-bresenham.out: Done! H = 1000000; W = 1
+Looking for the biggest point-to-point difference
+--------------------------------------------------------
+The biggest difference is: 27.075539
+Occurs at:                 338100, 0
+test_data/mediumTest.out value is:        -118.672539
+reports/medium-96-bresenham.out value is:        -91.597000
+--------------------------------------------------------

@@ -5,7 +5,6 @@
 #include <iomanip>
 #include <vector>
 #include <cstdlib>
-
 #include <ctime>
 #include <sys/time.h>
 
@@ -17,16 +16,13 @@ using std::cin;
 using std::cout;
 using std::cerr;
 
-#define TID threadIdx.x
-#define BID blockIdx.x
 #define NOT_DONE 0
 #define DONE 1
 #define GAP_TO(sz, n) ((n - ((sz) % n)) % n)
-#define FIRST_THREAD (TID==0)
 #define PH2PR(n) (pow(NUM(10.0), -NUM(n) / NUM(10.0)))
 
 #define MAX_HAPLEN 3072
-#define NBLOCKS 100
+#define NBLOCKS 150
 #define NUM_OF_TESTCASES_PER_ITERATION 10000
 
 template<class T> __device__ static inline T INITIAL_CONSTANT();
@@ -36,7 +32,8 @@ template<class T> __device__ static inline T MIN_ACCEPTED();
 template<> __device__ static inline float MIN_ACCEPTED<float>() { return 1e-28f; }
 template<> __device__ static inline double MIN_ACCEPTED<double>() { return 0.0; }
 
-struct Pair {
+struct Pair 
+{
 	double result;
 	int offset_hap, offset_rs, offset_qidc, haplen, rslen, status;
 };
@@ -55,30 +52,32 @@ inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
 }
 
 template <int nThreads, typename NUM> 
-__global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pair, int *g_pair_index, NUM *g_last_lines) {
+__global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pair, int *g_pair_index, NUM *g_last_lines)
+{
 
 	// *******************************************************************************************
 	// *********************************** <PERSISTENT VALUES> ***********************************
 
-	NUM *g_lastM = g_last_lines + 3 * MAX_HAPLEN * BID;
+	NUM *g_lastM = g_last_lines + 3 * MAX_HAPLEN * blockIdx.x;
 	NUM *g_lastX = g_lastM + MAX_HAPLEN;
 	NUM *g_lastY = g_lastX + MAX_HAPLEN;
-	
+
+__syncthreads();
 	__shared__ NUM s_xp[nThreads], s_yp[nThreads], s_mp[nThreads];
 	__shared__ NUM s_xpp[nThreads], s_ypp[nThreads], s_mpp[nThreads];
 
+__syncthreads();
 	// *********************************** </PERSISTENT VALUES> **********************************
 	// *******************************************************************************************
 
 	for (;;)
 	{
-
 		// *******************************************************************************************
 		// ************************************** <PICK A PAIR> **************************************
 		__shared__ Pair s_pair;
 		__shared__ int s_pair_index;
 
-		if (FIRST_THREAD)
+		if (threadIdx.x == 0)
 		{
 			s_pair_index = atomicAdd(g_pair_index, 1);
 			if (s_pair_index < num_of_pairs)
@@ -103,7 +102,7 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 		int n_groups_of_rows = ((pair.rslen + 1) + (nThreads - 1)) / nThreads;
 		for (int group_of_rows = 0; group_of_rows < n_groups_of_rows; group_of_rows++)
 		{
-			int row = group_of_rows * nThreads + TID;
+			int row = group_of_rows * nThreads + threadIdx.x;
 
 			/******************************************************************************************
 			*********** <SET THE VALUES THAT ARE CONSTANT DURING THE CALCULATION OF THE ROW> *********/
@@ -129,17 +128,19 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 			*******************************************************************************************/
 
 			// diagonal 0
-			s_mpp[TID] = NUM(0.0);
-			s_xpp[TID] = NUM(0.0);
-			s_ypp[TID] = NUM(0.0);
+			s_mpp[threadIdx.x] = NUM(0.0);
+			s_xpp[threadIdx.x] = NUM(0.0);
+			s_ypp[threadIdx.x] = NUM(0.0);
 
 			//diagonal 1
 			char hap;
 			NUM m, x, y, sum_m_x = NUM(0.0), coef;
 
-			s_mp[TID] = NUM(0.0);
-			s_xp[TID] = NUM(0.0);
-			s_yp[TID] = NUM(0.0);
+			s_mp[threadIdx.x] = NUM(0.0);
+			s_xp[threadIdx.x] = NUM(0.0);
+			s_yp[threadIdx.x] = NUM(0.0);
+
+			__syncthreads();
 
 			/*
 				The purpose of the code inside the following "if" is:
@@ -164,7 +165,7 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 				in the previous group of rows.
 			*/	
 
-			if (FIRST_THREAD) 
+			if (threadIdx.x == 0) 
 			{
 				if (group_of_rows == 0) // case (a): 
 				{
@@ -193,20 +194,23 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 
 					sum_m_x += m + x;
 				}
-			} // end of "if (FIRST_THREAD) 
+			} // end of "if (threadIdx.x==0) 
+		
+			__syncthreads();
 
 			int num_of_diagonals = (pair.haplen+1) + (pair.rslen+1) - 1;
 			for (int d = 2; d < num_of_diagonals; d++) 
 			{
 				__syncthreads();
 
-				int col = d - TID;
+				int col = d - threadIdx.x;
 				hap = 0;
 				NUM m_up_left = NUM(0.0), x_up_left = NUM(0.0), y_up_left = NUM(0.0);
 				NUM m_up = NUM(0.0), x_up = NUM(0.0);
 				NUM m_left = s_mp[0], y_left = s_yp[0];
-				
-				if (FIRST_THREAD)
+
+				//__syncthreads();
+				if (threadIdx.x==0)
 				{
 					if (group_of_rows == 0)
 					{
@@ -232,13 +236,13 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 				{
 					if (col > 0 && col <= pair.haplen) // ?? haplotype should be padded and this "if", removed.
 						hap = g_chunk[pair.offset_hap + (col-1)]; // GLOBAL MEMORY ACCESS
-					m_up_left = s_mpp[TID-1]; 
-					x_up_left = s_xpp[TID-1];
-					y_up_left = s_ypp[TID-1];
-					m_up = s_mp[TID-1];
-					x_up = s_xp[TID-1];
-					m_left = s_mp[TID];
-					y_left = s_yp[TID];
+					m_up_left = s_mpp[threadIdx.x-1]; 
+					x_up_left = s_xpp[threadIdx.x-1];
+					y_up_left = s_ypp[threadIdx.x-1];
+					m_up = s_mp[threadIdx.x-1];
+					x_up = s_xp[threadIdx.x-1];
+					m_left = s_mp[threadIdx.x];
+					y_left = s_yp[threadIdx.x];
 				}
 
 				coef = pq;
@@ -248,23 +252,37 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 				x = m_up * mx + x_up * xx;
 				y = m_left * my + y_left * yy;
 
-				if ((TID == (nThreads-1)) && (group_of_rows < n_groups_of_rows - 1) && (col >= 0) && (col <= pair.haplen))
+				//__syncthreads();
+
+				if ((threadIdx.x == (nThreads-1)) && (group_of_rows < n_groups_of_rows - 1) && (col >= 0) && (col <= pair.haplen))
 				{
 					g_lastX[col] = x; // GLOBAL MEMORY ACCESS
 					g_lastY[col] = y; // GLOBAL MEMORY ACCESS
 					g_lastM[col] = m; // GLOBAL MEMORY ACCESS
 				}
 
-				if (/*col >= 0 && */col <= pair.haplen)
+				//__syncthreads();
+
+				if (col >= 0 && col <= pair.haplen)
 					sum_m_x += m + x;
 
-				s_xpp[TID] = s_xp[TID];	
-				s_ypp[TID] = s_yp[TID];	
-				s_mpp[TID] = s_mp[TID];
-				s_xp[TID] = x; 
-				s_yp[TID] = y; 
-				s_mp[TID] = m;
+				__syncthreads();
+				s_xpp[threadIdx.x] = s_xp[threadIdx.x];	
+				//__syncthreads();
+				s_ypp[threadIdx.x] = s_yp[threadIdx.x];	
+				//__syncthreads();
+				s_mpp[threadIdx.x] = s_mp[threadIdx.x];
+				//__syncthreads();
+				s_xp[threadIdx.x] = x; 
+				//__syncthreads();
+				s_yp[threadIdx.x] = y; 
+				//__syncthreads();
+				s_mp[threadIdx.x] = m;
+				__syncthreads();
+
 			} // end of the for (d = 2 to {number of diagonals}) 
+
+			__syncthreads();
 
 			if (row == pair.rslen) 
 			{
@@ -272,6 +290,8 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 				pair.status = (sum_m_x >= MIN_ACCEPTED<NUM>()) ? DONE : NOT_DONE;
 				g_pair[s_pair_index] = pair; // GLOBAL MEMORY ACCESS
 			}
+
+			__syncthreads();
 		} // end of the for (group_of rows = ...)
 	} // end of the for (;;)
 
@@ -281,17 +301,15 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 int create_chunk(vector<Pair> &pairs, string &chunk)
 {
 	vector<Pair>().swap(pairs); 
-	string("").swap(chunk);
+	chunk.clear();
 
 	int current_offset = 0;
-	std::string hap, rs, q, i, d, c, i1, i2;
+	std::string hap, rs, q, i, d, c, i1, i2, tchunk;
 	while (pairs.size() < NUM_OF_TESTCASES_PER_ITERATION && (cin >> hap >> rs >> q >> i >> d >> c >> i1 >> i2).good())
 	{
-		string tchunk("");
-		int tchunk_sz = hap.size() + 1 + rs.size() + 1; 
+		tchunk.clear();
 		tchunk = hap + string(1, '\0') + rs + string(1, '\0');
-		tchunk += string(GAP_TO(tchunk_sz, 4), '\0');
-		tchunk_sz += GAP_TO(tchunk_sz, 4);
+		tchunk += string(GAP_TO(tchunk.size()/*tchunk_sz*/, 4), '\0');
 
 		for (int x = 0; x < rs.size(); x++)
 		{
@@ -300,14 +318,9 @@ int create_chunk(vector<Pair> &pairs, string &chunk)
 			char td = (d[x] - 33) & 127;
 			char tc = (c[x] - 33) & 127;
 			tchunk += string(1, tq) + string(1, ti) + string(1, td) + string(1, tc);
-			tchunk_sz += 4;
 		}
 		tchunk += string(4, '\0');
-		tchunk_sz += 4;
-
-	  assert(tchunk.size() == tchunk_sz);
 		tchunk += string(GAP_TO(tchunk.size(), 128), '\0');
-		tchunk_sz += GAP_TO(tchunk_sz, 128);
 
 		Pair p;
 		p.status = NOT_DONE;
@@ -321,17 +334,14 @@ int create_chunk(vector<Pair> &pairs, string &chunk)
 
 		chunk += tchunk;
 		pairs.push_back(p);
-	  assert(tchunk_sz == tchunk.size());
 
 		current_offset += tchunk.size();
-		string("").swap(hap);
-		string("").swap(rs);
-		string("").swap(q);
-		string("").swap(i);
-		string("").swap(d);
-		string("").swap(c);
-		string("").swap(i1);
-		string("").swap(i2);
+		hap.clear();
+		rs.clear();
+		q.clear();
+		i.clear();
+		d.clear();
+		c.clear();
 	}
 
 	return pairs.size();
@@ -402,7 +412,7 @@ int main(void)
 		int *g_pair_index;
 		gpuErrchk( cudaMalloc(&g_pair_index, sizeof(int)) );
 
-		//cudaPrintfInit();
+//cudaPrintfInit();
 
 		void *g_last_lines;
 		gpuErrchk( cudaMalloc(&g_last_lines, NBLOCKS * MAX_HAPLEN * 3 * sizeof(double)) );
@@ -410,11 +420,12 @@ int main(void)
 		gpuErrchk( cudaMemset(g_pair_index, 0, sizeof(int)) );
 		compute_full_scores<NTHREADS, float><<<gridDim, blockDim>>>(g_chunk, pairs.size(), g_pair, g_pair_index, reinterpret_cast<float *>(g_last_lines));
 
+//cudaThreadSynchronize(); // agregado por si acaso... no es esto...
 		gpuErrchk( cudaMemset(g_pair_index, 0, sizeof(int)) );
 		compute_full_scores<NTHREADS, double><<<gridDim, blockDim>>>(g_chunk, pairs.size(), g_pair, g_pair_index, reinterpret_cast<double *>(g_last_lines));
 
-		//cudaPrintfDisplay();
-		//cudaPrintfEnd();
+//cudaPrintfDisplay();
+//cudaPrintfEnd();
 
 		gpuErrchk( cudaMemcpy(&(pairs[0]), g_pair, pairs.size() * sizeof(Pair), cudaMemcpyDeviceToHost) );
 

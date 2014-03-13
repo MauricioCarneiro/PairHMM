@@ -25,3 +25,5 @@ clean:
 	rm -f $(foreach bin,$(BIN),$(bin)-32)
 	rm -f $(foreach bin,$(BIN),$(bin)-64)
 	rm -f $(foreach bin,$(BIN),$(bin)-96)
+	rm -f *.precision
+	rm -f *.err
