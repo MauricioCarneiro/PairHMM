@@ -62,11 +62,9 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 	NUM *g_lastX = g_lastM + MAX_HAPLEN;
 	NUM *g_lastY = g_lastX + MAX_HAPLEN;
 
-__syncthreads();
 	__shared__ NUM s_xp[nThreads], s_yp[nThreads], s_mp[nThreads];
 	__shared__ NUM s_xpp[nThreads], s_ypp[nThreads], s_mpp[nThreads];
 
-__syncthreads();
 	// *********************************** </PERSISTENT VALUES> **********************************
 	// *******************************************************************************************
 
@@ -268,15 +266,11 @@ __syncthreads();
 
 				__syncthreads();
 				s_xpp[threadIdx.x] = s_xp[threadIdx.x];	
-				//__syncthreads();
 				s_ypp[threadIdx.x] = s_yp[threadIdx.x];	
-				//__syncthreads();
 				s_mpp[threadIdx.x] = s_mp[threadIdx.x];
-				//__syncthreads();
+				__syncthreads();
 				s_xp[threadIdx.x] = x; 
-				//__syncthreads();
 				s_yp[threadIdx.x] = y; 
-				//__syncthreads();
 				s_mp[threadIdx.x] = m;
 				__syncthreads();
 

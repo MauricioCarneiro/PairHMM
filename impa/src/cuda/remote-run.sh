@@ -13,7 +13,8 @@ launch_remote()
 
 		inp="test_data/"$testcase"Test.in"
 		ref="test_data/"$testcase"Test.out"
-		for threads in "32" "64" "96";
+		#for threads in "32" "64" "96";
+		for threads in "96";
 		do
 			o="reports/"$testcase"-$threads-$Host.out"
 			e="reports/"$testcase"-$threads-$Host.err"
