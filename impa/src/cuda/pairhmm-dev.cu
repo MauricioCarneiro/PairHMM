@@ -72,6 +72,8 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 	{
 		// *******************************************************************************************
 		// ************************************** <PICK A PAIR> **************************************
+		__syncthreads();
+
 		__shared__ Pair s_pair;
 		__shared__ int s_pair_index;
 
@@ -100,6 +102,8 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 		int n_groups_of_rows = ((pair.rslen + 1) + (nThreads - 1)) / nThreads;
 		for (int group_of_rows = 0; group_of_rows < n_groups_of_rows; group_of_rows++)
 		{
+			__syncthreads();
+
 			int row = group_of_rows * nThreads + threadIdx.x;
 
 			/******************************************************************************************
@@ -207,7 +211,7 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 				NUM m_up = NUM(0.0), x_up = NUM(0.0);
 				NUM m_left = s_mp[0], y_left = s_yp[0];
 
-				//__syncthreads();
+//__syncthreads();
 				if (threadIdx.x==0)
 				{
 					if (group_of_rows == 0)
@@ -217,7 +221,7 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 					}
 					else
 					{
-						if (col <= pair.haplen)
+						if (col > 0 && col <= pair.haplen)
 						{
 							hap = g_chunk[pair.offset_hap + (col-1)]; // GLOBAL MEMORY ACCESS
 							m_up_left = g_lastM[col-1]; // GLOBAL MEMORY ACCESS
@@ -250,8 +254,6 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 				x = m_up * mx + x_up * xx;
 				y = m_left * my + y_left * yy;
 
-				//__syncthreads();
-
 				if ((threadIdx.x == (nThreads-1)) && (group_of_rows < n_groups_of_rows - 1) && (col >= 0) && (col <= pair.haplen))
 				{
 					g_lastX[col] = x; // GLOBAL MEMORY ACCESS
@@ -259,22 +261,18 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 					g_lastM[col] = m; // GLOBAL MEMORY ACCESS
 				}
 
-				//__syncthreads();
+				__syncthreads(); // ?? this __syncthreads() has shown to be necessary, but it is not clear to me the reason. TO DO: Understand deeply what's happening in here. This code works, but it is mandatory to know why removing this __syncthreads() makes the program fail.
 
 				if (col >= 0 && col <= pair.haplen)
 					sum_m_x += m + x;
 
-				__syncthreads();
 				s_xpp[threadIdx.x] = s_xp[threadIdx.x];	
 				s_ypp[threadIdx.x] = s_yp[threadIdx.x];	
 				s_mpp[threadIdx.x] = s_mp[threadIdx.x];
-				__syncthreads();
 				s_xp[threadIdx.x] = x; 
 				s_yp[threadIdx.x] = y; 
 				s_mp[threadIdx.x] = m;
-				__syncthreads();
-
-			} // end of the for (d = 2 to {number of diagonals}) 
+			} // end of the for (d = 2 to {number of diagonals}). Always followed by __syncthreads();
 
 			__syncthreads();
 
@@ -284,9 +282,10 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 				pair.status = (sum_m_x >= MIN_ACCEPTED<NUM>()) ? DONE : NOT_DONE;
 				g_pair[s_pair_index] = pair; // GLOBAL MEMORY ACCESS
 			}
+		} // end of the for (group_of rows = ...). Always followed by __syncthreads();
 
-			__syncthreads();
-		} // end of the for (group_of rows = ...)
+		__syncthreads();
+
 	} // end of the for (;;)
 
 	return;
@@ -414,7 +413,7 @@ int main(void)
 		gpuErrchk( cudaMemset(g_pair_index, 0, sizeof(int)) );
 		compute_full_scores<NTHREADS, float><<<gridDim, blockDim>>>(g_chunk, pairs.size(), g_pair, g_pair_index, reinterpret_cast<float *>(g_last_lines));
 
-//cudaThreadSynchronize(); // agregado por si acaso... no es esto...
+cudaThreadSynchronize(); // agregado por si acaso... no es esto...
 		gpuErrchk( cudaMemset(g_pair_index, 0, sizeof(int)) );
 		compute_full_scores<NTHREADS, double><<<gridDim, blockDim>>>(g_chunk, pairs.size(), g_pair, g_pair_index, reinterpret_cast<double *>(g_last_lines));
 
