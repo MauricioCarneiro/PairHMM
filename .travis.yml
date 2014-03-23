@@ -1,5 +1,7 @@
 language: cpp
 compiler: gcc
+branches:
+  except: impa
 script:
   - make clean
   - make test10s
