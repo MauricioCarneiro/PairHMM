@@ -2,6 +2,7 @@
 #include <cassert>
 #include <string>
 #include <iostream>
+#include <fstream>
 #include <iomanip>
 #include <vector>
 #include <cstdlib>
@@ -12,8 +13,6 @@
 
 using std::string;
 using std::vector;
-using std::cin;
-using std::cout;
 using std::cerr;
 
 #define NOT_DONE 0
@@ -291,14 +290,14 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 	return;
 }
 
-int create_chunk(vector<Pair> &pairs, string &chunk)
+int create_chunk(std::istream &in, vector<Pair> &pairs, string &chunk)
 {
 	vector<Pair>().swap(pairs); 
 	chunk.clear();
 
 	int current_offset = 0;
 	std::string hap, rs, q, i, d, c, i1, i2, tchunk;
-	while (pairs.size() < NUM_OF_TESTCASES_PER_ITERATION && (cin >> hap >> rs >> q >> i >> d >> c >> i1 >> i2).good())
+	while (pairs.size() < NUM_OF_TESTCASES_PER_ITERATION && (in >> hap >> rs >> q >> i >> d >> c >> i1 >> i2).good())
 	{
 		tchunk.clear();
 		tchunk = hap + string(1, '\0') + rs + string(1, '\0');
@@ -374,10 +373,18 @@ private:
 	string title;
 };
 
-int main(void)
+int main(int argc, char *argv[])
 {
 	Timing TotalTime(string("TOTAL: "));
 	Timing ComputationTime(string("COMPUTATION: "));
+	if (argc < 3) {
+		std::cerr << argv[0] << " <input> <output>\n";
+		exit(1);
+  }
+	std::ofstream out;
+	std::ifstream in;
+	in.open(argv[1]); 
+	out.open(argv[2]); 
 
 	dim3 gridDim(NBLOCKS);
 	dim3 blockDim(NTHREADS);
@@ -385,7 +392,7 @@ int main(void)
 	string chunk;
 	vector<Pair> pairs;
 
-	while (create_chunk(pairs, chunk))
+	while (create_chunk(in, pairs, chunk))
 	{
 		ComputationTime.start();
 
@@ -422,9 +429,9 @@ cudaThreadSynchronize(); // agregado por si acaso... no es esto...
 
 		gpuErrchk( cudaMemcpy(&(pairs[0]), g_pair, pairs.size() * sizeof(Pair), cudaMemcpyDeviceToHost) );
 
-		cout << std::setprecision(16);
+		out << std::setprecision(16);
 		for (int p = 0; p < pairs.size(); p++)
-			cout << pairs[p].result << "\n";
+			out << pairs[p].result << "\n";
 
 		gpuErrchk( cudaFree(g_last_lines) );
 		gpuErrchk( cudaFree(g_pair) );
@@ -435,6 +442,9 @@ cudaThreadSynchronize(); // agregado por si acaso... no es esto...
 	}
 
 	TotalTime.acc();
+
+	out.close();
+	in.close();
 
 	return 0;
 }
