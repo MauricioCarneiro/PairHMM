@@ -8,7 +8,30 @@
 struct testcase
 {
 	int rslen, haplen, *q, *i, *d, *c;
-	char *hap, *rs;
+	char *hap, *hap_data, *rs;
+
+  testcase() : q(NULL), i(NULL), d(NULL), c(NULL), hap(NULL), hap_data(NULL), rs(NULL)
+  {
+	}
+
+  void free()
+  {
+	  delete[] hap_data;
+	  delete[] q;
+	  delete[] i;
+	  delete[] d;
+	  delete[] c;
+		delete[] rs;
+
+    hap_data = hap = rs = NULL;
+    q = i = d = c = NULL;
+    rslen = haplen = 0;
+  }
+
+	~testcase()
+	{
+      free();
+	}
 };
 
 int read_testcase(testcase *);
