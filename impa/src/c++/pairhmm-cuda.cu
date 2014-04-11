@@ -84,9 +84,10 @@ __device__ double __shfl_down(double d,unsigned int i){
 template<class NUMBER>
 __global__ void 
 __launch_bounds__(128,8)
-pairhmm_kernel(NUMBER* Xc0, NUMBER* Yr0, NUMBER* M, NUMBER *X, NUMBER *Y, 
+pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y, 
                                NUMBER* p, char* rs, char* hap, 
-                               int* q, double* ph2pr, int* offset, int n_mats) {
+                               int* q, double* ph2pr, int* offset, int n_mats,
+                               NUMBER* output, NUMBER log10_init) {
    NUMBER M_p, M_pp, X_p, X_pp, Y_p, Y_pp, distm, pMM, pGapM, pXX, 
           pMX, pYY, pMY, M_loc, X_loc, Y_loc;
    char _rs;
@@ -100,8 +101,7 @@ pairhmm_kernel(NUMBER* Xc0, NUMBER* Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
    int ROWS = offset[3*wid+4]-offset[3*wid+1];
    int COLS = offset[3*wid+5]-offset[3*wid+2];
    NUMBER M_top, X_top, Y_top, M_bottom, X_bottom, Y_bottom;
-   Xc0+=offset[3*wid+1];
-   Yr0+=offset[3*wid+2];
+   NUMBER result=0.0;
    M+=offset[3*wid];
    X+=offset[3*wid];
    Y+=offset[3*wid];
@@ -113,19 +113,19 @@ pairhmm_kernel(NUMBER* Xc0, NUMBER* Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
    for (int stripe = 0; stripe < ROWS; stripe+=WARP-1) {
       if ( stripe==0 && tid < 2) {
          M_pp=0.0;
-         X_pp=Xc0[0];
-         Y_pp=Yr0[0];
+         X_pp = 0.0;//X_pp=Xc0[0];
+         Y_pp=Yr0;
          M_p=0.0;
-         if (tid==1) X_p=Xc0[1];
+         if (tid==1) X_p = 0.0;//X_p=Xc0[1];
          else X_p=0.0;
-         if (tid==0) Y_p=Yr0[1];
+         if (tid==0) Y_p=Yr0;
          else Y_p=0.0;
       } else if (tid<2) {
          M_pp = 0.0;
-         X_pp = Xc0[stripe]; //X[stripe][0];
+         X_pp = 0.0; //X_pp = Xc0[stripe]; //X[stripe][0];
          Y_pp = 0.0;
          M_p = 0.0;
-         if (tid==1) X_p=Xc0[1];
+         if (tid==1) X_p=0.0; //X_p=Xc0[1];
          else X_p = X[stripe/(WARP-1)*COLS+1]; //M[stripe+tid][1-tid];
          if (tid==0) Y_p = Y[stripe/(WARP-1)*COLS+1]; //M[stripe+tid][1-tid];
          else Y_p = 0.0;
@@ -138,6 +138,7 @@ pairhmm_kernel(NUMBER* Xc0, NUMBER* Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
       _rs = rs[tid+stripe];
 	   _q = q[tid+stripe] & 127;
       }
+      //TODO transpose p for coalesced reads
       pMM = p[6*(tid+stripe)+MM];
       pGapM = p[6*(tid+stripe)+GapM];
       pXX = p[6*(tid+stripe)+XX];
@@ -171,7 +172,7 @@ pairhmm_kernel(NUMBER* Xc0, NUMBER* Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
             else distm = ph2pr[_q];
             if (tid == 0 && stripe == 0) {
                X_p = 0.0; 
-               Y_p = Yr0[c-1];
+               Y_p = Yr0;
                M_p = 0.0;
             } else if (tid == 0 && z > 1) {
                M_p = M_top;
@@ -190,11 +191,11 @@ pairhmm_kernel(NUMBER* Xc0, NUMBER* Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
             if (tid == z+1 && stripe==0) {
                M_p = 0.0;
                Y_p = 0.0;
-               X_p = Xc0[tid];
+               X_p = 0.0; //X_p = Xc0[tid];
             } else if (tid == z+1) {
                M_p = 0.0;
                Y_p = 0.0;
-               X_p = Xc0[tid+stripe]; //X[tid+stripe][0]
+               X_p = 0.0; //X_p = Xc0[tid+stripe]; //X[tid+stripe][0]
             } else {
                M_p = M_loc;
                X_p = X_loc;
@@ -208,6 +209,7 @@ pairhmm_kernel(NUMBER* Xc0, NUMBER* Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
                X[((r+WARP-2)/(WARP-1))*COLS+c] = X_loc;
                Y[((r+WARP-2)/(WARP-1))*COLS+c] = Y_loc;
             }
+            if (r==ROWS-1) result += M_loc + X_loc;
          }
 #if 0
          int write_tid=min(WARP-1, ROWS-stripe-1);
@@ -245,6 +247,8 @@ pairhmm_kernel(NUMBER* Xc0, NUMBER* Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
 #endif
       }
    }
+   if (tid == (ROWS-1)%(WARP-1)) output[wid] = log10(result) - log10_init; 
+   //if (tid == (ROWS-1)%(WARP-1)) output[wid] = result;
 }
 template<class NUMBER>
 struct GPUmem {
@@ -421,7 +425,7 @@ void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in,
 		int _c = tc->c[r-1] & 127;
 		p[r][MM] = ctx._(1.0) - ctx.ph2pr[(_i + _d) & 127];
 		p[r][GapM] = ctx._(1.0) - ctx.ph2pr[_c];
-		p[r][MX] = ctx.ph2pr[_i];http://www.thisweekinstupid.com/2014/04/08/the-naacp-doesnt-defend-black-conservatives/
+		p[r][MX] = ctx.ph2pr[_i];
 		p[r][XX] = ctx.ph2pr[_c];
 		p[r][MY] = (r == ROWS - 1) ? ctx._(1.0) : ctx.ph2pr[_d];
 		p[r][YY] = (r == ROWS - 1) ? ctx._(1.0) : ctx.ph2pr[_c];
@@ -453,6 +457,7 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    cudaError_t cuerr;
    NUMBER *M2;
    NUMBER *X2;
+   NUMBER *d_out;
 
    if (0==n_tc) {
       err = GPUmemFree<NUMBER>(gmem);
@@ -460,15 +465,16 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    }
    if (gmem.M==0) {
       err = GPUmemAlloc<NUMBER>(gmem);
-   }http://www.thisweekinstupid.com/2014/04/08/the-naacp-doesnt-defend-black-conservatives/
+   }
    gmem.index=0;
    for (int z=0;z<n_tc;z++)
    {
       err = tc2gmem<NUMBER>(gmem, &tc[z]);
    }
    cudaMalloc(&gmem.d_offset, sizeof(int)*3*(n_tc+1));
+   cudaMalloc(&d_out, sizeof(NUMBER)*n_tc);
    cudaMemcpy(gmem.d_offset, &gmem.offset[0][0], sizeof(int)*3*(n_tc+1), cudaMemcpyHostToDevice);
-   cudaMemcpy(gmem.d_Xc0, gmem.Xc0, sizeof(NUMBER)*gmem.offset[n_tc][1], cudaMemcpyHostToDevice);
+   //cudaMemcpy(gmem.d_Xc0, gmem.Xc0, sizeof(NUMBER)*gmem.offset[n_tc][1], cudaMemcpyHostToDevice);
    cudaMemcpy(gmem.d_Yr0, gmem.Yr0, sizeof(NUMBER)*gmem.offset[n_tc][2], cudaMemcpyHostToDevice);
    cudaMemcpy(gmem.d_p, gmem.p, sizeof(NUMBER)*gmem.offset[n_tc][1]*6, cudaMemcpyHostToDevice);
    cudaMemcpy(gmem.d_rs, gmem.rs, sizeof(char)*gmem.offset[n_tc][1], cudaMemcpyHostToDevice);
@@ -480,15 +486,16 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    if (cuerr) printf("Error in memcpy. %d : %s\n", cuerr, cudaGetErrorString(cuerr));
    //One warp handles one matrix
    
-   pairhmm_kernel<<<(n_tc+3)/4,WARP*4>>>( gmem.d_Xc0, gmem.d_Yr0, gmem.d_M, gmem.d_X, 
+   pairhmm_kernel<<<(n_tc+3)/4,WARP*4>>>( gmem.Yr0[0], gmem.d_M, gmem.d_X, 
                                   gmem.d_Y, gmem.d_p, 
                                   gmem.d_rs, gmem.d_hap, gmem.d_q, gmem.d_ph2pr,
-                                  gmem.d_offset, n_tc-1); 
+                                  gmem.d_offset, n_tc-1, d_out, ctx.LOG10_INITIAL_CONSTANT); 
    if (err) printf("Error!\n");
    cuerr = cudaGetLastError();
    if (cuerr) {
       printf ("Cuda error %d : %s\n", cuerr, cudaGetErrorString(cuerr));
    }
+#if 0
    //TODO Fix this!
    cudaMemcpy(gmem.M, gmem.d_M,
                   sizeof(NUMBER)*gmem.offset[n_tc][0]+1338,
@@ -511,8 +518,12 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    	if (before_last_log != NULL)
    		*before_last_log = result;	
 
-   	probs[z] = ctx.LOG10(result) - ctx.LOG10_INITIAL_CONSTANT;
+      probs[z] = ctx.LOG10(out[z]) - ctx.LOG10_INITIAL_CONSTANT;
    }
+#else
+   cudaMemcpy(probs, d_out, sizeof(NUMBER)*n_tc, cudaMemcpyDeviceToHost);
+#endif
+   cudaFree(d_out);
 } 
 template<class NUMBER>
 NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
@@ -654,6 +665,7 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
    }
    }
 #endif
+   NUMBER* d_out;
    NUMBER* d_M;
    NUMBER* d_X;
    NUMBER* d_Y;
@@ -687,13 +699,14 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
    cudaMemcpy(d_hap, tc->hap, sizeof(char)*COLS,cudaMemcpyHostToDevice);
    cudaMemcpy(d_q, tc->q, sizeof(int)*ROWS,cudaMemcpyHostToDevice);
    cudaMemcpy(d_ph2pr, ctx.ph2pr, sizeof(double)*128,cudaMemcpyHostToDevice);
+   cudaMalloc(d_out, sizeof(NUMBER));
    offsets[0]=0; offsets[1]=0; offsets[2]=0;
    offsets[3]=ROWS*COLS; offsets[4]=ROWS; offsets[5]=COLS;
    cudaMemcpy(d_offsets, offsets, sizeof(int)*100,cudaMemcpyHostToDevice);
    printf("%d ROWS, %d COLS\n", ROWS, COLS);
   
-   pairhmm_kernel<<<1,WARP>>>( d_Xc0, d_Yr0, d_M, d_X, d_Y, d_p, 
-                   d_rs, d_hap, d_q, d_ph2pr, d_offsets, 1); 
+   pairhmm_kernel<<<1,WARP>>>( Yr0[0], d_M, d_X, d_Y, d_p, 
+                   d_rs, d_hap, d_q, d_ph2pr, d_offsets, 1, d_out); 
 
    cudaMemcpy(M2[ROWS-1], d_M+COLS*(ROWS-1), sizeof(NUMBER)*COLS,cudaMemcpyDeviceToHost);
    cudaMemcpy(X2[ROWS-1], d_X+COLS*(ROWS-1), sizeof(NUMBER)*COLS,cudaMemcpyDeviceToHost);
@@ -728,6 +741,7 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
 	if (before_last_log != NULL)
 		*before_last_log = result;	
 
+   cudaFree(d_out);
 	return ctx.LOG10(result) - ctx.LOG10_INITIAL_CONSTANT;
 }
 
