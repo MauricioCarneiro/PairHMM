@@ -86,12 +86,12 @@ __global__ void
 __launch_bounds__(128,8)
 pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y, 
                                NUMBER* p, char* rs, char* hap, 
-                               int* q, double* ph2pr, int* offset, int n_mats,
+                               NUMBER* q, int* offset, int n_mats,
                                NUMBER* output, NUMBER log10_init) {
    NUMBER M_p, M_pp, X_p, X_pp, Y_p, Y_pp, distm, pMM, pGapM, pXX, 
           pMX, pYY, pMY, M_loc, X_loc, Y_loc;
    char _rs;
-   int _q;
+   NUMBER _q;
    int tid = threadIdx.x;
    int wid = blockIdx.x;
    //Fake wid,tid to allow for larger blocks
@@ -109,7 +109,6 @@ pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
    rs+=offset[3*wid+1];
    hap+=offset[3*wid+2];
    q+=offset[3*wid+1];
-   ph2pr+=128*wid;
    for (int stripe = 0; stripe < ROWS; stripe+=WARP-1) {
       if ( stripe==0 && tid < 2) {
          M_pp=0.0;
@@ -133,10 +132,10 @@ pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
       //TODO pad instead
       if (tid>0) {
       _rs = rs[tid-1+stripe];
-	   _q = q[tid-1+stripe] & 127;
+	   _q = q[tid-1+stripe];
       } else {
       _rs = rs[tid+stripe];
-	   _q = q[tid+stripe] & 127;
+	   _q = q[tid+stripe];
       }
       //TODO transpose p for coalesced reads
       pMM = p[6*(tid+stripe)+MM];
@@ -166,10 +165,10 @@ pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
             if (c>0) {
             char _hap = hap[c-1];
 			   if (_rs == _hap || _rs == 'N' || _hap == 'N')
-			   	distm = double(1.0) - ph2pr[_q];
-            else distm = ph2pr[_q];
+			   	distm = double(1.0) - _q;
+            else distm = _q;
             }
-            else distm = ph2pr[_q];
+            else distm = _q;
             if (tid == 0 && stripe == 0) {
                X_p = 0.0; 
                Y_p = Yr0;
@@ -270,12 +269,10 @@ struct GPUmem {
    NUMBER* Yr0;
    char* rs;
    char* hap;
-   int* q;
-   double* ph2pr;
+   NUMBER* q;
    char* d_rs;
    char* d_hap;
-   int* d_q; 
-   double *d_ph2pr;
+   NUMBER* d_q; 
    GPUmem() {M=0;};
 }; 
 template<class NUMBER>
@@ -294,8 +291,9 @@ int tc2gmem(GPUmem<NUMBER>& gmem, testcase* tc)
 	NUMBER Y[ROWS][COLS];
    NUMBER Yr0[COLS];
 	NUMBER p[ROWS][6];
+   NUMBER q_new[ROWS];
    if (ROWS==1 || COLS==1) return 0;
-   extract_tc(&M[0][0],&X[0][0],&Y[0][0],&p[0][0],Xc0,Yr0,tc);
+   extract_tc(&M[0][0],&X[0][0],&Y[0][0],&p[0][0],Xc0,Yr0,q_new,tc);
    //TODO check data sizes first
    //      return error if we're out of space
    memcpy(gmem.Xc0+gmem.offset[gmem.index][1],Xc0, sizeof(NUMBER)*ROWS);
@@ -303,8 +301,7 @@ int tc2gmem(GPUmem<NUMBER>& gmem, testcase* tc)
    memcpy(gmem.p+gmem.offset[gmem.index][1]*6, &p[0][0], sizeof(NUMBER)*ROWS*6);
    memcpy(gmem.rs+gmem.offset[gmem.index][1], tc->rs, sizeof(char)*ROWS);
    memcpy(gmem.hap+gmem.offset[gmem.index][2], tc->hap, sizeof(char)*COLS);
-   memcpy(gmem.q+gmem.offset[gmem.index][1], tc->q, sizeof(int)*ROWS);
-   memcpy(gmem.ph2pr+128*gmem.index, ctx.ph2pr, sizeof(double)*128);
+   memcpy(gmem.q+gmem.offset[gmem.index][1], q_new, sizeof(NUMBER)*ROWS);
    //gmem.offset[gmem.index+1][0] = gmem.offset[gmem.index][0] + ROWS*COLS;
    gmem.offset[gmem.index+1][0] = gmem.offset[gmem.index][0] + ((ROWS+WARP-2)/(WARP-1))*COLS;
    //printf("ROWS/COLS = %d/%d, offset[%d] = %d\n", ROWS, COLS, gmem.index+1, gmem.offset[gmem.index+1][0]);
@@ -335,13 +332,11 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
    cudaMalloc(&gmem.d_Xc0, totalMem/66);
    gmem.Xc0 = (NUMBER*)malloc(totalMem/66);
    cudaMalloc(&gmem.d_q, totalMem/66);
-   gmem.q = (int*)malloc(totalMem/66);
+   gmem.q = (NUMBER*)malloc(totalMem/66);
    cudaMalloc(&gmem.d_rs, 700000);
    gmem.rs = (char*)malloc(700000);
    cudaMalloc(&gmem.d_hap, 700000);
    gmem.hap = (char*)malloc(700000);
-   cudaMalloc(&gmem.d_ph2pr, totalMem/4);
-   gmem.ph2pr = (double*)malloc(totalMem/4);
    err = cudaGetLastError();
    if (err) printf("cudaMalloc error %d: %s\n", err, cudaGetErrorString(err));
    if (err) return 9000+err;
@@ -353,8 +348,7 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
        !gmem.rs ||
        !gmem.Yr0 ||
        !gmem.Xc0 ||
-       !gmem.hap ||
-       !gmem.ph2pr) {
+       !gmem.hap) {
       printf("CPU mem allocation fail\n");
       return 1;
    }
@@ -394,14 +388,12 @@ int GPUmemFree(GPUmem<NUMBER>& gmem)
    cudaFree(gmem.d_hap);
    free(gmem.hap);
    gmem.hap=0;
-   cudaFree(gmem.d_ph2pr);
-   free(gmem.ph2pr);
-   gmem.ph2pr=0;
    return 0;
 }
 template<class NUMBER>
 void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in, 
-                NUMBER* p_in, NUMBER* Xc0, NUMBER* Yr0, testcase* tc)
+                NUMBER* p_in, NUMBER* Xc0, NUMBER* Yr0, 
+                NUMBER* q_new, testcase* tc)
 {
 	int ROWS = tc->rslen + 1;
 	int COLS = tc->haplen + 1;
@@ -448,6 +440,10 @@ void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in,
 		Y[r][0] = ctx._(0.0);
 		Xc0[r] = Xc0[r-1] * p[r][XX];
 	}
+	for (r = 0; r < ROWS; r++)
+   {
+      q_new[r] = ctx.ph2pr[tc->q[r] & 127];
+   }
 }
 
 template<class NUMBER>
@@ -474,20 +470,19 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    cudaMalloc(&d_out, sizeof(NUMBER)*n_tc);
    cudaMemcpy(gmem.d_offset, &gmem.offset[0][0], sizeof(int)*3*(n_tc+1), cudaMemcpyHostToDevice);
    //cudaMemcpy(gmem.d_Xc0, gmem.Xc0, sizeof(NUMBER)*gmem.offset[n_tc][1], cudaMemcpyHostToDevice);
-   cudaMemcpy(gmem.d_Yr0, gmem.Yr0, sizeof(NUMBER)*gmem.offset[n_tc][2], cudaMemcpyHostToDevice);
+   //cudaMemcpy(gmem.d_Yr0, gmem.Yr0, sizeof(NUMBER)*gmem.offset[n_tc][2], cudaMemcpyHostToDevice);
    cudaMemcpy(gmem.d_p, gmem.p, sizeof(NUMBER)*gmem.offset[n_tc][1]*6, cudaMemcpyHostToDevice);
    cudaMemcpy(gmem.d_rs, gmem.rs, sizeof(char)*gmem.offset[n_tc][1], cudaMemcpyHostToDevice);
    cudaMemcpy(gmem.d_hap, gmem.hap, sizeof(char)*gmem.offset[n_tc][2], cudaMemcpyHostToDevice);
-   cudaMemcpy(gmem.d_q, gmem.q, sizeof(int)*gmem.offset[n_tc][1], cudaMemcpyHostToDevice);
+   cudaMemcpy(gmem.d_q, gmem.q, sizeof(NUMBER)*gmem.offset[n_tc][1], cudaMemcpyHostToDevice);
    fflush(0);
-   cudaMemcpy(gmem.d_ph2pr, gmem.ph2pr, sizeof(NUMBER)*n_tc*128, cudaMemcpyHostToDevice);
    cuerr= cudaGetLastError();
    if (cuerr) printf("Error in memcpy. %d : %s\n", cuerr, cudaGetErrorString(cuerr));
    //One warp handles one matrix
    
    pairhmm_kernel<<<(n_tc+3)/4,WARP*4>>>( gmem.Yr0[0], gmem.d_M, gmem.d_X, 
                                   gmem.d_Y, gmem.d_p, 
-                                  gmem.d_rs, gmem.d_hap, gmem.d_q, gmem.d_ph2pr,
+                                  gmem.d_rs, gmem.d_hap, gmem.d_q,
                                   gmem.d_offset, n_tc-1, d_out, ctx.LOG10_INITIAL_CONSTANT); 
    if (err) printf("Error!\n");
    cuerr = cudaGetLastError();
@@ -707,7 +702,7 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
    printf("%d ROWS, %d COLS\n", ROWS, COLS);
   
    pairhmm_kernel<<<1,WARP>>>( Yr0[0], d_M, d_X, d_Y, d_p, 
-                   d_rs, d_hap, d_q, d_ph2pr, d_offsets, 1, d_out); 
+                   d_rs, d_hap, d_q, d_offsets, 1, d_out); 
 
    cudaMemcpy(M2[ROWS-1], d_M+COLS*(ROWS-1), sizeof(NUMBER)*COLS,cudaMemcpyDeviceToHost);
    cudaMemcpy(X2[ROWS-1], d_X+COLS*(ROWS-1), sizeof(NUMBER)*COLS,cudaMemcpyDeviceToHost);
@@ -765,7 +760,7 @@ int main(int argc, char* argv[])
          printf("Computing %d testcases\n", cnt+1);
          compute_full_prob_multiple<double>(prob, tc, cnt+1, gmem);
          for (int q=0;q<cnt+1;q++)
-		      printf("%E\n", q+basecnt, prob[q]);
+		      printf("ans %d: %E\n", q+basecnt, prob[q]);
          cnt = -1;
          basecnt+=800;
       }
