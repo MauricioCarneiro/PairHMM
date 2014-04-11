@@ -100,7 +100,7 @@ pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
    if (wid > n_mats) return;
    int ROWS = offset[3*wid+4]-offset[3*wid+1];
    int COLS = offset[3*wid+5]-offset[3*wid+2];
-   NUMBER M_top, X_top, Y_top, M_bottom, X_bottom, Y_bottom;
+   NUMBER M_top, X_top, Y_top;
    NUMBER result=0.0;
    M+=offset[3*wid];
    X+=offset[3*wid];
@@ -212,6 +212,7 @@ pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
             if (r==ROWS-1) result += M_loc + X_loc;
          }
 #if 0
+         NUMBER M_bottom, X_bottom, Y_bottom;
          int write_tid=min(WARP-1, ROWS-stripe-1);
          //shuffle from write_tid to the last thread in the warp
          M_bottom = __shfl_down(M_bottom, 1);
@@ -455,8 +456,6 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    Context<NUMBER> ctx;
    int err;
    cudaError_t cuerr;
-   NUMBER *M2;
-   NUMBER *X2;
    NUMBER *d_out;
 
    if (0==n_tc) {
@@ -496,6 +495,8 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
       printf ("Cuda error %d : %s\n", cuerr, cudaGetErrorString(cuerr));
    }
 #if 0
+   NUMBER *M2;
+   NUMBER *X2;
    //TODO Fix this!
    cudaMemcpy(gmem.M, gmem.d_M,
                   sizeof(NUMBER)*gmem.offset[n_tc][0]+1338,
