@@ -755,18 +755,16 @@ int main(int argc, char* argv[])
   
    std::ifstream infile;
 
-   std::cout << (char*)argv[1] << std::endl;
-
    infile.open((char*) argv[1]);
   
 #if 1
-	while (read_testcase(tc+cnt,infile) == 0)
+	while (read_testcase(tc+cnt) == 0)
    {
       if (cnt==799) {
          printf("Computing %d testcases\n", cnt+1);
          compute_full_prob_multiple<double>(prob, tc, cnt+1, gmem);
          for (int q=0;q<cnt+1;q++)
-		      printf("ans %d: %E\n", q+basecnt, prob[q]);
+		      printf("%E\n", q+basecnt, prob[q]);
          cnt = -1;
          basecnt+=800;
       }
