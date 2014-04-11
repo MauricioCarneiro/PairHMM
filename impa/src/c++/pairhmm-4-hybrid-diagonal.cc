@@ -5,6 +5,8 @@
 #include <cmath>
 #include <iostream>
 
+#include "timing.h"
+
 #include "input.h"
 
 #define MM 0
@@ -193,6 +195,10 @@ double compute_full_prob(testcase *tc, char *done)
 
 int main()
 {
+	Timing TotalTime(string("TOTAL: "));
+	Timing ComputationTime(string("COMPUTATION: "));
+
+	TotalTime.start();
 	testcase tc[MAX_TESTCASES_BUNCH_SIZE];
 	double result[MAX_TESTCASES_BUNCH_SIZE];
 	char done[MAX_TESTCASES_BUNCH_SIZE];
@@ -202,6 +208,7 @@ int main()
 	{
 		num_tests = read_a_bunch_of_testcases(tc, MAX_TESTCASES_BUNCH_SIZE);
 
+		ComputationTime.start();
 		#pragma omp parallel for schedule(dynamic)
 		for (int j = 0; j < num_tests; j++)
 		{
@@ -209,11 +216,12 @@ int main()
 			if (!done[j])
 				result[j] = compute_full_prob<double>(tc + j, done + j);
 		}
-
+		ComputationTime.acc();
 		for (int j = 0; j < num_tests; j++)
 			printf("%f\n", result[j]);
 	} while (num_tests == MAX_TESTCASES_BUNCH_SIZE);
 
+	TotalTime.acc();
 	return 0;
 }
 

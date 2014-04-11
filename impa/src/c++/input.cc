@@ -24,8 +24,8 @@ int read_testcase(testcase *tc)
 
 	int sz = 1 + ((tc->rslen + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
 
-    tc->hap = new char[tc->haplen + 2 * (sz-1) + 1]();
-    tc->hap += (sz-1);
+    tc->hap_data = new char[tc->haplen + 2 * (sz-1) + 1]();
+    tc->hap = tc->hap_data + (sz-1);
     tc->rs = new char[sz]();
     tc->q = new int[sz]();
     tc->i = new int[sz]();

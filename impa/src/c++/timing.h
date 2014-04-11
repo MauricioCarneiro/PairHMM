@@ -1,24 +1,44 @@
 #ifndef TIMING_H
 #define TIMING_H
 
-#include <chrono>
-#include <iostream>
+#include <ctime>
+#include <sys/time.h>
+#include <string>
 
-class Timing {       // Report elapsed lifetime of object
+using std::string;
+
+class Timing
+{
 public:
-    Timing(): m_start(now()) {}
-    ~Timing() {
-        using us = std::chrono::microseconds;
-        double t = std::chrono::duration_cast<us>(now()-m_start).count();
-        std::cerr << t/1.0e6 << "\n";
-    }
+	Timing(string t) : st(now()), tot(0.0), title(t)
+	{
+	}
+
+	~Timing()
+	{
+		std::cerr << title << tot << " seconds\n";
+	}
+
+	void start()
+	{
+		st = now();
+	}
+
+	void acc()
+	{
+		tot += (now() - st);
+	}
+
 private:
-    using time_point =
-        std::chrono::time_point<std::chrono::high_resolution_clock>;
-    static time_point now() {
-        return std::chrono::high_resolution_clock::now();
-    }
-    time_point m_start;
+	static double now()
+	{
+		struct timeval v;
+		gettimeofday(&v, (struct timezone *) NULL);
+		return v.tv_sec + v.tv_usec/1.0e6;
+	}
+
+	double st, tot;
+	string title;
 };
 
 #endif

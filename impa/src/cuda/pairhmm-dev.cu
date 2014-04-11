@@ -2,6 +2,7 @@
 #include <cassert>
 #include <string>
 #include <iostream>
+#include <fstream>
 #include <iomanip>
 #include <vector>
 #include <cstdlib>
@@ -12,8 +13,6 @@
 
 using std::string;
 using std::vector;
-using std::cin;
-using std::cout;
 using std::cerr;
 
 #define NOT_DONE 0
@@ -62,11 +61,9 @@ __global__ void compute_full_scores(char *g_chunk, int num_of_pairs, Pair *g_pai
 	NUM *g_lastX = g_lastM + MAX_HAPLEN;
 	NUM *g_lastY = g_lastX + MAX_HAPLEN;
 
-__syncthreads();
 	__shared__ NUM s_xp[nThreads], s_yp[nThreads], s_mp[nThreads];
 	__shared__ NUM s_xpp[nThreads], s_ypp[nThreads], s_mpp[nThreads];
 
-__syncthreads();
 	// *********************************** </PERSISTENT VALUES> **********************************
 	// *******************************************************************************************
 
@@ -74,6 +71,8 @@ __syncthreads();
 	{
 		// *******************************************************************************************
 		// ************************************** <PICK A PAIR> **************************************
+		__syncthreads();
+
 		__shared__ Pair s_pair;
 		__shared__ int s_pair_index;
 
@@ -102,6 +101,8 @@ __syncthreads();
 		int n_groups_of_rows = ((pair.rslen + 1) + (nThreads - 1)) / nThreads;
 		for (int group_of_rows = 0; group_of_rows < n_groups_of_rows; group_of_rows++)
 		{
+			__syncthreads();
+
 			int row = group_of_rows * nThreads + threadIdx.x;
 
 			/******************************************************************************************
@@ -209,7 +210,7 @@ __syncthreads();
 				NUM m_up = NUM(0.0), x_up = NUM(0.0);
 				NUM m_left = s_mp[0], y_left = s_yp[0];
 
-				//__syncthreads();
+//__syncthreads();
 				if (threadIdx.x==0)
 				{
 					if (group_of_rows == 0)
@@ -219,7 +220,7 @@ __syncthreads();
 					}
 					else
 					{
-						if (col <= pair.haplen)
+						if (col > 0 && col <= pair.haplen)
 						{
 							hap = g_chunk[pair.offset_hap + (col-1)]; // GLOBAL MEMORY ACCESS
 							m_up_left = g_lastM[col-1]; // GLOBAL MEMORY ACCESS
@@ -252,8 +253,6 @@ __syncthreads();
 				x = m_up * mx + x_up * xx;
 				y = m_left * my + y_left * yy;
 
-				//__syncthreads();
-
 				if ((threadIdx.x == (nThreads-1)) && (group_of_rows < n_groups_of_rows - 1) && (col >= 0) && (col <= pair.haplen))
 				{
 					g_lastX[col] = x; // GLOBAL MEMORY ACCESS
@@ -261,26 +260,18 @@ __syncthreads();
 					g_lastM[col] = m; // GLOBAL MEMORY ACCESS
 				}
 
-				//__syncthreads();
+				__syncthreads(); // ?? this __syncthreads() has shown to be necessary, but it is not clear to me the reason. TO DO: Understand deeply what's happening in here. This code works, but it is mandatory to know why removing this __syncthreads() makes the program fail.
 
 				if (col >= 0 && col <= pair.haplen)
 					sum_m_x += m + x;
 
-				__syncthreads();
 				s_xpp[threadIdx.x] = s_xp[threadIdx.x];	
-				//__syncthreads();
 				s_ypp[threadIdx.x] = s_yp[threadIdx.x];	
-				//__syncthreads();
 				s_mpp[threadIdx.x] = s_mp[threadIdx.x];
-				//__syncthreads();
 				s_xp[threadIdx.x] = x; 
-				//__syncthreads();
 				s_yp[threadIdx.x] = y; 
-				//__syncthreads();
 				s_mp[threadIdx.x] = m;
-				__syncthreads();
-
-			} // end of the for (d = 2 to {number of diagonals}) 
+			} // end of the for (d = 2 to {number of diagonals}). Always followed by __syncthreads();
 
 			__syncthreads();
 
@@ -290,22 +281,23 @@ __syncthreads();
 				pair.status = (sum_m_x >= MIN_ACCEPTED<NUM>()) ? DONE : NOT_DONE;
 				g_pair[s_pair_index] = pair; // GLOBAL MEMORY ACCESS
 			}
+		} // end of the for (group_of rows = ...). Always followed by __syncthreads();
 
-			__syncthreads();
-		} // end of the for (group_of rows = ...)
+		__syncthreads();
+
 	} // end of the for (;;)
 
 	return;
 }
 
-int create_chunk(vector<Pair> &pairs, string &chunk)
+int create_chunk(std::istream &in, vector<Pair> &pairs, string &chunk)
 {
 	vector<Pair>().swap(pairs); 
 	chunk.clear();
 
 	int current_offset = 0;
 	std::string hap, rs, q, i, d, c, i1, i2, tchunk;
-	while (pairs.size() < NUM_OF_TESTCASES_PER_ITERATION && (cin >> hap >> rs >> q >> i >> d >> c >> i1 >> i2).good())
+	while (pairs.size() < NUM_OF_TESTCASES_PER_ITERATION && (in >> hap >> rs >> q >> i >> d >> c >> i1 >> i2).good())
 	{
 		tchunk.clear();
 		tchunk = hap + string(1, '\0') + rs + string(1, '\0');
@@ -381,10 +373,18 @@ private:
 	string title;
 };
 
-int main(void)
+int main(int argc, char *argv[])
 {
 	Timing TotalTime(string("TOTAL: "));
 	Timing ComputationTime(string("COMPUTATION: "));
+	if (argc < 3) {
+		std::cerr << argv[0] << " <input> <output>\n";
+		exit(1);
+  }
+	std::ofstream out;
+	std::ifstream in;
+	in.open(argv[1]); 
+	out.open(argv[2]); 
 
 	dim3 gridDim(NBLOCKS);
 	dim3 blockDim(NTHREADS);
@@ -392,7 +392,7 @@ int main(void)
 	string chunk;
 	vector<Pair> pairs;
 
-	while (create_chunk(pairs, chunk))
+	while (create_chunk(in, pairs, chunk))
 	{
 		ComputationTime.start();
 
@@ -420,7 +420,7 @@ int main(void)
 		gpuErrchk( cudaMemset(g_pair_index, 0, sizeof(int)) );
 		compute_full_scores<NTHREADS, float><<<gridDim, blockDim>>>(g_chunk, pairs.size(), g_pair, g_pair_index, reinterpret_cast<float *>(g_last_lines));
 
-//cudaThreadSynchronize(); // agregado por si acaso... no es esto...
+cudaThreadSynchronize(); // agregado por si acaso... no es esto...
 		gpuErrchk( cudaMemset(g_pair_index, 0, sizeof(int)) );
 		compute_full_scores<NTHREADS, double><<<gridDim, blockDim>>>(g_chunk, pairs.size(), g_pair, g_pair_index, reinterpret_cast<double *>(g_last_lines));
 
@@ -429,9 +429,9 @@ int main(void)
 
 		gpuErrchk( cudaMemcpy(&(pairs[0]), g_pair, pairs.size() * sizeof(Pair), cudaMemcpyDeviceToHost) );
 
-		cout << std::setprecision(16);
+		out << std::setprecision(16);
 		for (int p = 0; p < pairs.size(); p++)
-			cout << pairs[p].result << "\n";
+			out << pairs[p].result << "\n";
 
 		gpuErrchk( cudaFree(g_last_lines) );
 		gpuErrchk( cudaFree(g_pair) );
@@ -442,6 +442,9 @@ int main(void)
 	}
 
 	TotalTime.acc();
+
+	out.close();
+	in.close();
 
 	return 0;
 }

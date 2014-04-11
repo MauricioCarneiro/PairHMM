@@ -5,6 +5,8 @@
 #include <cmath>
 #include <iostream>
 
+#include "timing.h"
+
 #include "input.h"
 
 #define MM 0
@@ -136,6 +138,11 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
 
 int main()
 {
+	Timing TotalTime(string("TOTAL: "));
+	Timing ComputationTime(string("COMPUTATION: "));
+
+	TotalTime.start();
+
 	testcase tc[100];
 	double result[100];
 	int ntcs = 0, j;
@@ -143,13 +150,16 @@ int main()
 	do
 	{
 		for (ntcs = 0; (ntcs < 100) && (read_testcase(tc + ntcs) == 0); ntcs++);
-
+		ComputationTime.start();
 		#pragma omp parallel for schedule(dynamic)
 		for (j = 0; j < ntcs; j++)
 			result[j] = compute_full_prob<double>(tc + j);
+		ComputationTime.acc();
 		for (j = 0; j < ntcs; j++)
 			printf("%E\n", result[j]);
 	} while (ntcs == 100);
+
+	TotalTime.acc();
 
 	return 0;
 }

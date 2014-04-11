@@ -1,4 +1,7 @@
-all:	cudadevprops matcmp statistics curr2cuda extract_answers timeformatter firstnotacceptable adaptcsv
+all:	cudadevprops matcmp statistics curr2cuda extract_answers timeformatter firstnotacceptable adaptcsv convertformat
+
+convertformat:	.FORCE
+	g++ convert-format.cc -o convert-format
 
 cudadevprops:	.FORCE
 	nvcc cudaDevProps.cu -o cudaDevProps
@@ -28,7 +31,7 @@ maxlen: .FORCE
 	g++ max-len.cc -O2 -o max-len
 
 clean:
-	rm -f cudaDevProps max-len matcmp statistics curr2cuda extract_answers timeformatter firstnotacceptable adaptcsv
+	rm -f convert-format cudaDevProps max-len matcmp statistics curr2cuda extract_answers timeformatter firstnotacceptable adaptcsv
 
 .FORCE:
 

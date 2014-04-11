@@ -5,6 +5,8 @@
 #include <cmath>
 #include <iostream>
 
+#include "timing.h"
+
 #include "input.h"
 
 #define MM 0
@@ -136,10 +138,22 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
 
 int main()
 {
+	Timing TotalTime(string("TOTAL: "));
+	Timing ComputationTime(string("COMPUTATION: "));
+
+	TotalTime.start();
 	testcase tc;
 
 	while (read_testcase(&tc) == 0)
-		printf("%E\n", compute_full_prob<double>(&tc));
+	{
+		ComputationTime.start();
+		double j=compute_full_prob<double>(&tc);
+		ComputationTime.acc();
+		printf("%E\n", j);
+    tc.free();
+	}
+
+	TotalTime.acc();
 	return 0;
 }
 
