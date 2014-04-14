@@ -17,12 +17,12 @@ struct Haplotype {
   explicit Haplotype(const std::vector<QUAL_TYPE>& bases_, const size_t original_length_ = 0) : 
     original_length{original_length_},
     bases {bases_}
-  {};
+  {}
 
   explicit Haplotype(const std::string& bases_, const size_t original_length_ = 0) :
     original_length{original_length_},
     bases {convert_bytes<std::vector<QUAL_TYPE>>(bases_)}
-  {};
+  {}
 };
 
 template <class QUAL_TYPE>

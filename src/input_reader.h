@@ -12,13 +12,11 @@ class InputReader {
  public:
   
   InputReader() = default;
-  ~InputReader() {
-    file_stream.close();
-  }
+  ~InputReader() { file_stream.close(); }
   InputReader(const InputReader&) = delete;
 
-  Iterator begin() { return Iterator{input_stream}; };
-  Iterator end()   { return Iterator{}; };
+  Iterator begin() { return Iterator{input_stream}; }
+  Iterator end()   { return Iterator{}; }
 
   void from_file(const std::string& filename) {
     file_stream.open(filename);

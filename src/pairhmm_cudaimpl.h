@@ -15,11 +15,12 @@ public:
   std::vector<double> calculate (const Testcase& testcase) {
     return Base::calculate(testcase);
   }
-  std::vector<PRECISION> calculate (const std::vector<Read<PRECISION,char>>& padded_reads) {
+  std::vector<PRECISION> calculate (const std::vector<Read<PRECISION,char>>& padded_reads,
+                                    const std::vector<Haplotype<PRECISION>>& padded_haplotypes) {
      int r=0, c=0, rc=0, n_mat=0;
      std::vector<int>offsets;
      auto results = std::vector<PRECISION>{};
-     results.reserve(padded_reads.size() * Base::m_padded_haplotypes.size());
+     results.reserve(padded_reads.size() * padded_haplotypes.size());
      GPUmem<PRECISION> gmem;
 
      //first count the rows, cols and r*c/WARP_SIZE
