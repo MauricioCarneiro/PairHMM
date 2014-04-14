@@ -14,6 +14,7 @@
 #include "pairhmm_vecimpl.h"
 #include "pairhmm_sseimpl.h"
 #include "pairhmm_avximpl.h"
+#include "pairhmm_cudaimpl.h"
 #include "chronos.h"
 
 using namespace std;
@@ -31,6 +32,8 @@ int main (const int argc, char const * const argv[]) {
     //PairhmmAVXDoubleImpl
     PairhmmAVXFloat2DiagsImpl,
     PairhmmAVXDouble2DiagsImpl
+    //PairhmmCudaImpl<double>,
+    //PairhmmCudaImpl<double>
   >{};
   InputReader<TestcaseIterator> reader {};
   if (argc == 2)

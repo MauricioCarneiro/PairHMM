@@ -103,6 +103,7 @@ public:
   static constexpr auto INITIAL_SIZE = 250;
   static constexpr auto MIN_ACCEPTED = constants_with_precision::MIN_ACCEPTED_WITH_PRECISION<PRECISION>();
   static constexpr auto FAILED_RUN_RESULT = std::numeric_limits<double>::min();
+  static constexpr auto GPU_WARP_SIZE = 32;
 
   template<class T>
     void pad (T& v, size_t padding) const {
@@ -153,7 +154,7 @@ public:
     return padded_read;
   }
 
-  std::vector<Read<PRECISION,PRECISION>> pad_reads(const std::vector<Read<uint8_t, uint8_t>>& reads) const {
+  virtual std::vector<Read<PRECISION,PRECISION>> pad_reads(const std::vector<Read<uint8_t, uint8_t>>& reads) const {
     auto padded_reads = std::vector<Read<PRECISION,PRECISION>>{};
     padded_reads.reserve(reads.size());
     for (auto& read : reads)
@@ -181,7 +182,7 @@ public:
     return do_compute_full_prob(read, haplotype);
   }
 
-  std::vector<double> calculate (const std::vector<Read<PRECISION,PRECISION>>& padded_reads) {
+  virtual std::vector<double> calculate (const std::vector<Read<PRECISION,PRECISION>>& padded_reads) {
     auto results = std::vector<double>{};
     results.reserve(padded_reads.size() * m_padded_haplotypes.size());
     for (const auto& read : padded_reads) {
