@@ -12,7 +12,7 @@ CUDAFLAGS= -Xptxas -v,-abi=no -arch=sm_35 $(USERFLAGS)
 
 ifeq ($(DEBUG),1)
    CFLAGS += -g
-   CUDAFLAGS += -G -lineinfo
+   CUDAFLAGS += -g -G -lineinfo
 endif
 
 LDFLAGS=-lm $(OMPLDFLAGS) $(CFLAGS)
@@ -51,9 +51,11 @@ pairhmm-8-sse:	pairhmm-8-sse.cc input.o
 pairhmm-dev: pairhmm-dev.o input.o
 	$(CXX) -o $@ $^ $(LDFLAGS)
 
-pairhmm-cuda: pairhmm-cuda.cu input.o
-	echo "Building pairhmm-cuda"
-	$(NVCC) -g -o $@ $^ $(CUDAFLAGS)
+compute_gpu.o: compute_gpu.cu compute_gpu.h
+	$(NVCC) -c -o $@ compute_gpu.cu $(CUDAFLAGS)
+ 
+pairhmm-cuda: pairhmm-cuda.cu compute_gpu.o input.o compute_gpu.h
+	$(NVCC) -o $@ pairhmm-cuda.cu compute_gpu.o input.o $(CUDAFLAGS)
 
 pairhmm-dbg: pairhmm-dbg.o input.o
 	$(CXX) -o $@ $^ $(LDFLAGS) -D DEBUG_MODE
