@@ -10,7 +10,6 @@
 struct testcase
 {
 	int rslen, haplen, *q, *i, *d, *c;
-   double foo, bar, baz, boop;
 	char *hap, *rs;
    void display()
    {
