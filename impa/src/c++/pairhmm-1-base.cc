@@ -136,7 +136,7 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
 	return ctx.LOG10(result) - ctx.LOG10_INITIAL_CONSTANT;
 }
 
-int main()
+int main(int argc, char** argv)
 {
 	Timing TotalTime(string("TOTAL: "));
 	Timing ComputationTime(string("COMPUTATION: "));
@@ -144,13 +144,17 @@ int main()
 	TotalTime.start();
 	testcase tc;
 
-	while (read_testcase(&tc) == 0)
+	std::ifstream infile;
+
+	if (argc > 1) infile.open(argv[1]);
+
+	while (read_testcase(&tc, argc>1 ? infile : std::cin) == 0)
 	{
 		ComputationTime.start();
 		double j=compute_full_prob<double>(&tc);
 		ComputationTime.acc();
 		printf("%E\n", j);
-    tc.free();
+		tc.free();
 	}
 
 	TotalTime.acc();

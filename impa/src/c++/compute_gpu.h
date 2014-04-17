@@ -14,6 +14,8 @@ struct GPUmem {
    int offset[2000][3];
    int* d_offset;
    int index;
+   char* d_amem; //these two get alloced, all else
+   char* amem;   //  are pointers within this allocation
    PRECISION* d_M;
    PRECISION* d_X;
    PRECISION* d_Y;

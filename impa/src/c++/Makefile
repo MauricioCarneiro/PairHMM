@@ -8,7 +8,7 @@ CXXFLAGS=$(CFLAGS)
 CC=gcc
 CXX=g++
 NVCC=nvcc 
-CUDAFLAGS= -Xptxas -v,-abi=no -arch=sm_35 $(USERFLAGS)
+CUDAFLAGS= -D__CONDENSE_MEM -Xptxas -v,-abi=no -arch=sm_35 $(USERFLAGS)
 
 ifeq ($(DEBUG),1)
    CFLAGS += -g

@@ -176,6 +176,21 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
       err = GPUmemAlloc<NUMBER>(gmem);
    }
    gmem.index=0;
+#if __CONDENSE_MEM
+   int total_rows=0;
+   int total_cols=0;
+   for (int z=0;z<n_tc;z++)
+   {
+      total_rows += tc[z].rslen+1;
+      total_cols += tc[z].haplen+1;
+   }
+   gmem.q = gmem.p + total_rows*6;
+   gmem.d_q = gmem.d_p + total_rows*6;
+   gmem.rs = (char*)(gmem.q + total_rows);
+   gmem.d_rs = (char*)(gmem.d_q + total_rows);
+   gmem.hap = gmem.rs + total_rows;
+   gmem.d_hap = gmem.d_rs + total_rows;
+#endif
    for (int z=0;z<n_tc;z++)
    {
       err = tc2gmem<NUMBER>(gmem, &tc[z]);
@@ -414,11 +429,14 @@ int main(int argc, char* argv[])
   
    std::ifstream infile;
 
-   infile.open((char*) argv[1]);
-  
-#if 1
-	while (read_testcase(tc+cnt) == 0)
+   if (argc>1) {
+      infile.open((char*) argv[1]);
+   } 
+   
+	while (read_testcase(tc+cnt, argc>1 ? infile: std::cin) == 0)
    {
+      //printf("In pairhmm-cuda: &tc[%d] = %p\n", cnt, tc+cnt);
+      //(tc+cnt)->display();
       if (cnt==1099) {
          printf("Computing %d testcases\n", cnt+1);
          compute_full_prob_multiple<double>(prob, tc, cnt+1, gmem);
@@ -441,12 +459,7 @@ int main(int argc, char* argv[])
 
    for (int q=0;q<cnt;q++)
      printf("ans %d: %E\n", q+basecnt, prob[q]);
-#else
-	while (read_testcase(tc,infile) == 0) {
-      printf("%E\n", compute_full_prob<double>(tc));
-      //if (1<cnt++) break;
-   }
-#endif
+
 	return 0;
 }
 

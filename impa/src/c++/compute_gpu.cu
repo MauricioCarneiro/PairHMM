@@ -18,7 +18,7 @@ __device__ double __shfl_down(double d,unsigned int i){
 
 template<class NUMBER>
 __global__ void 
-__launch_bounds__(128,8)
+__launch_bounds__(128,6)
 pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y, 
                                NUMBER* p, char* rs, char* hap, 
                                NUMBER* q, int* offset, int n_mats,
@@ -138,7 +138,7 @@ pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
             r = tid+stripe;
             c =  z-tid+1;
             //TODO shuffle M_out to write one time
-            if (tid>0 && c < COLS && (r==stripe+WARP-1 || r==ROWS-1)) {
+            if (tid>0 && c < COLS && (r==stripe+WARP-1 /*|| r==ROWS-1*/)) {
                M[((r+WARP-2)/(WARP-1))*COLS+c] = M_loc;
                X[((r+WARP-2)/(WARP-1))*COLS+c] = X_loc;
                Y[((r+WARP-2)/(WARP-1))*COLS+c] = Y_loc;
@@ -184,27 +184,54 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
    cudaDeviceProp deviceProp;
    cudaError_t err = cudaGetDeviceProperties(&deviceProp, 0);
    unsigned long long totalMem = deviceProp.totalGlobalMem/5;
-   //TODO 
-   //allocations based (very loosely) on ROWS=COLS=10
-   //TODO readjust sizes
-   cudaMalloc(&gmem.d_M, totalMem/10);
-   gmem.M = (NUMBER*)malloc(totalMem/10);
-   cudaMalloc(&gmem.d_X, totalMem/10);
-   gmem.X = (NUMBER*)malloc(totalMem/10);
-   cudaMalloc(&gmem.d_Y, totalMem/10);
-   gmem.Y = (NUMBER*)malloc(totalMem/10);
-   cudaMalloc(&gmem.d_p, totalMem/11);
-   gmem.p = (NUMBER*)malloc(totalMem/11);
-   cudaMalloc(&gmem.d_Yr0, totalMem/66);
-   gmem.Yr0 = (NUMBER*)malloc(totalMem/66);
-   cudaMalloc(&gmem.d_Xc0, totalMem/66);
-   gmem.Xc0 = (NUMBER*)malloc(totalMem/66);
-   cudaMalloc(&gmem.d_q, totalMem/66);
-   gmem.q = (NUMBER*)malloc(totalMem/66);
-   cudaMalloc(&gmem.d_rs, 700000);
-   gmem.rs = (char*)malloc(700000);
-   cudaMalloc(&gmem.d_hap, 700000);
-   gmem.hap = (char*)malloc(700000);
+   char *current, *d_current;
+   //TODO no need to assign d_M, etc.
+   //TODO remove Xc0
+   cudaMalloc(&gmem.d_amem, totalMem);
+   gmem.amem = (char*)malloc(totalMem);
+   d_current = (char*)gmem.d_amem;
+   current = (char*)gmem.amem;
+
+   gmem.d_M = (NUMBER*)d_current;
+   gmem.M = (NUMBER*)current;
+   current += totalMem/10; d_current += totalMem/10;
+
+   gmem.d_X = (NUMBER*)d_current;
+   gmem.X = (NUMBER*)current;
+   current += totalMem/10; d_current += totalMem/10;
+
+   gmem.d_Y = (NUMBER*)d_current;
+   gmem.Y = (NUMBER*)current;
+   current += totalMem/10; d_current += totalMem/10;
+
+   gmem.d_p = (NUMBER*)d_current;
+   gmem.p = (NUMBER*)current;
+   current += totalMem/10; d_current += totalMem/10;
+
+   gmem.d_q = (NUMBER*)d_current;
+   gmem.q = (NUMBER*)current;
+   current += totalMem/10; d_current += totalMem/10; 
+
+   gmem.d_rs = d_current;
+   gmem.rs = current;
+   current += 700000; d_current += 700000;
+
+   gmem.d_hap = d_current;
+   gmem.hap = current;
+   current += 700000; d_current += 700000;
+
+   gmem.d_Yr0 = (NUMBER*)d_current;
+   gmem.Yr0 = (NUMBER*)current;
+   current += totalMem/10; d_current += totalMem/10;
+
+   gmem.d_Xc0 = (NUMBER*)d_current;
+   gmem.Xc0 = (NUMBER*)current;
+   current += totalMem/10; d_current += totalMem/10;
+
+   if( current - (char*)gmem.amem > totalMem) {
+      printf("Error: Requested too much memory on GPU\n");
+      return 9000;
+   }
    err = cudaGetLastError();
    if (err) printf("cudaMalloc error %d: %s\n", err, cudaGetErrorString(err));
    if (err) return 9000+err;
@@ -225,36 +252,22 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
 template<class NUMBER>
 int GPUmemFree(GPUmem<NUMBER>& gmem) 
 {
-   if (0==gmem.M) {
+   if (0==gmem.amem) {
       return 0;
    }
+   cudaFree(gmem.d_amem);
+   free(gmem.amem);
+   gmem.d_amem = 0;
+   gmem.amem = 0;
    gmem.index=0;
-   cudaFree(gmem.d_M);
-   free(gmem.M);
    gmem.M=0;
-   cudaFree(gmem.d_X);
-   free(gmem.X);
    gmem.X=0;
-   cudaFree(gmem.d_Y);
-   free(gmem.Y);
    gmem.Y=0;
-   cudaFree(gmem.d_p);
-   free(gmem.p);
    gmem.p=0;
-   cudaFree(gmem.d_Yr0);
-   free(gmem.Yr0);
    gmem.Yr0=0;
-   cudaFree(gmem.d_Xc0);
-   free(gmem.Xc0);
    gmem.Xc0=0;
-   cudaFree(gmem.d_q);
-   free(gmem.q);
    gmem.q=0;
-   cudaFree(gmem.d_rs);
-   free(gmem.rs);
    gmem.rs=0;
-   cudaFree(gmem.d_hap);
-   free(gmem.hap);
    gmem.hap=0;
    return 0;
 }
@@ -271,17 +284,36 @@ void compute_gpu(int offset[][3], PRECISION* p, char* rs, char* hap, PRECISION* 
    PRECISION *d_out;
    cudaError_t cuerr;
 
+#if 0
+   printf("offset = \n");
+   for (int z=0;z<n_tc+1;z++) printf("%d:%d,%d,%d\n",z,offset[z][0], offset[z][1],offset[z][2]); 
+   printf("p = \n");
+   for (int z=0;z<offset[n_tc][1]*6;z++) printf("%d:%1.13f\n", z, p[z]);
+   printf("rs = ");
+   for (int z=0;z<offset[n_tc][1];z++) printf("%c", rs[z]);
+   printf("\nhap = ");
+   for (int z=0;z<offset[n_tc][2];z++) printf("%c", hap[z]);
+   printf("\nq = \n");
+   for (int z=0;z<offset[n_tc][1];z++) printf("%d:%e\n", z, q[z]);
+   printf("Yr0 = %e\n", Yr0);
+#endif
    if (0==gmem.M) {
       GPUmemAlloc<PRECISION>(gmem);
    }
    cudaMalloc(&d_out,  sizeof(PRECISION)*n_tc);
    cudaMalloc(&gmem.d_offset, sizeof(int)*3*(n_tc+1));
    cudaMemcpy(gmem.d_offset, &offset[0][0], sizeof(int)*3*(n_tc+1), cudaMemcpyHostToDevice);
+#ifdef __CONDENSE_MEM
+   cudaMemcpy(gmem.d_p, p, sizeof(PRECISION)*offset[n_tc][1]*6 +
+                           sizeof(PRECISION)*offset[n_tc][1] +
+                           sizeof(char)*offset[n_tc][1] +
+                           sizeof(char)*offset[n_tc][2], cudaMemcpyHostToDevice);
+#else
    cudaMemcpy(gmem.d_p, p, sizeof(PRECISION)*offset[n_tc][1]*6, cudaMemcpyHostToDevice);
+   cudaMemcpy(gmem.d_q, q, sizeof(PRECISION)*offset[n_tc][1], cudaMemcpyHostToDevice);
    cudaMemcpy(gmem.d_rs, rs, sizeof(char)*offset[n_tc][1], cudaMemcpyHostToDevice);
    cudaMemcpy(gmem.d_hap, hap, sizeof(char)*offset[n_tc][2], cudaMemcpyHostToDevice);
-   cudaMemcpy(gmem.d_q, q, sizeof(PRECISION)*offset[n_tc][1], cudaMemcpyHostToDevice);
-   fflush(0);
+#endif
    cuerr= cudaGetLastError();
    if (cuerr) printf("Error in memcpy. %d : %s\n", cuerr, cudaGetErrorString(cuerr));
    //One warp handles one matrix
@@ -296,36 +328,7 @@ void compute_gpu(int offset[][3], PRECISION* p, char* rs, char* hap, PRECISION* 
    if (cuerr) {
       printf ("Cuda error %d : %s\n", cuerr, cudaGetErrorString(cuerr));
    }
-#if 0
-   PRECISION *M2;
-   PRECISION *X2;
-   //TODO Fix this!
-   cudaMemcpy(gmem.M, gmem.d_M,
-                  sizeof(PRECISION)*gmem.offset[n_tc][0]+1338,
-                  cudaMemcpyDeviceToHost);
-   cudaMemcpy(gmem.X, gmem.d_X,
-                  sizeof(PRECISION)*gmem.offset[n_tc][0]+1338,
-                  cudaMemcpyDeviceToHost);
-   cuerr = cudaGetLastError();
-   if (cuerr) printf ("Memcpy(D2H) error %d : %s\n", cuerr, cudaGetErrorString(cuerr));
-   for (int z=0;z<n_tc;z++)
-   {
-      int ROWS = gmem.offset[z+1][1]-gmem.offset[z][1];
-      int COLS = gmem.offset[z+1][2]-gmem.offset[z][2];
-      M2 = gmem.M+gmem.offset[z][0]+COLS*(((ROWS-1)+WARP-2)/(WARP-1));
-      X2 = gmem.X+gmem.offset[z][0]+COLS*(((ROWS-1)+WARP-2)/(WARP-1));
-	   PRECISION result = 0.0;
-	   for (int c = 0; c < COLS; c++)
-	   	result += M2[c] + X2[c];
-
-   	if (before_last_log != NULL)
-   		*before_last_log = result;	
-
-      probs[z] = log10(out[z]) - LOG10_INITIAL_CONSTANT;
-   }
-#else
    cudaMemcpy(h_out, d_out, sizeof(PRECISION)*n_tc, cudaMemcpyDeviceToHost);
-#endif
    cudaFree(d_out);
    //GPUmemFree(gmem);
 }
