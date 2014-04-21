@@ -44,7 +44,7 @@ pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
    rs+=offset[3*wid+1];
    hap+=offset[3*wid+2];
    q+=offset[3*wid+1];
-   for (int stripe = 0; stripe < ROWS; stripe+=WARP-1) {
+   for (int stripe = 0; stripe < ROWS-1; stripe+=WARP-1) {
       if ( stripe==0 && tid < 2) {
          M_pp=0.0;
          X_pp = 0.0;//X_pp=Xc0[0];
@@ -64,7 +64,7 @@ pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
          if (tid==0) Y_p = Y[stripe/(WARP-1)*COLS+1]; //M[stripe+tid][1-tid];
          else Y_p = 0.0;
       }
-      //TODO pad instead
+      //TODO pad?
       if (tid>0) {
       _rs = rs[tid-1+stripe];
 	   _q = q[tid-1+stripe];
@@ -145,6 +145,7 @@ pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
             }
             if (r==ROWS-1) { 
                result += M_loc + X_loc;
+               //printf("stripe = %d t:%d b:%d result = %1.50E\n", stripe, threadIdx.x, blockIdx.x, result);
             }
          }
 #if 0
@@ -173,7 +174,8 @@ pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
          
       }
    }
-   if (tid == (ROWS-1)%(WARP-1)) {
+   if (tid == (ROWS-2)%(WARP-1)+1) {
+      //printf("t : %d  LOG10(%1.50E) = %1.50E\n", tid, result, log10(result));
       output[wid] = log10(result) - log10_init; 
    }
    //if (tid == (ROWS-1)%(WARP-1)) output[wid] = result;
