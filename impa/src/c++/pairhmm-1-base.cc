@@ -127,8 +127,9 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
 		}
 
 	NUMBER result = ctx._(0.0);
-	for (c = 0; c < COLS; c++)
+	for (c = 0; c < COLS; c++) {
 		result += M[ROWS-1][c] + X[ROWS-1][c];
+   }
 
 	if (before_last_log != NULL)
 		*before_last_log = result;	
@@ -150,11 +151,12 @@ int main(int argc, char** argv)
 
 	while (read_testcase(&tc, argc>1 ? infile : std::cin) == 0)
 	{
+      //tc.display();
 		ComputationTime.start();
 		double j=compute_full_prob<double>(&tc);
 		ComputationTime.acc();
 		printf("%E\n", j);
-		tc.free();
+		//tc.free();
 	}
 
 	TotalTime.acc();

@@ -28,6 +28,17 @@ struct testcase
       for (int z=0;z<rslen;z++) printf("%d  ", c[z]);
       printf("\n");
    }
+   void free() 
+   {
+      if (hap) delete [] hap;
+      if (rs) delete [] rs;
+      if (q) delete [] q;
+      if (i) delete [] i;
+      if (d) delete [] d;
+      if (c) delete [] c;
+      hap = rs = NULL;
+      q = i = c = d = NULL;
+   }
    testcase& operator=(const testcase& src)
    {
        rslen = src.rslen;
@@ -65,11 +76,14 @@ struct testcase
        return *this;
    } 
    testcase() {
-       hap = rs = 0;
-       q = i = d = c = 0;
+       hap = rs = NULL;
+       q = i = d = c = NULL;
        haplen = rslen = 0;
    }
 #if 0
+   ~testcase() {
+      free();
+   }
    ~testcase() {
        printf("deleting %p. ", this);
        if (hap) printf("Freeing %p\n", hap);

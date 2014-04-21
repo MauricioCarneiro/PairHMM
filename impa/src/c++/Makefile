@@ -51,7 +51,7 @@ pairhmm-8-sse:	pairhmm-8-sse.cc input.o
 pairhmm-dev: pairhmm-dev.o input.o
 	$(CXX) -o $@ $^ $(LDFLAGS)
 
-compute_gpu.o: compute_gpu.cu compute_gpu.h
+compute_gpu.o: compute_gpu.cu compute_gpu.h input.h
 	$(NVCC) -c -o $@ compute_gpu.cu $(CUDAFLAGS)
  
 pairhmm-cuda: pairhmm-cuda.cu compute_gpu.o input.o compute_gpu.h

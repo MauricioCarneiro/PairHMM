@@ -8,6 +8,8 @@
 
 #include "input.h"
 #include "compute_gpu.h"
+
+#include "timing.h"
 //#include "read.h"
 
 #define MM 0
@@ -137,6 +139,7 @@ void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in,
 		p[r][YY] = (r == ROWS - 1) ? ctx._(1.0) : ctx.ph2pr[_c];
 	}
 
+#if 1
 	for (c = 0; c < COLS; c++)
 	{
 		M[0][c] = ctx._(0.0);
@@ -153,6 +156,7 @@ void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in,
 		Y[r][0] = ctx._(0.0);
 		Xc0[r] = Xc0[r-1] * p[r][XX];
 	}
+#endif
 	for (r = 0; r < ROWS; r++)
    {
       q_new[r] = ctx.ph2pr[tc->q[r] & 127];
@@ -168,6 +172,8 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    cudaError_t cuerr;
    NUMBER *d_out;
 
+   Timing GPUAlloc(string("GPU Alloc/Free :  "));
+   GPUAlloc.start();
    if (0==n_tc) {
       err = GPUmemFree<NUMBER>(gmem);
       return;
@@ -175,6 +181,10 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    if (gmem.M==0) {
       err = GPUmemAlloc<NUMBER>(gmem);
    }
+   GPUAlloc.acc();
+
+   Timing Staging(string("Staging :  "));
+   Staging.start();
    gmem.index=0;
 #if __CONDENSE_MEM
    int total_rows=0;
@@ -195,7 +205,11 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    {
       err = tc2gmem<NUMBER>(gmem, &tc[z]);
    }
+   Staging.acc();
+   Timing ComputeGPU(string("Compute GPU Time :  "));
+   ComputeGPU.start();
    compute_gpu(gmem.offset, gmem.p, gmem.rs, gmem.hap, gmem.q, gmem.Yr0[0], n_tc, probs, gmem);
+   ComputeGPU.acc();
 } 
 template<class NUMBER>
 NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
@@ -421,6 +435,9 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
 
 int main(int argc, char* argv[])
 {
+   Timing TotalTime(string("TOTAL: "));
+   Timing ComputationTime(string("COMPUTATION: "));
+   TotalTime.start();
 	testcase tc[10000];
    int cnt=0;
    int basecnt=0;
@@ -439,9 +456,11 @@ int main(int argc, char* argv[])
       //(tc+cnt)->display();
       if (cnt==1099) {
          printf("Computing %d testcases\n", cnt+1);
+         ComputationTime.start();
          compute_full_prob_multiple<double>(prob, tc, cnt+1, gmem);
+         ComputationTime.acc();
          for (int q=0;q<cnt+1;q++)
-		      printf("ans %d: %E\n", q+basecnt, prob[q]);
+		      printf("%E\n", q+basecnt, prob[q]);
          cnt = -1;
          basecnt+=1100;
       }
@@ -452,13 +471,17 @@ int main(int argc, char* argv[])
     //TODO remove
     //cnt=1;
    printf("Computing %d testcases\n", cnt);
+   ComputationTime.start();
    if (cnt>0) compute_full_prob_multiple<double>(prob, tc, cnt, gmem);
+   ComputationTime.acc();
 
    //This call frees memory in gmem
    compute_full_prob_multiple<double>(prob, tc, 0, gmem);
 
    for (int q=0;q<cnt;q++)
-     printf("ans %d: %E\n", q+basecnt, prob[q]);
+     printf("%E\n", q+basecnt, prob[q]);
+
+   TotalTime.acc();
 
 	return 0;
 }

@@ -94,7 +94,7 @@ To read a second set like above, call readv2 again (with new n_read, n_hap)
     tc->haplen = hap.size();
 	 int sz = 1 + ((tc->rslen + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
     if (tc->hap) {
-       delete(tc->hap);
+       delete [] tc->hap;
     }
     tc->hap = new char[tc->haplen + 2 * (sz-1) + 1]();
     tc->hap += (sz-1);
