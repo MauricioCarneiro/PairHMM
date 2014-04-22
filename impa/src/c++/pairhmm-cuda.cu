@@ -208,7 +208,7 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    Staging.acc();
    Timing ComputeGPU(string("Compute GPU Time :  "));
    ComputeGPU.start();
-   compute_gpu(gmem.offset, gmem.p, gmem.rs, gmem.hap, gmem.q, gmem.Yr0[0], n_tc, probs, gmem);
+   compute_gpu(gmem.offset, gmem.p, gmem.rs, gmem.hap, gmem.q, ctx.INITIAL_CONSTANT, n_tc, probs, gmem);
    ComputeGPU.acc();
 } 
 template<class NUMBER>

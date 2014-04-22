@@ -19,7 +19,7 @@ __device__ double __shfl_down(double d,unsigned int i){
 template<class NUMBER>
 __global__ void 
 __launch_bounds__(128,6)
-pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y, 
+pairhmm_kernel( NUMBER init_const, NUMBER* M, NUMBER *X, NUMBER *Y, 
                                NUMBER* p, char* rs, char* hap, 
                                NUMBER* q, int* offset, int n_mats,
                                NUMBER* output, NUMBER log10_init) {
@@ -48,11 +48,11 @@ pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
       if ( stripe==0 && tid < 2) {
          M_pp=0.0;
          X_pp = 0.0;//X_pp=Xc0[0];
-         Y_pp=Yr0;
+         Y_pp=init_const/(COLS-1);
          M_p=0.0;
          if (tid==1) X_p = 0.0;//X_p=Xc0[1];
          else X_p=0.0;
-         if (tid==0) Y_p=Yr0;
+         if (tid==0) Y_p=init_const/(COLS-1);
          else Y_p=0.0;
       } else if (tid<2) {
          M_pp = 0.0;
@@ -106,7 +106,7 @@ pairhmm_kernel( NUMBER Yr0, NUMBER* M, NUMBER *X, NUMBER *Y,
             else distm = _q;
             if (tid == 0 && stripe == 0) {
                X_p = 0.0; 
-               Y_p = Yr0;
+               Y_p = init_const/(COLS-1);
                M_p = 0.0;
             } else if (tid == 0 && z > 1) {
                M_p = M_top;
@@ -280,7 +280,7 @@ template int GPUmemFree<float>(GPUmem<float>&);
 
 template <class PRECISION>
 void compute_gpu(int offset[][3], PRECISION* p, char* rs, char* hap, PRECISION* q, 
-                           PRECISION Yr0, int n_tc, PRECISION* h_out, GPUmem<PRECISION>& gmem) 
+                           PRECISION init_const, int n_tc, PRECISION* h_out, GPUmem<PRECISION>& gmem) 
 {
    //GPUmem<PRECISION> gmem;
    PRECISION *d_out;
@@ -297,7 +297,7 @@ void compute_gpu(int offset[][3], PRECISION* p, char* rs, char* hap, PRECISION* 
    for (int z=0;z<offset[n_tc][2];z++) printf("%c", hap[z]);
    printf("\nq = \n");
    for (int z=0;z<offset[n_tc][1];z++) printf("%d:%e\n", z, q[z]);
-   printf("Yr0 = %e\n", Yr0);
+   printf("init_const = %e\n", init_const);
 #endif
    if (0==gmem.M) {
       GPUmemAlloc<PRECISION>(gmem);
@@ -322,7 +322,7 @@ void compute_gpu(int offset[][3], PRECISION* p, char* rs, char* hap, PRECISION* 
 	PRECISION INITIAL_CONSTANT = ldexp(1.0, 1020.0);
 	PRECISION LOG10_INITIAL_CONSTANT = log10(INITIAL_CONSTANT);
    
-   pairhmm_kernel<<<(n_tc+3)/4,WARP*4>>>( Yr0, gmem.d_M, gmem.d_X, 
+   pairhmm_kernel<<<(n_tc+3)/4,WARP*4>>>( init_const, gmem.d_M, gmem.d_X, 
                                   gmem.d_Y, gmem.d_p, 
                                   gmem.d_rs, gmem.d_hap, gmem.d_q,
                                   gmem.d_offset, n_tc-1, d_out, LOG10_INITIAL_CONSTANT); 
