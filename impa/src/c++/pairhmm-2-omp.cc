@@ -136,12 +136,16 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
 	return ctx.LOG10(result) - ctx.LOG10_INITIAL_CONSTANT;
 }
 
-int main()
+int main(int argc, char** argv)
 {
 	Timing TotalTime(string("TOTAL: "));
 	Timing ComputationTime(string("COMPUTATION: "));
 
 	TotalTime.start();
+
+	std::ifstream infile;
+
+	if (argc > 1) infile.open(argv[1]);
 
 	testcase tc[100];
 	double result[100];
@@ -149,7 +153,7 @@ int main()
 
 	do
 	{
-		for (ntcs = 0; (ntcs < 100) && (read_testcase(tc + ntcs) == 0); ntcs++);
+		for (ntcs = 0; (ntcs < 100) && (read_testcase(tc + ntcs,argc>1 ? infile : std::cin) == 0); ntcs++);
 		ComputationTime.start();
 		#pragma omp parallel for schedule(dynamic)
 		for (j = 0; j < ntcs; j++)
