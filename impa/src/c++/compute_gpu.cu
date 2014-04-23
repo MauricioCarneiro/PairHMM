@@ -185,34 +185,35 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
 {
    cudaDeviceProp deviceProp;
    cudaError_t err = cudaGetDeviceProperties(&deviceProp, 0);
-   unsigned long long totalMem = deviceProp.totalGlobalMem/5;
    char *current, *d_current;
+   gmem.totalMem = 3*deviceProp.totalGlobalMem/4;
    //TODO no need to assign d_M, etc.
    //TODO remove Xc0
-   cudaMalloc(&gmem.d_amem, totalMem);
-   gmem.amem = (char*)malloc(totalMem);
+   cudaMalloc(&gmem.d_amem, gmem.totalMem);
+   gmem.amem = (char*)malloc(gmem.totalMem);
    d_current = (char*)gmem.d_amem;
    current = (char*)gmem.amem;
 
    gmem.d_M = (NUMBER*)d_current;
    gmem.M = (NUMBER*)current;
-   current += totalMem/10; d_current += totalMem/10;
+   current += 8*(gmem.totalMem/10/8); d_current += 8*(gmem.totalMem/10/8);
 
    gmem.d_X = (NUMBER*)d_current;
    gmem.X = (NUMBER*)current;
-   current += totalMem/10; d_current += totalMem/10;
+   current += 8*(gmem.totalMem/10/8); d_current += 8*(gmem.totalMem/10/8);
 
    gmem.d_Y = (NUMBER*)d_current;
    gmem.Y = (NUMBER*)current;
-   current += totalMem/10; d_current += totalMem/10;
+   current += 8*(gmem.totalMem/10/8); d_current += 8*(gmem.totalMem/10/8);
 
+   //TODO don't assign these, they get reassigned anyway
    gmem.d_p = (NUMBER*)d_current;
    gmem.p = (NUMBER*)current;
-   current += totalMem/10; d_current += totalMem/10;
+   current += 8*(gmem.totalMem/10/8); d_current += 8*(gmem.totalMem/10/8);
 
    gmem.d_q = (NUMBER*)d_current;
    gmem.q = (NUMBER*)current;
-   current += totalMem/10; d_current += totalMem/10; 
+   current += 8*(gmem.totalMem/10/8); d_current += 8*(gmem.totalMem/10/8);
 
    gmem.d_rs = d_current;
    gmem.rs = current;
@@ -224,13 +225,13 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
 
    gmem.d_Yr0 = (NUMBER*)d_current;
    gmem.Yr0 = (NUMBER*)current;
-   current += totalMem/10; d_current += totalMem/10;
+   current += gmem.totalMem/10; d_current += gmem.totalMem/10;
 
    gmem.d_Xc0 = (NUMBER*)d_current;
    gmem.Xc0 = (NUMBER*)current;
-   current += totalMem/10; d_current += totalMem/10;
+   current += gmem.totalMem/10; d_current += gmem.totalMem/10;
 
-   if( current - (char*)gmem.amem > totalMem) {
+   if( current - (char*)gmem.amem > gmem.totalMem) {
       printf("Error: Requested too much memory on GPU\n");
       return 9000;
    }

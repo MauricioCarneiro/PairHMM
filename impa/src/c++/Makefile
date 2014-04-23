@@ -8,7 +8,7 @@ CXXFLAGS=$(CFLAGS)
 CC=gcc
 CXX=g++
 NVCC=nvcc 
-CUDAFLAGS= -D__CONDENSE_MEM -Xptxas -v,-abi=no -arch=sm_35 $(USERFLAGS)
+CUDAFLAGS= -D__CONDENSE_MEM -Xptxas -v,-abi=no -arch=sm_35 $(USERFLAGS) -Xcompiler $(OMPCFLAGS)
 
 ifeq ($(DEBUG),1)
    CFLAGS += -g
@@ -55,7 +55,7 @@ compute_gpu.o: compute_gpu.cu compute_gpu.h input.h
 	$(NVCC) -c -o $@ compute_gpu.cu $(CUDAFLAGS)
  
 pairhmm-cuda: pairhmm-cuda.cu compute_gpu.o input.o compute_gpu.h
-	$(NVCC) -o $@ pairhmm-cuda.cu compute_gpu.o input.o $(CUDAFLAGS)
+	$(NVCC) -o $@ pairhmm-cuda.cu compute_gpu.o input.o $(CUDAFLAGS) -Xcompiler $(OMPLDFLAGS)
 
 pairhmm-dbg: pairhmm-dbg.o input.o
 	$(CXX) -o $@ $^ $(LDFLAGS) -D DEBUG_MODE

@@ -71,52 +71,47 @@ struct Context<float>
 };
 
 template<class NUMBER>
-int tc2gmem(GPUmem<NUMBER>& gmem, testcase* tc)
+int tc2gmem(GPUmem<NUMBER>& gmem, testcase* tc, int index)
 {
 	int ROWS = tc->rslen + 1;
 	int COLS = tc->haplen + 1;
 
 	Context<NUMBER> ctx;
 
-	NUMBER M[ROWS][COLS];
+	//NUMBER M[ROWS][COLS];
 	//NUMBER M2[ROWS][COLS];
-	NUMBER X[ROWS][COLS];
+	//NUMBER X[ROWS][COLS];
 	//NUMBER X2[ROWS][COLS];
-   NUMBER Xc0[ROWS];
-	NUMBER Y[ROWS][COLS];
-   NUMBER Yr0[COLS];
-	NUMBER p[ROWS][6];
-   NUMBER q_new[ROWS];
+   //NUMBER Xc0[ROWS];
+	//NUMBER Y[ROWS][COLS];
+   //NUMBER Yr0[COLS];
+	//NUMBER p[ROWS][6];
+   //NUMBER q_new[ROWS];
    if (ROWS==1 || COLS==1) return 0;
-   extract_tc(&M[0][0],&X[0][0],&Y[0][0],&p[0][0],Xc0,Yr0,q_new,tc);
+   extract_tc(gmem.M,gmem.X,gmem.Y,gmem.p+gmem.offset[index][1]*6,gmem.q+gmem.offset[index][1],tc);
    //TODO check data sizes first
    //      return error if we're out of space
-   memcpy(gmem.Xc0+gmem.offset[gmem.index][1], Xc0, sizeof(NUMBER)*ROWS);
-   memcpy(gmem.Yr0+gmem.offset[gmem.index][2], Yr0, sizeof(NUMBER)*COLS);
-   memcpy(gmem.p+gmem.offset[gmem.index][1]*6, &p[0][0], sizeof(NUMBER)*ROWS*6);
-   memcpy(gmem.rs+gmem.offset[gmem.index][1], tc->rs, sizeof(char)*ROWS);
-   memcpy(gmem.hap+gmem.offset[gmem.index][2], tc->hap, sizeof(char)*COLS);
-   memcpy(gmem.q+gmem.offset[gmem.index][1], q_new, sizeof(NUMBER)*ROWS);
+   //memcpy(gmem.Xc0+gmem.offset[gmem.index][1], Xc0, sizeof(NUMBER)*ROWS);
+   //memcpy(gmem.Yr0+gmem.offset[gmem.index][2], Yr0, sizeof(NUMBER)*COLS);
+   //memcpy(gmem.p+gmem.offset[gmem.index][1]*6, &p[0][0], sizeof(NUMBER)*ROWS*6);
+   memcpy(gmem.rs+gmem.offset[index][1], tc->rs, sizeof(char)*ROWS);
+   memcpy(gmem.hap+gmem.offset[index][2], tc->hap, sizeof(char)*COLS);
+   //memcpy(gmem.q+gmem.offset[gmem.index][1], q_new, sizeof(NUMBER)*ROWS);
    //gmem.offset[gmem.index+1][0] = gmem.offset[gmem.index][0] + ROWS*COLS;
-   gmem.offset[gmem.index+1][0] = gmem.offset[gmem.index][0] + ((ROWS+WARP-2)/(WARP-1))*COLS;
+   //gmem.offset[gmem.index+1][0] = gmem.offset[gmem.index][0] + ((ROWS+WARP-2)/(WARP-1))*COLS;
    //printf("ROWS/COLS = %d/%d, offset[%d] = %d\n", ROWS, COLS, gmem.index+1, gmem.offset[gmem.index+1][0]);
-   gmem.offset[gmem.index+1][1] = gmem.offset[gmem.index][1] + ROWS;
-   gmem.offset[gmem.index+1][2] = gmem.offset[gmem.index][2] + COLS;
+   //gmem.offset[gmem.index+1][1] = gmem.offset[gmem.index][1] + ROWS;
+   //gmem.offset[gmem.index+1][2] = gmem.offset[gmem.index][2] + COLS;
    gmem.index++;
    return 0;
 }
 template<class NUMBER>
 void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in, 
-                NUMBER* p_in, NUMBER* Xc0, NUMBER* Yr0, 
-                NUMBER* q_new, testcase* tc)
+                NUMBER* p_in, NUMBER* q_new, testcase* tc)
 {
 	int ROWS = tc->rslen + 1;
-	int COLS = tc->haplen + 1;
-   int r,c;
+   int r;
 
-   NUMBER (*M)[COLS] = (NUMBER (*)[COLS]) &M_in[0];
-   NUMBER (*Y)[COLS] = (NUMBER (*)[COLS]) &Y_in[0];
-   NUMBER (*X)[COLS] = (NUMBER (*)[COLS]) &X_in[0];
    NUMBER (*p)[6] = (NUMBER (*)[6]) &p_in[0];
 
 	Context<NUMBER> ctx;
@@ -137,30 +132,10 @@ void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in,
 		p[r][XX] = ctx.ph2pr[_c];
 		p[r][MY] = (r == ROWS - 1) ? ctx._(1.0) : ctx.ph2pr[_d];
 		p[r][YY] = (r == ROWS - 1) ? ctx._(1.0) : ctx.ph2pr[_c];
-	}
-
-#if 1
-	for (c = 0; c < COLS; c++)
-	{
-		M[0][c] = ctx._(0.0);
-		X[0][c] = ctx._(0.0);
-		Y[0][c] = ctx.INITIAL_CONSTANT / (tc->haplen);
-		Yr0[c] = ctx.INITIAL_CONSTANT / (tc->haplen);
-	}
-
-   Xc0[0]=X[0][0];
-	for (r = 1; r < ROWS; r++)
-	{
-		M[r][0] = ctx._(0.0);
-		X[r][0] = X[r-1][0] * p[r][XX];
-		Y[r][0] = ctx._(0.0);
-		Xc0[r] = Xc0[r-1] * p[r][XX];
-	}
-#endif
-	for (r = 0; r < ROWS; r++)
-   {
       q_new[r] = ctx.ph2pr[tc->q[r] & 127];
-   }
+	}
+   q_new[0] = ctx.ph2pr[tc->q[0] & 127];
+
 }
 
 
@@ -169,8 +144,6 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
                                  GPUmem<NUMBER> &gmem, NUMBER *before_last_log = NULL) {
    Context<NUMBER> ctx;
    int err;
-   cudaError_t cuerr;
-   NUMBER *d_out;
 
    Timing GPUAlloc(string("GPU Alloc/Free :  "));
    GPUAlloc.start();
@@ -181,29 +154,49 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    if (gmem.M==0) {
       err = GPUmemAlloc<NUMBER>(gmem);
    }
+   if (err != 0) printf("Error in GPU allocation/deallocation\n");
    GPUAlloc.acc();
 
    Timing Staging(string("Staging :  "));
-   Staging.start();
    gmem.index=0;
 #if __CONDENSE_MEM
    int total_rows=0;
    int total_cols=0;
+   int total_scratch=0;
    for (int z=0;z<n_tc;z++)
    {
+      gmem.offset[z][0] = total_scratch;
+      gmem.offset[z][1] = total_rows;
+      gmem.offset[z][2] = total_cols;
       total_rows += tc[z].rslen+1;
       total_cols += tc[z].haplen+1;
+      total_scratch += ((tc[z].rslen+WARP-1)/(WARP-1))*(tc[z].haplen+1);
    }
+   gmem.offset[n_tc][0] = total_scratch;
+   gmem.offset[n_tc][1] = total_rows;
+   gmem.offset[n_tc][2] = total_cols;
+   gmem.X = gmem.M + total_scratch;
+   gmem.d_X = gmem.d_M + total_scratch;
+   gmem.Y = gmem.X + total_scratch;
+   gmem.d_Y = gmem.d_X + total_scratch;
+   gmem.p = gmem.Y + total_scratch;
+   gmem.d_p = gmem.d_Y + total_scratch;
    gmem.q = gmem.p + total_rows*6;
    gmem.d_q = gmem.d_p + total_rows*6;
    gmem.rs = (char*)(gmem.q + total_rows);
    gmem.d_rs = (char*)(gmem.d_q + total_rows);
    gmem.hap = gmem.rs + total_rows;
    gmem.d_hap = gmem.d_rs + total_rows;
+   if (gmem.hap-(char*)gmem.M > gmem.totalMem) {
+      printf("data exceeds GPU memory. Quitting.");
+      return;
+   }
 #endif
+   Staging.start();
+#pragma omp parallel for shared(gmem, tc) private (z)
    for (int z=0;z<n_tc;z++)
    {
-      err = tc2gmem<NUMBER>(gmem, &tc[z]);
+      err = tc2gmem<NUMBER>(gmem, &tc[z],z);
    }
    Staging.acc();
    Timing ComputeGPU(string("Compute GPU Time :  "));
@@ -454,7 +447,7 @@ int main(int argc, char* argv[])
    {
       //printf("In pairhmm-cuda: &tc[%d] = %p\n", cnt, tc+cnt);
       //(tc+cnt)->display();
-      if (cnt==1099) {
+      if (cnt==9999) {
          printf("Computing %d testcases\n", cnt+1);
          ComputationTime.start();
          compute_full_prob_multiple<double>(prob, tc, cnt+1, gmem);
@@ -462,7 +455,7 @@ int main(int argc, char* argv[])
          for (int q=0;q<cnt+1;q++)
 		      printf("%E\n", q+basecnt, prob[q]);
          cnt = -1;
-         basecnt+=1100;
+         basecnt+=10000;
       }
       cnt++;
 
