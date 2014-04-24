@@ -13,7 +13,7 @@ ifeq ($(GPU),1)
 endif
 ifeq ($(DEBUG),1)
   CXXFLAGS += -g -O0
-  NVFLAGS += -G
+  NVFLAGS += -g -G -lineinfo -Xptxas -v,-abi=no
 else
   CXXFLAGS += -O4
 endif

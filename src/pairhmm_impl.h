@@ -174,7 +174,7 @@ public:
     return results;
   }
 
-  void calculate_failed (const Testcase& testcase, std::vector<double>& results) {
+  virtual void calculate_failed (const Testcase& testcase, std::vector<double>& results) {
     auto master_idx = 0;
     auto padded_read = Read<PRECISION,PRECISION>{};
     for (auto read : testcase.reads) {
