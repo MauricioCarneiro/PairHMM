@@ -190,7 +190,8 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
    //TODO no need to assign d_M, etc.
    //TODO remove Xc0
    cudaMalloc(&gmem.d_amem, gmem.totalMem);
-   gmem.amem = (char*)malloc(gmem.totalMem);
+   //gmem.amem = (char*)malloc(gmem.totalMem);
+   cudaMallocHost(&gmem.amem, gmem.totalMem); 
    d_current = (char*)gmem.d_amem;
    current = (char*)gmem.amem;
 
@@ -259,7 +260,7 @@ int GPUmemFree(GPUmem<NUMBER>& gmem)
       return 0;
    }
    cudaFree(gmem.d_amem);
-   free(gmem.amem);
+   cudaFree(gmem.amem);
    gmem.d_amem = 0;
    gmem.amem = 0;
    gmem.index=0;
@@ -279,12 +280,34 @@ template int GPUmemAlloc<float>(GPUmem<float>&);
 template int GPUmemFree<double>(GPUmem<double>&);
 template int GPUmemFree<float>(GPUmem<float>&);
 
+#define N_STREAM 4
 template <class PRECISION>
 void compute_gpu(int offset[][3], PRECISION* p, char* rs, char* hap, PRECISION* q, 
-                           PRECISION init_const, int n_tc, PRECISION* h_out, GPUmem<PRECISION>& gmem) 
+                           PRECISION init_const, int n_tc, GPUmem<PRECISION>& gmem)
+{
+    cudaStream_t strm[N_STREAM];
+    int start[N_STREAM+1];
+    int l_n_tc=0;
+    for (int z=0;z<N_STREAM;z++,l_n_tc+=n_tc/N_STREAM) {
+       cudaStreamCreate(&strm[z]);
+       start[z] = l_n_tc;
+    }
+    start[N_STREAM]=n_tc;
+    for (int z=0;z<N_STREAM;z++) {
+       compute_gpu_stream(&offset[start[z]], p, rs, hap, q, init_const, start[z+1]-start[z], gmem, strm[z], start[z]);
+       //memcpy(&gmem.results[start[z]], gmem.results, sizeof(PRECISION)*(start[z+1]-start[z]));
+    }
+    for (int z=0;z<N_STREAM;z++) {
+       cudaStreamSynchronize(strm[z]);
+       cudaStreamDestroy(strm[z]);
+    }
+}
+template <class PRECISION>
+void compute_gpu_stream(int offset[][3], PRECISION* p, char* rs, char* hap, PRECISION* q, 
+                           PRECISION init_const, int n_tc, GPUmem<PRECISION>& gmem, cudaStream_t strm,
+                           int results_inx) 
 {
    //GPUmem<PRECISION> gmem;
-   PRECISION *d_out;
    cudaError_t cuerr;
 
 #if 0
@@ -303,19 +326,19 @@ void compute_gpu(int offset[][3], PRECISION* p, char* rs, char* hap, PRECISION* 
    if (0==gmem.M) {
       GPUmemAlloc<PRECISION>(gmem);
    }
-   cudaMalloc(&d_out,  sizeof(PRECISION)*n_tc);
    cudaMalloc(&gmem.d_offset, sizeof(int)*3*(n_tc+1));
-   cudaMemcpy(gmem.d_offset, &offset[0][0], sizeof(int)*3*(n_tc+1), cudaMemcpyHostToDevice);
+   cudaMemcpyAsync(gmem.d_offset, &offset[0][0], sizeof(int)*3*(n_tc+1), cudaMemcpyHostToDevice, strm);
 #ifdef __CONDENSE_MEM
-   cudaMemcpy(gmem.d_p, p, sizeof(PRECISION)*offset[n_tc][1]*6 +
+   cudaMemcpyAsync(gmem.d_p, p, sizeof(PRECISION)*offset[n_tc][1]*6 +
                            sizeof(PRECISION)*offset[n_tc][1] +
                            sizeof(char)*offset[n_tc][1] +
-                           sizeof(char)*offset[n_tc][2], cudaMemcpyHostToDevice);
+                           sizeof(char)*offset[n_tc][2], cudaMemcpyHostToDevice, strm);
 #else
-   cudaMemcpy(gmem.d_p, p, sizeof(PRECISION)*offset[n_tc][1]*6, cudaMemcpyHostToDevice);
-   cudaMemcpy(gmem.d_q, q, sizeof(PRECISION)*offset[n_tc][1], cudaMemcpyHostToDevice);
-   cudaMemcpy(gmem.d_rs, rs, sizeof(char)*offset[n_tc][1], cudaMemcpyHostToDevice);
-   cudaMemcpy(gmem.d_hap, hap, sizeof(char)*offset[n_tc][2], cudaMemcpyHostToDevice);
+   cudaMemcpyAsync(gmem.d_p+offset[0][1]*6, p+offset[0][1]*6, sizeof(PRECISION)*(offset[n_tc][1]-offset[0][1])*6, 
+                          cudaMemcpyHostToDevice, strm);
+   cudaMemcpyAsync(gmem.d_q+offset[0][1], q+offset[0][1], sizeof(PRECISION)*(offset[n_tc][1]-offset[0][1]), cudaMemcpyHostToDevice, strm);
+   cudaMemcpyAsync(gmem.d_rs+offset[0][1], rs+offset[0][1], sizeof(char)*(offset[n_tc][1]-offset[0][1]), cudaMemcpyHostToDevice, strm);
+   cudaMemcpyAsync(gmem.d_hap+offset[0][2], hap+offset[0][2], sizeof(char)*(offset[n_tc][2]-offset[0][2]), cudaMemcpyHostToDevice, strm);
 #endif
    cuerr= cudaGetLastError();
    if (cuerr) printf("Error in memcpy. %d : %s\n", cuerr, cudaGetErrorString(cuerr));
@@ -323,17 +346,16 @@ void compute_gpu(int offset[][3], PRECISION* p, char* rs, char* hap, PRECISION* 
 	PRECISION INITIAL_CONSTANT = ldexp(1.0, 1020.0);
 	PRECISION LOG10_INITIAL_CONSTANT = log10(INITIAL_CONSTANT);
    
-   pairhmm_kernel<<<(n_tc+3)/4,WARP*4>>>( init_const, gmem.d_M, gmem.d_X, 
+   pairhmm_kernel<<<(n_tc+3)/4,WARP*4,0,strm>>>( init_const, gmem.d_M, gmem.d_X, 
                                   gmem.d_Y, gmem.d_p, 
                                   gmem.d_rs, gmem.d_hap, gmem.d_q,
-                                  gmem.d_offset, n_tc-1, d_out, LOG10_INITIAL_CONSTANT); 
+                                  gmem.d_offset, n_tc-1, gmem.d_results+results_inx, LOG10_INITIAL_CONSTANT); 
    cuerr = cudaGetLastError();
    if (cuerr) {
       printf ("Cuda error %d : %s\n", cuerr, cudaGetErrorString(cuerr));
    }
-   cudaMemcpy(h_out, d_out, sizeof(PRECISION)*n_tc, cudaMemcpyDeviceToHost);
-   cudaFree(d_out);
+   cudaMemcpyAsync(gmem.results+results_inx, gmem.d_results+results_inx, sizeof(PRECISION)*n_tc, cudaMemcpyDeviceToHost,strm);
    //GPUmemFree(gmem);
 }
-template void compute_gpu<double>(int [][3], double*, char*, char*, double*, double, int, double*, GPUmem<double>&);
-template void compute_gpu<float>(int [][3], float*, char*, char*, float*, float, int, float*, GPUmem<float>&);
+template void compute_gpu<double>(int [][3], double*, char*, char*, double*, double, int, GPUmem<double>&);
+template void compute_gpu<float>(int [][3], float*, char*, char*, float*, float, int, GPUmem<float>&);

@@ -32,9 +32,11 @@ struct GPUmem {
    char* rs;
    char* hap;
    PRECISION* q;
+   PRECISION* results;
    char* d_rs;
    char* d_hap;
    PRECISION* d_q; 
+   PRECISION* d_results;
    GPUmem() {M=0;};
 }; 
 template<class PRECISION>
@@ -43,5 +45,5 @@ template<class PRECISION>
 int GPUmemFree(GPUmem<PRECISION>& gmem);
 template <class PRECISION>
 void compute_gpu(int offset[][3], PRECISION *p, char *rs, char* hap, PRECISION* q,
-                  PRECISION Yr0, int n_tc, PRECISION* h_out, GPUmem<PRECISION>&);
+                  PRECISION Yr0, int n_tc, GPUmem<PRECISION>&);
 #endif

@@ -159,7 +159,6 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
 
    Timing Staging(string("Staging :  "));
    gmem.index=0;
-#if __CONDENSE_MEM
    int total_rows=0;
    int total_cols=0;
    int total_scratch=0;
@@ -187,11 +186,13 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    gmem.d_rs = (char*)(gmem.d_q + total_rows);
    gmem.hap = gmem.rs + total_rows;
    gmem.d_hap = gmem.d_rs + total_rows;
-   if (gmem.hap-(char*)gmem.M > gmem.totalMem) {
+   //Make sure results and d_results are properly aligned
+   gmem.results = (NUMBER*)(gmem.hap + total_cols + sizeof(NUMBER)-(total_rows+total_cols)%sizeof(NUMBER));
+   gmem.d_results = (NUMBER*)(gmem.d_hap + total_cols + sizeof(NUMBER)-(total_rows+total_cols)%sizeof(NUMBER));
+   if ((char*)gmem.results+n_tc*sizeof(NUMBER)-(char*)gmem.M > gmem.totalMem) {
       printf("data exceeds GPU memory. Quitting.");
       return;
    }
-#endif
    Staging.start();
 #pragma omp parallel for shared(gmem, tc) private (z)
    for (int z=0;z<n_tc;z++)
@@ -201,7 +202,8 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    Staging.acc();
    Timing ComputeGPU(string("Compute GPU Time :  "));
    ComputeGPU.start();
-   compute_gpu(gmem.offset, gmem.p, gmem.rs, gmem.hap, gmem.q, ctx.INITIAL_CONSTANT, n_tc, probs, gmem);
+   compute_gpu(gmem.offset, gmem.p, gmem.rs, gmem.hap, gmem.q, ctx.INITIAL_CONSTANT, n_tc, gmem);
+   memcpy(probs, gmem.results, sizeof(NUMBER)*n_tc);
    ComputeGPU.acc();
 } 
 template<class NUMBER>
