@@ -251,6 +251,9 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
       printf("CPU mem allocation fail\n");
       return 1;
    }
+   gmem.N_STREAMS=4;
+   gmem.strm = (cudaStream_t*)malloc(sizeof(cudaStream_t)*gmem.N_STREAMS);
+   for (int z=0;z<gmem.N_STREAMS;z++) cudaStreamCreate(&gmem.strm[z]);
    return 0;
 }
 template<class NUMBER>
@@ -273,6 +276,8 @@ int GPUmemFree(GPUmem<NUMBER>& gmem)
    gmem.q=0;
    gmem.rs=0;
    gmem.hap=0;
+   for (int z=0;z<gmem.N_STREAMS;z++) cudaStreamDestroy(gmem.strm[z]);
+   free(gmem.strm);
    return 0;
 }
 template int GPUmemAlloc<double>(GPUmem<double>&);

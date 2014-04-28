@@ -158,6 +158,7 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    GPUAlloc.acc();
 
    Timing Staging(string("Staging :  "));
+   Timing ComputeGPU(string("Compute GPU Time :  "));
    gmem.index=0;
    int total_rows=0;
    int total_cols=0;
@@ -193,16 +194,26 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
       printf("data exceeds GPU memory. Quitting.");
       return;
    }
-   Staging.start();
+   int s=0;
+   for (int start=0;start<n_tc;start+=n_tc/gmem.N_STREAMS) {
+      int finish=min(start+n_tc/gmem.N_STREAMS, n_tc);
+      Staging.start();
 #pragma omp parallel for shared(gmem, tc) private (z)
-   for (int z=0;z<n_tc;z++)
-   {
-      err = tc2gmem<NUMBER>(gmem, &tc[z],z);
+      for (int z=start;z<finish;z++)
+      {
+         err = tc2gmem<NUMBER>(gmem, &tc[z],z);
+      }
+      Staging.acc();
+      ComputeGPU.start();
+      cudaStreamSynchronize(gmem.strm[s]);
+      compute_gpu_stream(gmem.offset+start, gmem.p, gmem.rs, gmem.hap, gmem.q, 
+                         ctx.INITIAL_CONSTANT, finish-start, gmem, gmem.strm[s], start);
+      ComputeGPU.acc();
+      s++;
+      s %= gmem.N_STREAMS;
    }
-   Staging.acc();
-   Timing ComputeGPU(string("Compute GPU Time :  "));
    ComputeGPU.start();
-   compute_gpu(gmem.offset, gmem.p, gmem.rs, gmem.hap, gmem.q, ctx.INITIAL_CONSTANT, n_tc, gmem);
+   for (s=0;s<gmem.N_STREAMS;s++) cudaStreamSynchronize(gmem.strm[s]);
    memcpy(probs, gmem.results, sizeof(NUMBER)*n_tc);
    ComputeGPU.acc();
 } 

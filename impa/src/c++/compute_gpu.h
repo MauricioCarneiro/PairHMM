@@ -14,6 +14,8 @@ struct GPUmem {
    int offset[10001][3];
    int* d_offset;
    int index;
+   int N_STREAMS;
+   cudaStream_t *strm;
    char* d_amem; //these two get alloced, all else
    char* amem;   //  are pointers within this allocation
    unsigned long long totalMem; //allocated GPU memory (in sizeofchar))
@@ -46,4 +48,7 @@ int GPUmemFree(GPUmem<PRECISION>& gmem);
 template <class PRECISION>
 void compute_gpu(int offset[][3], PRECISION *p, char *rs, char* hap, PRECISION* q,
                   PRECISION Yr0, int n_tc, GPUmem<PRECISION>&);
+template <class PRECISION>
+void compute_gpu_stream(int offset[][3], PRECISION *p, char *rs, char* hap, PRECISION* q,
+                  PRECISION Yr0, int n_tc, GPUmem<PRECISION>&, cudaStream_t strm, int start);
 #endif
