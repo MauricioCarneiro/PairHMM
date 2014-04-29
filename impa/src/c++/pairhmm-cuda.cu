@@ -12,15 +12,6 @@
 #include "timing.h"
 //#include "read.h"
 
-#define MM 0
-#define GapM 1
-#define MX 2
-#define XX 3
-#define MY 4
-#define YY 5
-#define MAX(a,b) ((a)>(b)?(a):(b))
-#define WARP 32 
-
 template<class T>
 struct Context{};
 
@@ -88,7 +79,8 @@ int tc2gmem(GPUmem<NUMBER>& gmem, testcase* tc, int index)
 	//NUMBER p[ROWS][6];
    //NUMBER q_new[ROWS];
    if (ROWS==1 || COLS==1) return 0;
-   extract_tc(gmem.M,gmem.X,gmem.Y,gmem.p+gmem.offset[index][1]*6,gmem.q+gmem.offset[index][1],tc);
+   extract_tc(gmem.M,gmem.X,gmem.Y,gmem.p+gmem.offset[index][1]*6,gmem.n+gmem.offset[index][1]*3,
+              gmem.q+gmem.offset[index][1],tc);
    //TODO check data sizes first
    //      return error if we're out of space
    //memcpy(gmem.Xc0+gmem.offset[gmem.index][1], Xc0, sizeof(NUMBER)*ROWS);
@@ -107,7 +99,7 @@ int tc2gmem(GPUmem<NUMBER>& gmem, testcase* tc, int index)
 }
 template<class NUMBER>
 void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in, 
-                NUMBER* p_in, NUMBER* q_new, testcase* tc)
+                NUMBER* p_in, int* n_new, NUMBER* q_new, testcase* tc)
 {
 	int ROWS = tc->rslen + 1;
    int r;
@@ -115,26 +107,17 @@ void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in,
    NUMBER (*p)[6] = (NUMBER (*)[6]) &p_in[0];
 
 	Context<NUMBER> ctx;
-	p[0][MM] = ctx._(0.0);
-	p[0][GapM] = ctx._(0.0);
-	p[0][MX] = ctx._(0.0);
-	p[0][XX] = ctx._(0.0);
-	p[0][MY] = ctx._(0.0);
-	p[0][YY] = ctx._(0.0);
 	for (r = 1; r < ROWS; r++)
 	{
 		int _i = tc->i[r-1] & 127;
 		int _d = tc->d[r-1] & 127;
 		int _c = tc->c[r-1] & 127;
-		p[r][MM] = ctx._(1.0) - ctx.ph2pr[(_i + _d) & 127];
-		p[r][GapM] = ctx._(1.0) - ctx.ph2pr[_c];
-		p[r][MX] = ctx.ph2pr[_i];
-		p[r][XX] = ctx.ph2pr[_c];
-		p[r][MY] = (r == ROWS - 1) ? ctx._(1.0) : ctx.ph2pr[_d];
-		p[r][YY] = (r == ROWS - 1) ? ctx._(1.0) : ctx.ph2pr[_c];
-      q_new[r] = ctx.ph2pr[tc->q[r] & 127];
+      n_new[3*r+II] = _i;
+      n_new[3*r+CC] = _c;
+      n_new[3*r+DD] = _d;
+		q_new[r] = pow(10.0,-((double)((tc->q[r]) & 127))/10.0);
 	}
-   q_new[0] = ctx.ph2pr[tc->q[0] & 127];
+	q_new[0] = pow(10.0,-((double)((tc->q[0]) & 127))/10.0);
 
 }
 
@@ -183,30 +166,37 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    gmem.d_p = gmem.d_Y + total_scratch;
    gmem.q = gmem.p + total_rows*6;
    gmem.d_q = gmem.d_p + total_rows*6;
-   gmem.rs = (char*)(gmem.q + total_rows);
-   gmem.d_rs = (char*)(gmem.d_q + total_rows);
+   gmem.n = (int*)(gmem.q + total_rows);
+   gmem.d_n = (int*)(gmem.d_q + total_rows);
+   gmem.rs = (char*)(gmem.n + total_rows*3);
+   gmem.d_rs = (char*)(gmem.d_n + total_rows*3);
    gmem.hap = gmem.rs + total_rows;
    gmem.d_hap = gmem.d_rs + total_rows;
    //Make sure results and d_results are properly aligned
-   gmem.results = (NUMBER*)(gmem.hap + total_cols + sizeof(NUMBER)-(total_rows+total_cols)%sizeof(NUMBER));
-   gmem.d_results = (NUMBER*)(gmem.d_hap + total_cols + sizeof(NUMBER)-(total_rows+total_cols)%sizeof(NUMBER));
+   //TODO put results before the input data and scratch to avoid thise complexity
+   gmem.results = (NUMBER*)(gmem.hap + total_cols + sizeof(NUMBER)-(13*total_rows+total_cols)%sizeof(NUMBER));
+   gmem.d_results = (NUMBER*)(gmem.d_hap + total_cols + sizeof(NUMBER)-(13*total_rows+total_cols)%sizeof(NUMBER));
    if ((char*)gmem.results+n_tc*sizeof(NUMBER)-(char*)gmem.M > gmem.totalMem) {
       printf("data exceeds GPU memory. Quitting.");
       return;
    }
    int s=0;
+   cudaStream_t marker_s;
+   cudaStreamCreate(&marker_s);
    for (int start=0;start<n_tc;start+=n_tc/gmem.N_STREAMS) {
       int finish=min(start+n_tc/gmem.N_STREAMS, n_tc);
       Staging.start();
+      //CPU_start<<<1,1,0,marker_s>>>();
 #pragma omp parallel for shared(gmem, tc) private (z)
       for (int z=start;z<finish;z++)
       {
          err = tc2gmem<NUMBER>(gmem, &tc[z],z);
       }
+      //CPU_end<<<1,1,0,marker_s>>>();
       Staging.acc();
       ComputeGPU.start();
       cudaStreamSynchronize(gmem.strm[s]);
-      compute_gpu_stream(gmem.offset+start, gmem.p, gmem.rs, gmem.hap, gmem.q, 
+      compute_gpu_stream(gmem.offset+start, gmem.rs, gmem.hap, gmem.q, gmem.n, 
                          ctx.INITIAL_CONSTANT, finish-start, gmem, gmem.strm[s], start);
       ComputeGPU.acc();
       s++;
@@ -465,8 +455,9 @@ int main(int argc, char* argv[])
          ComputationTime.start();
          compute_full_prob_multiple<double>(prob, tc, cnt+1, gmem);
          ComputationTime.acc();
-         for (int q=0;q<cnt+1;q++)
+         for (int q=0;q<cnt+1;q++) {
 		      printf("%E\n", q+basecnt, prob[q]);
+         }
          cnt = -1;
          basecnt+=10000;
       }
@@ -484,8 +475,9 @@ int main(int argc, char* argv[])
    //This call frees memory in gmem
    compute_full_prob_multiple<double>(prob, tc, 0, gmem);
 
-   for (int q=0;q<cnt;q++)
+   for (int q=0;q<cnt;q++) {
      printf("%E\n", q+basecnt, prob[q]);
+   }
 
    TotalTime.acc();
 

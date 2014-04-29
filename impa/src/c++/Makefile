@@ -9,6 +9,7 @@ CC=gcc
 CXX=g++
 NVCC=nvcc 
 CUDAFLAGS= -Xptxas -v,-abi=no -arch=sm_35 $(USERFLAGS) -Xcompiler $(OMPCFLAGS)
+#CUDAFLAGS= -arch=sm_35 $(USERFLAGS) -Xcompiler $(OMPCFLAGS)
 
 ifeq ($(DEBUG),1)
    CFLAGS += -g

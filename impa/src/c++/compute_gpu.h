@@ -6,6 +6,9 @@
 #define XX 3
 #define MY 4
 #define YY 5
+#define II 0
+#define CC 1
+#define DD 2
 #define MAX(a,b) ((a)>(b)?(a):(b))
 
 #define WARP 32 
@@ -33,10 +36,12 @@ struct GPUmem {
    PRECISION* Yr0;
    char* rs;
    char* hap;
+   int* n;
    PRECISION* q;
    PRECISION* results;
    char* d_rs;
    char* d_hap;
+   int * d_n;
    PRECISION* d_q; 
    PRECISION* d_results;
    GPUmem() {M=0;};
@@ -46,9 +51,11 @@ int GPUmemAlloc(GPUmem<PRECISION>& gmem);
 template<class PRECISION>
 int GPUmemFree(GPUmem<PRECISION>& gmem);
 template <class PRECISION>
-void compute_gpu(int offset[][3], PRECISION *p, char *rs, char* hap, PRECISION* q,
-                  PRECISION Yr0, int n_tc, GPUmem<PRECISION>&);
+void compute_gpu(int offset[][3], char *rs, char* hap, PRECISION* q, int* n,
+                  PRECISION init_const, int n_tc, GPUmem<PRECISION>&);
 template <class PRECISION>
-void compute_gpu_stream(int offset[][3], PRECISION *p, char *rs, char* hap, PRECISION* q,
-                  PRECISION Yr0, int n_tc, GPUmem<PRECISION>&, cudaStream_t strm, int start);
+void compute_gpu_stream(int offset[][3], char *rs, char* hap, PRECISION* q,
+                  int* n, PRECISION init_const, int n_tc, GPUmem<PRECISION>&, cudaStream_t strm, int start);
+__global__ void CPU_start();
+__global__ void CPU_end();
 #endif
