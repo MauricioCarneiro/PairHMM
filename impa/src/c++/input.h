@@ -11,6 +11,9 @@ struct testcase
 {
 	int rslen, haplen, *q, *i, *d, *c;
 	char *hap, *rs;
+   int index;
+   int g_index;
+   double prob;
    void display()
    {
       printf("hap (len %d) = %s\n", haplen, hap);
@@ -43,6 +46,7 @@ struct testcase
    {
        rslen = src.rslen;
        haplen = src.haplen;
+       index = src.index;
 	    int sz = 1 + ((rslen + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
        if (rslen > 0) 
        {
@@ -79,6 +83,7 @@ struct testcase
        hap = rs = NULL;
        q = i = d = c = NULL;
        haplen = rslen = 0;
+       index = g_index++;
    }
 #if 0
    ~testcase() {

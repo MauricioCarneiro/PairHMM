@@ -121,7 +121,16 @@ void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in,
 
 }
 
-
+int tc_comp(const void* tc_A, const void* tc_B) {
+   int rA = 32*((((testcase*)tc_A)->rslen+31)/32); 
+   int rB = 32*((((testcase*)tc_B)->rslen+31)/32); 
+   if (rA*((testcase*)tc_A)->haplen + 32*32*(rA/32) <  
+       rB*((testcase*)tc_B)->haplen + 32*32*(rB/32)) return 1;
+   else return -1;
+}
+int tc_comp_unsort(const void* tc_A, const void* tc_B) {
+   return ((testcase*)tc_A)->index - ((testcase*)tc_B)->index;
+}
 template<class NUMBER>
 void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc, 
                                  GPUmem<NUMBER> &gmem, NUMBER *before_last_log = NULL) {
@@ -130,6 +139,7 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
 
    Timing GPUAlloc(string("GPU Alloc/Free :  "));
    GPUAlloc.start();
+   qsort(tc, n_tc, sizeof(testcase), tc_comp);
    if (0==n_tc) {
       err = GPUmemFree<NUMBER>(gmem);
       return;
@@ -204,7 +214,8 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    }
    ComputeGPU.start();
    for (s=0;s<gmem.N_STREAMS;s++) cudaStreamSynchronize(gmem.strm[s]);
-   memcpy(probs, gmem.results, sizeof(NUMBER)*n_tc);
+   //memcpy(probs, gmem.results, sizeof(NUMBER)*n_tc);
+   for (int z=0;z<n_tc;z++) probs[tc[z].index] = gmem.results[z];
    ComputeGPU.acc();
 } 
 template<class NUMBER>
@@ -450,6 +461,7 @@ int main(int argc, char* argv[])
    {
       //printf("In pairhmm-cuda: &tc[%d] = %p\n", cnt, tc+cnt);
       //(tc+cnt)->display();
+      tc[cnt].index=cnt;
       if (cnt==9999) {
          printf("Computing %d testcases\n", cnt+1);
          ComputationTime.start();
