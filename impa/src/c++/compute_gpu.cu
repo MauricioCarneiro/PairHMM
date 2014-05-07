@@ -2,6 +2,29 @@
 #include "compute_gpu.h"
 #include "stdio.h"
 
+void cudaCheckError(int line, const char* file) {
+   cudaError_t err = cudaGetLastError();
+   if (err) {
+       fprintf(stderr, "error %d on line %d : %s\n", err, line, cudaGetErrorString(err));
+       fflush(0);
+   }
+}
+
+void createNewTextureFloat(cudaTextureObject_t& tex, cudaResourceDesc& resDesc, cudaTextureDesc& texDesc, void* devPtr) {
+
+   tex=0;
+   memset(&resDesc, 0, sizeof(cudaResourceDesc));
+   resDesc.res.linear.devPtr = devPtr;
+   resDesc.resType = cudaResourceTypeLinear;
+   resDesc.res.linear.desc.f = cudaChannelFormatKindSigned;
+   resDesc.res.linear.desc.x = 32;
+   resDesc.res.linear.sizeInBytes = 10000*sizeof(float);
+   memset(&texDesc, 0, sizeof(cudaTextureDesc));
+   texDesc.readMode = cudaReadModeElementType;
+   cudaCreateTextureObject(&tex, &resDesc, &texDesc, NULL);
+   cudaCheckError(__LINE__, __FILE__);
+}
+
 __device__ double __shfl_up(double d,unsigned int i){
    double ret;
    ((float*)&ret)[0] = __shfl_up(((float*)&d)[0], i);
@@ -146,7 +169,7 @@ __global__ void
 __launch_bounds__(128,9)
 pairhmm_kernel( NUMBER init_const, NUMBER* M, NUMBER *X, NUMBER *Y, 
                                char* rs, char* hap, NUMBER* q, 
-                               int* n, int* offset, int n_mats,
+                               int* n, cudaTextureObject_t t_n, int* offset, int n_mats,
                                NUMBER* output, NUMBER log10_init) {
    NUMBER M_p, M_pp, X_p, X_pp, Y_p, Y_pp, distm, pMM, pGapM, pXX, 
           pMX, pYY, pMY, M_loc, X_loc, Y_loc;
@@ -179,6 +202,7 @@ pairhmm_kernel( NUMBER init_const, NUMBER* M, NUMBER *X, NUMBER *Y,
    rs+=offset[3*wid+1];
    hap+=offset[3*wid+2];
    q+=offset[3*wid+1];
+   int n_off=3*offset[3*wid+1];
    n+=3*offset[3*wid+1];
    for (int stripe = 0; stripe < ROWS-1; stripe+=WARP-1) {
       if ( stripe==0 && tid < 2) {
@@ -208,14 +232,34 @@ pairhmm_kernel( NUMBER init_const, NUMBER* M, NUMBER *X, NUMBER *Y,
       _rs = rs[tid+stripe];
 	   _q = q[tid+stripe];
       }
-      //TODO transpose p for coalesced reads
+      //TODO transpose n for coalesced reads?
       //TODO pass n as a single integer since only the first 7 bits of each matter
+#ifdef DEBUG
+      if (wid==1 && 
+              tex1Dfetch<int>(t_n, 3*(tid+stripe)+DD+n_off) != n[3*(tid+stripe)+DD]) {
+                   printf("mismatch : stripe = %d, tid = %d: D = %d, I = %d, C = %d\nFrom (int*)n: D = %d, I = %d, C = %d\n", stripe, tid,
+                                tex1Dfetch<int>(t_n, 3*(tid+stripe)+DD+n_off),
+                                tex1Dfetch<int>(t_n, 3*(tid+stripe)+II+n_off),
+                                tex1Dfetch<int>(t_n, 3*(tid+stripe)+CC+n_off),
+                                n[3*(tid+stripe)+DD],
+                                n[3*(tid+stripe)+II],
+                                n[3*(tid+stripe)+CC]);
+      } else if(wid==1) printf("Match : stripe = %d, tid = %d\n", stripe, tid);
+#endif
+#ifdef __USE_TEX
+      pMM = 1.0 - ph2pr<NUMBER>((tex1Dfetch<int>(t_n,3*(tid+stripe)+II+n_off)+tex1Dfetch<int>(t_n,3*(tid+stripe)+DD+n_off)) & 127);
+      pXX = ph2pr<NUMBER>(tex1Dfetch<int>(t_n,3*(tid+stripe)+CC+n_off));
+      pMX = ph2pr<NUMBER>(tex1Dfetch<int>(t_n,3*(tid+stripe)+II+n_off));
+      pMY = tid + stripe == ROWS-1 ? 1.0 : ph2pr<NUMBER>(tex1Dfetch<int>(t_n,3*(tid+stripe)+DD+n_off));
+#else
       pMM = 1.0 - ph2pr<NUMBER>(n[3*(tid+stripe)+II]+n[3*(tid+stripe)+DD] & 127);
       pXX = ph2pr<NUMBER>(n[3*(tid+stripe)+CC]);
-      pGapM = 1.0 - pXX;
       pMX = ph2pr<NUMBER>(n[3*(tid+stripe)+II]);
-      pYY = tid + stripe == ROWS-1 ? 1.0 : pXX;
       pMY = tid + stripe == ROWS-1 ? 1.0 : ph2pr<NUMBER>(n[3*(tid+stripe)+DD]);
+#endif
+
+      pGapM = 1.0 - pXX;
+      pYY = tid + stripe == ROWS-1 ? 1.0 : pXX;
       //TODO get rid of this?
       if (tid+stripe==0) {
          pMM = pXX = pGapM = pMX = pYY = pMY = 0.0;
@@ -357,7 +401,7 @@ pairhmm_kernel( NUMBER init_const, NUMBER* M, NUMBER *X, NUMBER *Y,
       }
    }
    if (tid == (ROWS-2)%(WARP-1)+1) {
-      //printf("t : %d  LOG10(%1.50E) = %1.50E\n", tid, result, log10(result));
+      //printf("output[%d] = LOG10(%1.50E) = %1.50E\n", wid, result, log10(result));
       output[wid] = log10(result) - log10_init; 
    }
    //if (tid == (ROWS-1)%(WARP-1)) output[wid] = result;
@@ -368,9 +412,9 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
    cudaDeviceProp deviceProp;
    cudaError_t err = cudaGetDeviceProperties(&deviceProp, 0);
    char *current, *d_current;
+   int size = sizeof(NUMBER);
    gmem.totalMem = 3*deviceProp.totalGlobalMem/4;
    //TODO no need to assign d_M, etc.
-   //TODO remove Xc0
    cudaMalloc(&gmem.d_amem, gmem.totalMem);
    //gmem.amem = (char*)malloc(gmem.totalMem);
    cudaMallocHost(&gmem.amem, gmem.totalMem); 
@@ -379,44 +423,36 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
 
    gmem.d_M = (NUMBER*)d_current;
    gmem.M = (NUMBER*)current;
-   current += 8*(gmem.totalMem/10/8); d_current += 8*(gmem.totalMem/10/8);
+   current += size*(gmem.totalMem/10/size); d_current += size*(gmem.totalMem/10/size);
 
    gmem.d_X = (NUMBER*)d_current;
    gmem.X = (NUMBER*)current;
-   current += 8*(gmem.totalMem/10/8); d_current += 8*(gmem.totalMem/10/8);
+   current += size*(gmem.totalMem/10/size); d_current += size*(gmem.totalMem/10/size);
 
    gmem.d_Y = (NUMBER*)d_current;
    gmem.Y = (NUMBER*)current;
-   current += 8*(gmem.totalMem/10/8); d_current += 8*(gmem.totalMem/10/8);
+   current += size*(gmem.totalMem/10/size); d_current += size*(gmem.totalMem/10/size);
 
    //TODO don't assign these, they get reassigned anyway
    gmem.d_p = (NUMBER*)d_current;
    gmem.p = (NUMBER*)current;
-   current += 8*(gmem.totalMem/10/8); d_current += 8*(gmem.totalMem/10/8);
+   current += size*(gmem.totalMem/10/size); d_current += size*(gmem.totalMem/10/size);
 
    gmem.d_q = (NUMBER*)d_current;
    gmem.q = (NUMBER*)current;
-   current += 8*(gmem.totalMem/10/8); d_current += 8*(gmem.totalMem/10/8);
+   current += size*(gmem.totalMem/10/size); d_current += size*(gmem.totalMem/10/size);
 
    gmem.d_n = (int*)d_current;
    gmem.n = (int*)current;
-   current += 4*(gmem.totalMem/10/8); d_current += 4*(gmem.totalMem/10/8);
+   current += 4*(gmem.totalMem/10/4); d_current += 4*(gmem.totalMem/10/4);
 
    gmem.d_rs = d_current;
    gmem.rs = current;
-   current += 700000; d_current += 700000;
+   current += gmem.totalMem/5; d_current += gmem.totalMem/5;
 
    gmem.d_hap = d_current;
    gmem.hap = current;
-   current += 700000; d_current += 700000;
-
-   gmem.d_Yr0 = (NUMBER*)d_current;
-   gmem.Yr0 = (NUMBER*)current;
-   current += gmem.totalMem/10; d_current += gmem.totalMem/10;
-
-   gmem.d_Xc0 = (NUMBER*)d_current;
-   gmem.Xc0 = (NUMBER*)current;
-   current += gmem.totalMem/10; d_current += gmem.totalMem/10;
+   current += gmem.totalMem/5; d_current += gmem.totalMem/5;
 
    if( current - (char*)gmem.amem > gmem.totalMem) {
       printf("Error: Requested too much memory on GPU\n");
@@ -431,8 +467,6 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
        !gmem.p ||
        !gmem.q ||
        !gmem.rs ||
-       !gmem.Yr0 ||
-       !gmem.Xc0 ||
        !gmem.hap) {
       printf("CPU mem allocation fail\n");
       return 1;
@@ -457,8 +491,6 @@ int GPUmemFree(GPUmem<NUMBER>& gmem)
    gmem.X=0;
    gmem.Y=0;
    gmem.p=0;
-   gmem.Yr0=0;
-   gmem.Xc0=0;
    gmem.q=0;
    gmem.rs=0;
    gmem.hap=0;
@@ -533,6 +565,8 @@ void compute_gpu_stream(int offset[][3], char* rs, char* hap, PRECISION* q,
    cudaMemcpyAsync(gmem.d_rs+offset[0][1], rs+offset[0][1], sizeof(char)*(offset[n_tc][1]-offset[0][1]), cudaMemcpyHostToDevice, strm);
    cudaMemcpyAsync(gmem.d_hap+offset[0][2], hap+offset[0][2], sizeof(char)*(offset[n_tc][2]-offset[0][2]), cudaMemcpyHostToDevice, strm);
 #endif
+   createNewTextureFloat(gmem.n_tex.tex, gmem.n_tex.RD, gmem.n_tex.TD, gmem.d_n);
+   createNewTextureFloat(gmem.q_tex.tex, gmem.q_tex.RD, gmem.q_tex.TD, gmem.d_q);
    cuerr= cudaGetLastError();
    if (cuerr) printf("Error in memcpy. %d : %s\n", cuerr, cudaGetErrorString(cuerr));
    //One warp handles one matrix
@@ -540,13 +574,14 @@ void compute_gpu_stream(int offset[][3], char* rs, char* hap, PRECISION* q,
 	PRECISION LOG10_INITIAL_CONSTANT = log10(INITIAL_CONSTANT);
    
    pairhmm_kernel<<<(n_tc+3)/4,WARP*4,0,strm>>>( init_const, gmem.d_M, gmem.d_X, 
-                                  gmem.d_Y, gmem.d_rs, gmem.d_hap, gmem.d_q, gmem.d_n,
+                                  gmem.d_Y, gmem.d_rs, gmem.d_hap, gmem.d_q, gmem.d_n, gmem.n_tex.tex,
                                   gmem.d_offset, n_tc-1, gmem.d_results+results_inx, LOG10_INITIAL_CONSTANT); 
    cuerr = cudaGetLastError();
    if (cuerr) {
       printf ("Cuda error %d : %s\n", cuerr, cudaGetErrorString(cuerr));
    }
-   cudaMemcpyAsync(gmem.results+results_inx, gmem.d_results+results_inx, sizeof(PRECISION)*n_tc, cudaMemcpyDeviceToHost,strm);
+   cudaMemcpyAsync(gmem.results+results_inx, gmem.d_results+results_inx, sizeof(PRECISION)*n_tc,
+                   cudaMemcpyDeviceToHost,strm);
    //GPUmemFree(gmem);
 }
 template void compute_gpu<double>(int [][3], char*, char*, double*, int*, double, int, GPUmem<double>&);

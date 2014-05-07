@@ -12,6 +12,12 @@
 #define MAX(a,b) ((a)>(b)?(a):(b))
 
 #define WARP 32 
+struct cudaTextureData {
+   cudaResourceDesc RD;
+   cudaTextureDesc TD;
+   cudaTextureObject_t tex;
+
+};
 template<class PRECISION>
 struct GPUmem {
    int offset[10001][3];
@@ -19,31 +25,35 @@ struct GPUmem {
    int index;
    int N_STREAMS;
    cudaStream_t *strm;
+   cudaTextureData n_tex;
+   cudaTextureData q_tex;
    char* d_amem; //these two get alloced, all else
    char* amem;   //  are pointers within this allocation
    unsigned long long totalMem; //allocated GPU memory (in sizeofchar))
-   PRECISION* d_M;
-   PRECISION* d_X;
-   PRECISION* d_Y;
-   PRECISION* d_p;
-   PRECISION* d_Yr0;
-   PRECISION* d_Xc0;
-   PRECISION* M;
-   PRECISION* X;
-   PRECISION* Y;
+   /* input */
    PRECISION* p;
-   PRECISION* Xc0;
-   PRECISION* Yr0;
    char* rs;
    char* hap;
    int* n;
    PRECISION* q;
-   PRECISION* results;
+   PRECISION* d_p;
    char* d_rs;
    char* d_hap;
    int * d_n;
    PRECISION* d_q; 
+
+   /*  output */
+   PRECISION* results;
    PRECISION* d_results;
+
+   /*  scratch  */
+   PRECISION* M;
+   PRECISION* X;
+   PRECISION* Y;
+   PRECISION* d_M;
+   PRECISION* d_X;
+   PRECISION* d_Y;
+
    GPUmem() {M=0;};
 }; 
 template<class PRECISION>
@@ -56,6 +66,8 @@ void compute_gpu(int offset[][3], char *rs, char* hap, PRECISION* q, int* n,
 template <class PRECISION>
 void compute_gpu_stream(int offset[][3], char *rs, char* hap, PRECISION* q,
                   int* n, PRECISION init_const, int n_tc, GPUmem<PRECISION>&, cudaStream_t strm, int start);
+void cudaCheckError(int line, const char* file);
+void createNewTextureFloat(cudaTextureObject_t& tex, cudaResourceDesc& resDesc, cudaTextureDesc& texDesc, void* devPtr);
 __global__ void CPU_start();
 __global__ void CPU_end();
 #endif

@@ -131,6 +131,10 @@ int tc_comp(const void* tc_A, const void* tc_B) {
 int tc_comp_unsort(const void* tc_A, const void* tc_B) {
    return ((testcase*)tc_A)->index - ((testcase*)tc_B)->index;
 }
+
+#define round_up(A,B) (B)*((A+B-1)/(B))
+//#define round_up(A,B) A
+
 template<class NUMBER>
 void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc, 
                                  GPUmem<NUMBER> &gmem, NUMBER *before_last_log = NULL) {
@@ -172,12 +176,13 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    gmem.d_X = gmem.d_M + total_scratch;
    gmem.Y = gmem.X + total_scratch;
    gmem.d_Y = gmem.d_X + total_scratch;
-   gmem.p = gmem.Y + total_scratch;
-   gmem.d_p = gmem.d_Y + total_scratch;
-   gmem.q = gmem.p + total_rows*6;
-   gmem.d_q = gmem.d_p + total_rows*6;
-   gmem.n = (int*)(gmem.q + total_rows);
-   gmem.d_n = (int*)(gmem.d_q + total_rows);
+   //q and n must be aligned to 512 bytes for transfer as textures
+   gmem.q = gmem.M + round_up(3*total_scratch, 512/sizeof(NUMBER));
+   gmem.d_q = gmem.d_M + round_up(3*total_scratch, 512/sizeof(NUMBER));
+   if (((char*)gmem.d_q-(char*)gmem.d_M)%512 != 0) printf("d_q not aligned\n");
+   gmem.n = (int*)(gmem.q + round_up(total_rows,512/sizeof(NUMBER)));
+   gmem.d_n = (int*)(gmem.d_q + round_up(total_rows,512/sizeof(NUMBER)));
+   if (((char*)gmem.d_n-(char*)gmem.d_M)%512 != 0) printf("d_n not aligned\n");
    gmem.rs = (char*)(gmem.n + total_rows*3);
    gmem.d_rs = (char*)(gmem.d_n + total_rows*3);
    gmem.hap = gmem.rs + total_rows;
