@@ -69,6 +69,7 @@ int tc2gmem(GPUmem<NUMBER>& gmem, testcase* tc, int index)
 
 	Context<NUMBER> ctx;
 
+
 	//NUMBER M[ROWS][COLS];
 	//NUMBER M2[ROWS][COLS];
 	//NUMBER X[ROWS][COLS];
@@ -103,8 +104,6 @@ void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in,
 {
 	int ROWS = tc->rslen + 1;
    int r;
-
-   NUMBER (*p)[6] = (NUMBER (*)[6]) &p_in[0];
 
 	Context<NUMBER> ctx;
 	for (r = 1; r < ROWS; r++)
@@ -144,6 +143,7 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    Timing GPUAlloc(string("GPU Alloc/Free :  "));
    GPUAlloc.start();
    qsort(tc, n_tc, sizeof(testcase), tc_comp);
+   printf("largest mat: %d x %d\n", tc[0].rslen, tc[0].haplen);
    if (0==n_tc) {
       err = GPUmemFree<NUMBER>(gmem);
       return;
@@ -160,6 +160,7 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    int total_rows=0;
    int total_cols=0;
    int total_scratch=0;
+   int total_cells = 0;
    for (int z=0;z<n_tc;z++)
    {
       gmem.offset[z][0] = total_scratch;
@@ -168,17 +169,19 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
       total_rows += tc[z].rslen+1;
       total_cols += tc[z].haplen+1;
       total_scratch += ((tc[z].rslen+WARP-1)/(WARP-1))*(tc[z].haplen+1);
+      total_cells += tc[z].rslen*tc[z].haplen;
    }
+   //TODO clean this up!
    gmem.offset[n_tc][0] = total_scratch;
    gmem.offset[n_tc][1] = total_rows;
    gmem.offset[n_tc][2] = total_cols;
-   gmem.X = gmem.M + total_scratch;
-   gmem.d_X = gmem.d_M + total_scratch;
-   gmem.Y = gmem.X + total_scratch;
-   gmem.d_Y = gmem.d_X + total_scratch;
+   gmem.X = gmem.M + total_cols;
+   gmem.d_X = gmem.d_M + total_cols;
+   gmem.Y = gmem.X + total_cols;
+   gmem.d_Y = gmem.d_X + total_cols;
    //q and n must be aligned to 512 bytes for transfer as textures
-   gmem.q = gmem.M + round_up(3*total_scratch, 512/sizeof(NUMBER));
-   gmem.d_q = gmem.d_M + round_up(3*total_scratch, 512/sizeof(NUMBER));
+   gmem.q = gmem.M + round_up(3*total_cols, 512/sizeof(NUMBER));
+   gmem.d_q = gmem.d_M + round_up(3*total_cols, 512/sizeof(NUMBER));
    if (((char*)gmem.d_q-(char*)gmem.d_M)%512 != 0) printf("d_q not aligned\n");
    gmem.n = (int*)(gmem.q + round_up(total_rows,512/sizeof(NUMBER)));
    gmem.d_n = (int*)(gmem.d_q + round_up(total_rows,512/sizeof(NUMBER)));
@@ -205,7 +208,7 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
 #pragma omp parallel for shared(gmem, tc) private (z)
       for (int z=start;z<finish;z++)
       {
-         err = tc2gmem<NUMBER>(gmem, &tc[z],z);
+         err = tc2gmem<NUMBER>(gmem, &tc[z], z);
       }
       //CPU_end<<<1,1,0,marker_s>>>();
       Staging.acc();
@@ -450,10 +453,11 @@ int main(int argc, char* argv[])
    Timing TotalTime(string("TOTAL: "));
    Timing ComputationTime(string("COMPUTATION: "));
    TotalTime.start();
-	testcase tc[10000];
+	testcase *tc = new testcase[200000];
    int cnt=0;
    int basecnt=0;
-   double prob[10000];
+   double *prob;
+   prob = (double*)malloc(200000*sizeof(double));
    GPUmem<double> gmem;
   
    std::ifstream infile;
@@ -467,8 +471,9 @@ int main(int argc, char* argv[])
       //printf("In pairhmm-cuda: &tc[%d] = %p\n", cnt, tc+cnt);
       //(tc+cnt)->display();
       tc[cnt].index=cnt;
-      if (cnt==9999) {
+      if (cnt==200000-1) {
          printf("Computing %d testcases\n", cnt+1);
+         fflush(0);
          ComputationTime.start();
          compute_full_prob_multiple<double>(prob, tc, cnt+1, gmem);
          ComputationTime.acc();
@@ -476,7 +481,7 @@ int main(int argc, char* argv[])
 		      printf("%E\n", q+basecnt, prob[q]);
          }
          cnt = -1;
-         basecnt+=10000;
+         basecnt+=200000;
       }
       cnt++;
 
@@ -498,6 +503,8 @@ int main(int argc, char* argv[])
 
    TotalTime.acc();
 
+   delete []tc;
+   free(prob);
 	return 0;
 }
 

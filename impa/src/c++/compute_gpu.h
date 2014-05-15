@@ -20,7 +20,7 @@ struct cudaTextureData {
 };
 template<class PRECISION>
 struct GPUmem {
-   int offset[10001][3];
+   int offset[200001][3];
    int* d_offset;
    int index;
    int N_STREAMS;
