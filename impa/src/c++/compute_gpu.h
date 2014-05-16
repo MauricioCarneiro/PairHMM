@@ -1,11 +1,11 @@
 #ifndef GPU_COMPUTE_H
 #define GPU_COMPUTE_H
 #define MM 0
-#define GapM 1
-#define MX 2
-#define XX 3
-#define MY 4
-#define YY 5
+#define MX 1
+#define XX 2
+#define MY 3
+#define YY 4
+#define GapM 5
 #define II 0
 #define CC 1
 #define DD 2

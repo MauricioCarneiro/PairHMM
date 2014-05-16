@@ -76,15 +76,13 @@ void pairhmm_jacopo(
     idc+=row_off;
 
     // precompute p[][]
-	NUMBER p[MAX_ROWS][6];
+	NUMBER p[4][MAX_ROWS];
    
 
-   p[0][MM]    = NUMBER(0.0);
-	p[0][GapM]  = NUMBER(0.0);
-	p[0][MX]    = NUMBER(0.0);
-	p[0][XX]    = NUMBER(0.0);
-	p[0][MY]    = NUMBER(0.0);
-	p[0][YY]    = NUMBER(0.0);
+   p[MM][0]    = NUMBER(0.0);
+	p[MX][0]    = NUMBER(0.0);
+	p[XX][0]    = NUMBER(0.0);
+	p[MY][0]    = NUMBER(0.0);
    int  l_q[MAX_ROWS];
 	for (r = 1; r < ROWS; r++)
 	{
@@ -100,12 +98,10 @@ void pairhmm_jacopo(
 		const int _c = (_idc >> 14) & 127;
       //if (pid==0) printf("i,d,c = %d,%d,%d\n", _i, _d, _c);
      //TODO (_i+_d)&127 This is here to match results from pairhmm-1-base
-		p[r][MM]    = NUMBER(1.0) - ph2pr<NUMBER>(_i + _d & 127);
-		p[r][GapM]  = NUMBER(1.0) - ph2pr<NUMBER>(_c);
-		p[r][MX]    = ph2pr<NUMBER>(_i);
-		p[r][XX]    = ph2pr<NUMBER>(_c);
-		p[r][MY]    = (r == ROWS - 1) ? NUMBER(1.0) : ph2pr<NUMBER>(_d);
-		p[r][YY]    = (r == ROWS - 1) ? NUMBER(1.0) : ph2pr<NUMBER>(_c);
+		p[MM][r]    = NUMBER(1.0) - ph2pr<NUMBER>(_i + _d & 127);
+		p[MX][r]    = ph2pr<NUMBER>(_i);
+		p[XX][r]    = ph2pr<NUMBER>(_c);
+		p[MY][r]    = (r == ROWS - 1) ? NUMBER(1.0) : ph2pr<NUMBER>(_d);
 
       l_q[r] = (_idc >> 21) & 127;
 	}
@@ -174,14 +170,13 @@ void pairhmm_jacopo(
             Y_c[r-1] = Y[BATCH];
 
             // prefetch p[r][*] in registers (though the compiler might do it)
-            NUMBER p_GapM = p[r][GapM];
-            NUMBER p_MM   = p[r][MM];
-            NUMBER p_MX   = p[r][MX];
-            NUMBER p_XX   = p[r][XX];
-            NUMBER p_MY   = p[r][MY];
-            NUMBER p_YY   = p[r][YY];
+            NUMBER p_MM   = p[MM][r];
+            NUMBER p_MX   = p[MX][r];
+            NUMBER p_XX   = p[XX][r];
+            NUMBER p_MY   = p[MY][r];
+            NUMBER p_GapM = NUMBER(1.0) - p[XX][r];
+            NUMBER p_YY   = r==ROWS-1 ? NUMBER(1.0) : p[XX][r];
 
-            NUMBER M_p=M[0], X_p=X[0];
             // loop across columns in this stripe
             for (int bid = BATCH; bid >0; --bid)
             {
@@ -195,8 +190,6 @@ void pairhmm_jacopo(
                       NUMBER(1.0) - distm_q :
                                     distm_q;
 
-                M_p = M[bid];
-                X_p = X[bid];
                 X[bid] = M[bid] * p_MX + X[bid] * p_XX; 
                 M[bid] = distm * (M[bid-1] * p_MM + X[bid-1] * p_GapM + Y[bid-1] * p_GapM);
             }
@@ -1034,7 +1027,7 @@ void compute_gpu_stream(int2 *offset, char* rs, char* hap, PRECISION* q,
                                   gmem.d_offset, n_tc-1, gmem.d_results+results_inx, LOG10_INITIAL_CONSTANT); 
 #else
    printf("One thread/matrix\n");
-   pairhmm_jacopo<PRECISION,19><<<(n_tc+WARP*4-1)/(WARP*4),WARP*4,0,strm>>>(  gmem.d_rs, gmem.d_hap, 
+   pairhmm_jacopo<PRECISION,16><<<(n_tc+WARP*4-1)/(WARP*4),WARP*4,0,strm>>>(  gmem.d_rs, gmem.d_hap, 
                                            gmem.d_q, gmem.d_n, gmem.n_tex.tex, (int2*)gmem.d_offset, n_tc-1, 
                                            gmem.d_results+results_inx, init_const, LOG10_INITIAL_CONSTANT); 
 #endif
