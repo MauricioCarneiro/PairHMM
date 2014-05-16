@@ -928,7 +928,7 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
       printf("CPU mem allocation fail\n");
       return 1;
    }
-   gmem.N_STREAMS=1;
+   gmem.N_STREAMS=STREAMS;
    gmem.strm = (cudaStream_t*)malloc(sizeof(cudaStream_t)*gmem.N_STREAMS);
    for (int z=0;z<gmem.N_STREAMS;z++) cudaStreamCreate(&gmem.strm[z]);
    return 0;

@@ -199,7 +199,7 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    gmem.results = (NUMBER*)(gmem.hap + total_cols + sizeof(NUMBER)-(13*total_rows+total_cols)%sizeof(NUMBER));
    gmem.d_results = (NUMBER*)(gmem.d_hap + total_cols + sizeof(NUMBER)-(13*total_rows+total_cols)%sizeof(NUMBER));
    if ((char*)gmem.results+n_tc*sizeof(NUMBER)-(char*)gmem.M > gmem.totalMem) {
-      printf("data exceeds GPU memory. Quitting.");
+      fprintf(stderr, "data exceeds GPU memory. Quitting.\n");
       return;
    }
    int s=0;

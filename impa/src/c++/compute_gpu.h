@@ -12,7 +12,10 @@
 #define MAX(a,b) ((a)>(b)?(a):(b))
 
 #define WARP 32 
-#define MAX_PROBS 200000
+#define MAX_PROBS 512*1024
+#ifndef STREAMS
+#define STREAMS 1
+#endif
 struct cudaTextureData {
    cudaResourceDesc RD;
    cudaTextureDesc TD;
