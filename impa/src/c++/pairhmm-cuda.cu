@@ -80,15 +80,17 @@ int tc2gmem(GPUmem<NUMBER>& gmem, testcase* tc, int index)
 	//NUMBER p[ROWS][6];
    //NUMBER q_new[ROWS];
    if (ROWS==1 || COLS==1) return 0;
-   extract_tc(gmem.M,gmem.X,gmem.Y,gmem.p+gmem.offset[index][1]*6,gmem.n+gmem.offset[index][1]*3,
-              gmem.q+gmem.offset[index][1],tc);
+   extract_tc(gmem.M,gmem.X,gmem.Y,gmem.p+gmem.offset[index].x*6,gmem.n+gmem.offset[index].x,
+              gmem.q+gmem.offset[index].x,tc);
    //TODO check data sizes first
    //      return error if we're out of space
    //memcpy(gmem.Xc0+gmem.offset[gmem.index][1], Xc0, sizeof(NUMBER)*ROWS);
    //memcpy(gmem.Yr0+gmem.offset[gmem.index][2], Yr0, sizeof(NUMBER)*COLS);
    //memcpy(gmem.p+gmem.offset[gmem.index][1]*6, &p[0][0], sizeof(NUMBER)*ROWS*6);
-   memcpy(gmem.rs+gmem.offset[index][1], tc->rs, sizeof(char)*ROWS);
-   memcpy(gmem.hap+gmem.offset[index][2], tc->hap, sizeof(char)*COLS);
+#ifndef __NO_COPY
+   memcpy(gmem.rs+gmem.offset[index].x, tc->rs, sizeof(char)*ROWS);
+   memcpy(gmem.hap+gmem.offset[index].y, tc->hap, sizeof(char)*COLS);
+#endif
    //memcpy(gmem.q+gmem.offset[gmem.index][1], q_new, sizeof(NUMBER)*ROWS);
    //gmem.offset[gmem.index+1][0] = gmem.offset[gmem.index][0] + ROWS*COLS;
    //gmem.offset[gmem.index+1][0] = gmem.offset[gmem.index][0] + ((ROWS+WARP-2)/(WARP-1))*COLS;
@@ -106,17 +108,19 @@ void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in,
    int r;
 
 	Context<NUMBER> ctx;
+#ifndef __NO_COPY
 	for (r = 1; r < ROWS; r++)
 	{
 		int _i = tc->i[r-1] & 127;
 		int _d = tc->d[r-1] & 127;
 		int _c = tc->c[r-1] & 127;
-      n_new[3*r+II] = _i;
-      n_new[3*r+CC] = _c;
-      n_new[3*r+DD] = _d;
-		q_new[r] = pow(10.0,-((double)((tc->q[r]) & 127))/10.0);
+      int _q = tc->q[r-1] & 127;
+      //n_new[3*r+II] = _i;
+      //n_new[3*r+CC] = _c;
+      //n_new[3*r+DD] = _d;
+      n_new[r]=_i+128*_d+128*128*_c+128*128*128*_q;
 	}
-	q_new[0] = pow(10.0,-((double)((tc->q[0]) & 127))/10.0);
+#endif
 
 }
 
@@ -142,7 +146,7 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
 
    Timing GPUAlloc(string("GPU Alloc/Free :  "));
    GPUAlloc.start();
-   qsort(tc, n_tc, sizeof(testcase), tc_comp);
+   //qsort(tc, n_tc, sizeof(testcase), tc_comp);
    printf("largest mat: %d x %d\n", tc[0].rslen, tc[0].haplen);
    if (0==n_tc) {
       err = GPUmemFree<NUMBER>(gmem);
@@ -163,18 +167,18 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    int total_cells = 0;
    for (int z=0;z<n_tc;z++)
    {
-      gmem.offset[z][0] = total_scratch;
-      gmem.offset[z][1] = total_rows;
-      gmem.offset[z][2] = total_cols;
+      //gmem.offset[z][0] = total_scratch;
+      gmem.offset[z].x = total_rows;
+      gmem.offset[z].y = total_cols;
       total_rows += tc[z].rslen+1;
       total_cols += tc[z].haplen+1;
       total_scratch += ((tc[z].rslen+WARP-1)/(WARP-1))*(tc[z].haplen+1);
       total_cells += tc[z].rslen*tc[z].haplen;
    }
    //TODO clean this up!
-   gmem.offset[n_tc][0] = total_scratch;
-   gmem.offset[n_tc][1] = total_rows;
-   gmem.offset[n_tc][2] = total_cols;
+   //gmem.offset[n_tc][0] = total_scratch;
+   gmem.offset[n_tc].x = total_rows;
+   gmem.offset[n_tc].y = total_cols;
    gmem.X = gmem.M + total_cols;
    gmem.d_X = gmem.d_M + total_cols;
    gmem.Y = gmem.X + total_cols;
@@ -453,11 +457,11 @@ int main(int argc, char* argv[])
    Timing TotalTime(string("TOTAL: "));
    Timing ComputationTime(string("COMPUTATION: "));
    TotalTime.start();
-	testcase *tc = new testcase[200000];
+	testcase *tc = new testcase[MAX_PROBS];
    int cnt=0;
    int basecnt=0;
    double *prob;
-   prob = (double*)malloc(200000*sizeof(double));
+   prob = (double*)malloc(MAX_PROBS*sizeof(double));
    GPUmem<double> gmem;
   
    std::ifstream infile;
@@ -471,7 +475,7 @@ int main(int argc, char* argv[])
       //printf("In pairhmm-cuda: &tc[%d] = %p\n", cnt, tc+cnt);
       //(tc+cnt)->display();
       tc[cnt].index=cnt;
-      if (cnt==200000-1) {
+      if (cnt==MAX_PROBS-1) {
          printf("Computing %d testcases\n", cnt+1);
          fflush(0);
          ComputationTime.start();
@@ -481,7 +485,7 @@ int main(int argc, char* argv[])
 		      printf("%E\n", q+basecnt, prob[q]);
          }
          cnt = -1;
-         basecnt+=200000;
+         basecnt+=MAX_PROBS;
       }
       cnt++;
 

@@ -12,6 +12,7 @@
 #define MAX(a,b) ((a)>(b)?(a):(b))
 
 #define WARP 32 
+#define MAX_PROBS 200000
 struct cudaTextureData {
    cudaResourceDesc RD;
    cudaTextureDesc TD;
@@ -20,8 +21,8 @@ struct cudaTextureData {
 };
 template<class PRECISION>
 struct GPUmem {
-   int offset[200001][3];
-   int* d_offset;
+   int2* offset;
+   int2* d_offset;
    int index;
    int N_STREAMS;
    cudaStream_t *strm;
@@ -61,10 +62,10 @@ int GPUmemAlloc(GPUmem<PRECISION>& gmem);
 template<class PRECISION>
 int GPUmemFree(GPUmem<PRECISION>& gmem);
 template <class PRECISION>
-void compute_gpu(int offset[][3], char *rs, char* hap, PRECISION* q, int* n,
+void compute_gpu(int2 *offset, char *rs, char* hap, PRECISION* q, int* n,
                   PRECISION init_const, int n_tc, GPUmem<PRECISION>&);
 template <class PRECISION>
-void compute_gpu_stream(int offset[][3], char *rs, char* hap, PRECISION* q,
+void compute_gpu_stream(int2 *offset, char *rs, char* hap, PRECISION* q,
                   int* n, PRECISION init_const, int n_tc, GPUmem<PRECISION>&, cudaStream_t strm, int start);
 void cudaCheckError(int line, const char* file);
 void createNewTextureFloat(cudaTextureObject_t& tex, cudaResourceDesc& resDesc, cudaTextureDesc& texDesc, void* devPtr);

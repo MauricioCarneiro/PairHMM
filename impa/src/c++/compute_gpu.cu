@@ -10,7 +10,7 @@ void cudaCheckError(int line, const char* file) {
    }
 }
 
-void createNewTextureFloat(cudaTextureObject_t& tex, cudaResourceDesc& resDesc, cudaTextureDesc& texDesc, void* devPtr) {
+void createNewTextureFloat(cudaTextureObject_t& tex, cudaResourceDesc& resDesc, cudaTextureDesc& texDesc, void* devPtr, int size) {
 
    tex=0;
    memset(&resDesc, 0, sizeof(cudaResourceDesc));
@@ -18,7 +18,7 @@ void createNewTextureFloat(cudaTextureObject_t& tex, cudaResourceDesc& resDesc, 
    resDesc.resType = cudaResourceTypeLinear;
    resDesc.res.linear.desc.f = cudaChannelFormatKindSigned;
    resDesc.res.linear.desc.x = 32;
-   resDesc.res.linear.sizeInBytes = 10000*sizeof(float);
+   resDesc.res.linear.sizeInBytes = size*sizeof(float);
    memset(&texDesc, 0, sizeof(cudaTextureDesc));
    texDesc.readMode = cudaReadModeElementType;
    cudaCreateTextureObject(&tex, &resDesc, &texDesc, NULL);
@@ -51,8 +51,9 @@ void pairhmm_jacopo(
     const char* rs,
     const char* hap,
     const NUMBER*  q, 
-    const int4* idc,
-    const int3* offsets,    // NOTE: I have changed these to int2 (int3 causes bad striding! use either int2 or int4)
+    const int* idc,
+    cudaTextureObject_t t_n,
+    const int2* offsets,    // NOTE: I have changed these to int2 (int3 causes bad striding! use either int2 or int4)
     const int   n_mats,
     NUMBER*     output,
     NUMBER      INITIAL_CONSTANT,
@@ -64,10 +65,10 @@ void pairhmm_jacopo(
     int r, c;
 
     // fetch the row and column offsets
-    const int row_off = offsets[pid].y;
-    const int col_off = offsets[pid].z;
-    const int ROWS    = offsets[pid+1].y - row_off;
-    const int COLS    = offsets[pid+1].z - col_off;
+    const int row_off = offsets[pid].x;
+    const int col_off = offsets[pid].y;
+    const int ROWS    = offsets[pid+1].x - row_off;
+    const int COLS    = offsets[pid+1].y - col_off;
 
     q+=row_off;
     rs+=row_off;
@@ -78,42 +79,48 @@ void pairhmm_jacopo(
 	NUMBER p[MAX_ROWS][6];
    
 
-    p[0][MM]    = NUMBER(0.0);
+   p[0][MM]    = NUMBER(0.0);
 	p[0][GapM]  = NUMBER(0.0);
 	p[0][MX]    = NUMBER(0.0);
 	p[0][XX]    = NUMBER(0.0);
 	p[0][MY]    = NUMBER(0.0);
 	p[0][YY]    = NUMBER(0.0);
+   int  l_q[MAX_ROWS];
 	for (r = 1; r < ROWS; r++)
 	{
-        const int4 _idc = idc[ r-1 + row_off ];              // use a single int4 load here to fetch a tuple (i,d,c,0)
+#ifdef __USE_TEX
+        const int _idc = tex1Dfetch<int>(t_n, r + row_off);
+#else
+        const int _idc = idc[ r ];              //Four quality metrics (0-127) are combined into 1 int
+#endif
                                                              // NOTE: not sure if it's worth doing, but this could also be transposed
                                                              // for strided access...
-		const int _i = _idc.x & 127;
-		const int _d = _idc.y & 127;
-		const int _c = _idc.z & 127;
-		p[r][MM]    = NUMBER(1.0) - ph2pr<NUMBER>((_i + _d) & 127);
+		const int _i = _idc & 127;
+		const int _d = (_idc >> 7) & 127;
+		const int _c = (_idc >> 14) & 127;
+      //if (pid==0) printf("i,d,c = %d,%d,%d\n", _i, _d, _c);
+     //TODO (_i+_d)&127 This is here to match results from pairhmm-1-base
+		p[r][MM]    = NUMBER(1.0) - ph2pr<NUMBER>(_i + _d & 127);
 		p[r][GapM]  = NUMBER(1.0) - ph2pr<NUMBER>(_c);
 		p[r][MX]    = ph2pr<NUMBER>(_i);
 		p[r][XX]    = ph2pr<NUMBER>(_c);
 		p[r][MY]    = (r == ROWS - 1) ? NUMBER(1.0) : ph2pr<NUMBER>(_d);
 		p[r][YY]    = (r == ROWS - 1) ? NUMBER(1.0) : ph2pr<NUMBER>(_c);
+
+      l_q[r] = (_idc >> 21) & 127;
 	}
 
     // local memory copies of data used in the critical path
     char l_rs[MAX_ROWS];
     char l_hap[MAX_ROWS];
-    int  l_q[MAX_ROWS];
 
     for (r = 1; r < ROWS; ++r)
     {
-        l_rs[r]  = rs[r-1 + row_off];       // gmem inputs (NOTE: as above, these 2 vectors could be transposed)
-		//l_q[r]   = q[r-1 + row_off] & 127;
-		l_q[r]   = q[r-1 + row_off];
+        l_rs[r]  = rs[r-1];       // gmem inputs (NOTE: as above, these 2 vectors could be transposed)
     }
 
     for (c = 1; c < COLS; ++c)
-	    l_hap[c] = hap[c-1 + col_off];      // gmem inputs (NOTE: as above)
+	    l_hap[c] = hap[c-1];      // gmem inputs (NOTE: as above)
 
     NUMBER result = NUMBER(0.0);
 
@@ -125,11 +132,11 @@ void pairhmm_jacopo(
     // initialize the first stripe, i.e. the 0-th column
 	M_c[0] = NUMBER(0.0);
 	X_c[0] = NUMBER(0.0);
-	Y_c[0] = INITIAL_CONSTANT / (COLS-1);
+   Y_c[0] = INITIAL_CONSTANT / (COLS-1);
 	for (r = 1; r < ROWS; r++)
 	{
 		M_c[r] = NUMBER(0.0);
-		X_c[r] = X_c[r-1] * p[r][XX];
+		X_c[r] = NUMBER(0.0);
 		Y_c[r] = NUMBER(0.0);
 	}
 
@@ -147,7 +154,7 @@ void pairhmm_jacopo(
         {
 		    M[bid] = NUMBER(0.0);
 		    X[bid] = NUMBER(0.0);
-		    Y[bid] = INITIAL_CONSTANT / (COLS-1);
+		    Y[bid] = INITIAL_CONSTANT / (COLS-1); 
         }
 
         // loop across all rows
@@ -162,15 +169,21 @@ void pairhmm_jacopo(
             M[0] = M_c[r-1];
             X[0] = X_c[r-1];
             Y[0] = Y_c[r-1];
+            M_c[r-1] = M[BATCH];
+            X_c[r-1] = X[BATCH];
+            Y_c[r-1] = Y[BATCH];
 
             // prefetch p[r][*] in registers (though the compiler might do it)
             NUMBER p_GapM = p[r][GapM];
             NUMBER p_MM   = p[r][MM];
             NUMBER p_MX   = p[r][MX];
             NUMBER p_XX   = p[r][XX];
+            NUMBER p_MY   = p[r][MY];
+            NUMBER p_YY   = p[r][YY];
 
+            NUMBER M_p=M[0], X_p=X[0];
             // loop across columns in this stripe
-            for (int bid = 1; bid <= BATCH; ++bid)
+            for (int bid = BATCH; bid >0; --bid)
             {
                 // compute the column index
                 const int c = stripe + bid;
@@ -182,35 +195,30 @@ void pairhmm_jacopo(
                       NUMBER(1.0) - distm_q :
                                     distm_q;
 
-                const NUMBER M_p = M[bid]; // save M[r-1][c]
+                M_p = M[bid];
+                X_p = X[bid];
+                X[bid] = M[bid] * p_MX + X[bid] * p_XX; 
                 M[bid] = distm * (M[bid-1] * p_MM + X[bid-1] * p_GapM + Y[bid-1] * p_GapM);
-    			X[bid] = M_p * p_MX + X[bid] * p_XX;
             }
 
-            // prefetch p[r][*] in registers (though the compiler might do it)
-            NUMBER p_MY   = p[r][MY];
-            NUMBER p_YY   = p[r][YY];
-
-            // load the M,Y entries from this row of the previous stripe
+            //TODO remove?
             M[0] = M_c[r];
             Y[0] = Y_c[r];
 
-            for (int bid = 1; bid <= BATCH; ++bid)
-    			Y[bid] = M[bid-1] * p_MY + Y[bid-1] * p_YY;
-
-            // save this row of the next stripe
-            M_c[r] = M[BATCH];
-            X_c[r] = X[BATCH];
-            Y_c[r] = Y[BATCH];
+            for (int bid = 1; bid <= BATCH; bid++)
+            {
+    			    Y[bid] = M[bid-1] * p_MY + Y[bid-1] * p_YY;
+            }
         }
 
         // add up the result
         for (int bid = 1; bid <= BATCH; ++bid)
         {
             // compute the column index
-            const int c = stripe + c;
-            if (c < COLS)
+            const int c = stripe + bid;
+            if (c < COLS) {
                 result += M[bid] + X[bid];
+            }
         }
     }
 
@@ -221,7 +229,7 @@ __global__ void
 __launch_bounds__(WARP*4,8)
 pairhmm_kernel( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
                           char* rs, char* hap, NUMBER* q, 
-                          int *n, cudaTextureObject_t t_n, int* offset, int n_mats,
+                          int *n, cudaTextureObject_t t_n, int2* offset, int n_mats,
                           NUMBER* output, NUMBER log10_init) {
    NUMBER M_p;
    NUMBER M_pp;
@@ -245,32 +253,41 @@ pairhmm_kernel( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
    int wid = tid/WARP;
    tid %= WARP;
    if (wid > n_mats) return;
-   int ROWS = offset[3*wid+4]-offset[3*wid+1];
-   int COLS = offset[3*wid+5]-offset[3*wid+2];
+   int ROWS = offset[wid+1].x-offset[wid].x;
+   int COLS = offset[wid+1].y-offset[wid].y;
    init_const /= COLS-1;
    NUMBER result=0.0;
 #ifdef __LMEM
    NUMBER M[500], X[500], Y[500];
 #else
-   NUMBER *M=M_in+offset[3*wid+2];
-   NUMBER *X=X_in+offset[3*wid+2];
-   NUMBER *Y=Y_in+offset[3*wid+2];
+   NUMBER *M=M_in+offset[wid].y;
+   NUMBER *X=X_in+offset[wid].y;
+   NUMBER *Y=Y_in+offset[wid].y;
 #endif
-   rs+=offset[3*wid+1]; 
-   hap+=offset[3*wid+2]; 
-   q+=offset[3*wid+1];
-   int n_off=3*offset[3*wid+1];
-   n+=3*offset[3*wid+1];
+   rs+=offset[wid].x; 
+   hap+=offset[wid].y; 
+   q+=offset[wid].x;
+   int n_off=offset[wid].x;
+   n+=offset[wid].x;
    int z,r,c,bid;
    for (int stripe = 1; stripe < ROWS; stripe+=WARP) 
    {
       r = stripe + tid;
 	   _rs = rs[r-1];
 	   _q = q[r-1];
-      pMM = 1.0 - ph2pr<NUMBER>(n[3*r+II]+n[3*r+DD] & 127);
-      pXX = ph2pr<NUMBER>(n[3*r+CC]);
-      pMX = ph2pr<NUMBER>(n[3*r+II]);
-      pMY = r == ROWS-1 ? 1.0 : ph2pr<NUMBER>(n[3*r+DD]);
+#ifdef __USE_TEX
+      int _n = tex1Dfetch<int>(t_n, r+n_off);
+#else
+      int _n = n[r];
+#endif
+      int _i = _n & 127;
+      int _d = (_n >> 7) & 127;
+      int _c = (_n >> 14) & 127;
+      _q = ph2pr<NUMBER>((_n >> 21) & 127);
+      pMM = 1.0 - ph2pr<NUMBER>(_i+_d & 127);
+      pXX = ph2pr<NUMBER>(_c);
+      pMX = ph2pr<NUMBER>(_i);
+      pMY = r == ROWS-1 ? 1.0 : ph2pr<NUMBER>(_d);
       M_pp = M_p = X_p = X_pp = Y_p = Y_pp = 0.0;
       for (z=1; z<COLS+WARP; z++) {
          c = z - r + stripe;
@@ -287,6 +304,7 @@ pairhmm_kernel( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
 	   			distm = double(1.0) - _q;
             else distm = _q;
             if (r-stripe==0) {
+               //TODO pre-populate M,X,Y to eliminate this branch
                if (stripe==1) {
                   M_loc = distm * init_const * (1.0 - pXX) ;
 			         Y_loc = M_p * pMY + Y_p * (r == ROWS-1 ? 1.0 : pXX);
@@ -312,7 +330,7 @@ pairhmm_kernel( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
          M_p = __shfl_up(M_p,1);
          X_p = __shfl_up(X_p,1);
          Y_p = __shfl_up(Y_p,1);
-         if (r-stripe>0)
+         if (r-stripe>0 && c > 0)
          {
 			   X_loc = M_p * pMX + X_p * pXX;
          }
@@ -339,7 +357,7 @@ __global__ void
 //__launch_bounds__(WARP*4,3)
 pairhmm_kernel_onethread( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
                           char* rs, char* hap, NUMBER* q, 
-                          int *n, cudaTextureObject_t t_n, int* offset, int n_mats,
+                          int *n, cudaTextureObject_t t_n, int2* offset, int n_mats,
                           NUMBER* output, NUMBER log10_init) {
    NUMBER M_p[BATCH];
    NUMBER M_pp[BATCH];
@@ -358,8 +376,8 @@ pairhmm_kernel_onethread( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER 
 
    int tid = threadIdx.x + blockDim.x * blockIdx.x;
    if (tid > n_mats) return;
-   int ROWS = offset[3*tid+4]-offset[3*tid+1];
-   int COLS = offset[3*tid+5]-offset[3*tid+2];
+   int ROWS = offset[tid+1].x-offset[tid].x;
+   int COLS = offset[tid+1].y-offset[tid].y;
    //if (tid==11) printf("Dimensions : %d x %d\n", ROWS, COLS);
    init_const /= COLS-1;
    NUMBER result=0.0;
@@ -368,11 +386,11 @@ pairhmm_kernel_onethread( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER 
    //M+=offset[3*tid];
    //X+=offset[3*tid];
    //Y+=offset[3*tid];
-   rs+=offset[3*tid+1]; 
-   hap+=offset[3*tid+2]; 
-   q+=offset[3*tid+1];
-   int n_off=3*offset[3*tid+1];
-   n+=3*offset[3*tid+1];
+   rs+=offset[tid].x; 
+   hap+=offset[tid].y; 
+   q+=offset[tid].x;
+   int n_off=3*offset[tid].x;
+   n+=3*offset[tid].x;
    int z,r,c,bid;
    for (int stripe = 1; stripe < ROWS; stripe+=BATCH) 
    {
@@ -381,11 +399,16 @@ pairhmm_kernel_onethread( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER 
          r = stripe + bid;
 	      _rs[bid] = rs[r-1];
 	      _q[bid] = q[r-1];
+         int _i = n[r] & 127;
+         int _d = (n[r] >> 7) & 127;
+         int _c = (n[r] >> 14) & 127;
+         //_q = ph2pr<NUMBER>((n[r] >> 21) & 127);
+         
  //        if(tid==12 && c < 12) printf("%d: q=%e\n", bid, _q[bid]);
-         pMM[bid] = 1.0 - ph2pr<NUMBER>(n[3*r+II]+n[3*r+DD] & 127);
-         pXX[bid] = ph2pr<NUMBER>(n[3*r+CC]);
-         pMX[bid] = ph2pr<NUMBER>(n[3*r+II]);
-         pMY[bid] = r == ROWS-1 ? 1.0 : ph2pr<NUMBER>(n[3*r+DD]);
+         pMM[bid] = 1.0 - ph2pr<NUMBER>(_i+_d & 127);
+         pXX[bid] = ph2pr<NUMBER>(_c);
+         pMX[bid] = ph2pr<NUMBER>(_i);
+         pMY[bid] = r == ROWS-1 ? 1.0 : ph2pr<NUMBER>(_d);
          M_pp[bid] = M_p[bid] = X_p[bid] = X_pp[bid] = Y_p[bid] = Y_pp[bid] = 0.0;
       }
       for (z=1; z<COLS+BATCH; z++) {
@@ -403,18 +426,18 @@ pairhmm_kernel_onethread( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER 
                   M_loc = distm * init_const * (1.0 - pXX[bid]) ;
 			         Y_loc = M_p[bid] * pMY[bid] + Y_p[bid] * (r == ROWS-1 ? 1.0 : pXX[bid]);
 			         X_loc = 0.0;
- //                 if (tid==12 && offset[0]==0 && c > 0 && c < 12) printf("(%d,%d): %e * (%e * %e + (%e + %e) * (1-%e) = %e\n", r,c, distm, 0.0, pMM[bid], 0.0, init_const, pXX[bid], M_loc);
+ //                 if (tid==12 && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): %e * (%e * %e + (%e + %e) * (1-%e) = %e\n", r,c, distm, 0.0, pMM[bid], 0.0, init_const, pXX[bid], M_loc);
                } else {
                   M_loc = distm * (M[c-1] * pMM[bid] + (X[c-1] + Y[c-1]) * (1.0 - pXX[bid]) );
 			         Y_loc = M_p[bid] * pMY[bid] + Y_p[bid] * (r == ROWS-1 ? 1.0 : pXX[bid]);
 			         X_loc = M[c] * pMX[bid] + X[c] * pXX[bid];
- //                 if (tid==12 && offset[0]==0 && c > 0 && c < 12) printf("(%d,%d): %e * (%e * %e + (%e + %e) * (1-%e) = %e\n", r,c, distm, M[c-1], pMM[bid], X[c-1], Y[c-1], pXX[bid], M_loc);
+ //                 if (tid==12 && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): %e * (%e * %e + (%e + %e) * (1-%e) = %e\n", r,c, distm, M[c-1], pMM[bid], X[c-1], Y[c-1], pXX[bid], M_loc);
                }
             } else { 
                M_loc = distm * (M_pp[bid-1] * pMM[bid] + (X_pp[bid-1] + Y_pp[bid-1]) * (1.0 - pXX[bid]) );
 			      Y_loc = M_p[bid] * pMY[bid] + Y_p[bid] * (r == ROWS-1 ? 1.0 : pXX[bid]);
 			      X_loc = M_p[bid-1] * pMX[bid] + X_p[bid-1] * pXX[bid];
- //              if (tid==12 && offset[0]==0 && c > 0 && c < 12) printf("(%d,%d): %e * (%e * %e + (%e + %e) * (1-%e) = %e\n", r,c, distm, M_pp[bid], pMM[bid], X_pp[bid], Y_pp[bid], pXX[bid], M_loc);
+ //              if (tid==12 && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): %e * (%e * %e + (%e + %e) * (1-%e) = %e\n", r,c, distm, M_pp[bid], pMM[bid], X_pp[bid], Y_pp[bid], pXX[bid], M_loc);
             }
             if (bid==BATCH-1) {
                M[c] = M_loc;
@@ -441,7 +464,7 @@ __global__ void
 //__launch_bounds__(WARP*4,3)
 pairhmm_kernel_onethread_old( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
                           char* rs, char* hap, NUMBER* q, 
-                          int *n, cudaTextureObject_t t_n, int* offset, int n_mats,
+                          int *n, cudaTextureObject_t t_n, int2* offset, int n_mats,
                           NUMBER* output, NUMBER log10_init) {
    NUMBER M_p[BATCH+1];
    NUMBER M_pp[BATCH+1];
@@ -461,8 +484,8 @@ pairhmm_kernel_onethread_old( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUM
    
    int tid = threadIdx.x + blockDim.x * blockIdx.x;
    if (tid > n_mats) return;
-   int ROWS = offset[3*tid+4]-offset[3*tid+1];
-   int COLS = offset[3*tid+5]-offset[3*tid+2];
+   int ROWS = offset[tid+1].x-offset[tid].x;
+   int COLS = offset[tid+1].y-offset[tid].y;
    if (tid==12) printf("Dimensions : %d x %d\n", ROWS, COLS);
    NUMBER result=0.0;
    //Make this lmem, not gmem
@@ -470,11 +493,11 @@ pairhmm_kernel_onethread_old( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUM
    //M+=offset[3*tid];
    //X+=offset[3*tid];
    //Y+=offset[3*tid];
-   rs+=offset[3*tid+1]; 
-   hap+=offset[3*tid+2]; 
-   q+=offset[3*tid+1];
-   int n_off=3*offset[3*tid+1];
-   n+=3*offset[3*tid+1];
+   rs+=offset[tid].x; 
+   hap+=offset[tid].y; 
+   q+=offset[tid].x;
+   int n_off=3*offset[tid].x;
+   n+=3*offset[tid].x;
    for (int stripe = 0; stripe < ROWS; stripe+=BATCH) 
    {
    M_pp[0] = 0.0;
@@ -500,10 +523,15 @@ pairhmm_kernel_onethread_old( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUM
       r = bid+stripe;
 	   _rs[bid] = rs[bid-1+stripe];
 	   _q[bid] = q[bid-1+stripe];
-      pMM[bid] = 1.0 - ph2pr<NUMBER>(n[3*r+II]+n[3*r+DD] & 127);
-      pXX[bid] = ph2pr<NUMBER>(n[3*r+CC]);
-      pMX[bid] = ph2pr<NUMBER>(n[3*r+II]);
-      pMY[bid] = r == ROWS-1 ? 1.0 : ph2pr<NUMBER>(n[3*r+DD]);
+      int _i = n[r] & 127;
+      int _d = (n[r] >> 7) & 127;
+      int _c = (n[r] >> 14) & 127;
+      //_q[bid] = ph2pr<NUMBER>((n[r] >> 21) & 127);
+      
+      pMM[bid] = 1.0 - ph2pr<NUMBER>(_i+_d & 127);
+      pXX[bid] = ph2pr<NUMBER>(_c);
+      pMX[bid] = ph2pr<NUMBER>(_i);
+      pMY[bid] = r == ROWS-1 ? 1.0 : ph2pr<NUMBER>(_d);
    }
    for (int z = 0; z < COLS+BATCH+1; z++) 
    {
@@ -514,7 +542,7 @@ pairhmm_kernel_onethread_old( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUM
          c = z-bid+1;
          if (c > 0 && r < ROWS && c < COLS) 
          {  
-            if(tid==12 && offset[0]==0 && c < 12) printf("(%d,%d): ", r, c);
+            if(tid==12 && offset[0].x==0 && c < 12) printf("(%d,%d): ", r, c);
 			   char _hap;
             if (c>0) _hap = hap[c-1];
             else _hap = hap[c];
@@ -529,7 +557,7 @@ pairhmm_kernel_onethread_old( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUM
                X_p[0] = M_p[0] = X_pp[0] = M_pp[0] = 0.0;
                Y_p[0] = Y_pp[0] = 0.0;
             } else if (bid == 0 && c < 250) {
-               if (tid==0 && offset[0]==0 && c < 12) printf("bid:%d, z:%d  reading %e from column %d\n", bid, z, M[c], c);
+               if (tid==0 && offset[0].x==0 && c < 12) printf("bid:%d, z:%d  reading %e from column %d\n", bid, z, M[c], c);
                X_p[0] = X[c];
                Y_p[0] = Y[c];
                M_p[0] = M[c];
@@ -537,17 +565,17 @@ pairhmm_kernel_onethread_old( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUM
             M_loc[bid] = distm * (M_pp[bid] * pMM[bid] + (X_pp[bid] + Y_pp[bid]) * (1.0 - pXX[bid]) );
 			   Y_loc[bid] = M_p[bid] * pMY[bid] + Y_p[bid] * (r == ROWS-1 ? 1.0 : pXX[bid]);
 			   X_loc[bid] = M_p[bid-1] * pMX[bid] + X_p[bid-1] * pXX[bid];
-            if (tid==12 && offset[0]==0 && c > 0 && c < 12) printf("%e * (%e * %e + (%e + %e) * (1-%e) = %e\n", distm, M_pp[bid], pMM[bid], X_pp[bid], Y_pp[bid], pXX[bid], M_loc[bid]);
+            if (tid==12 && offset[0].x==0 && c > 0 && c < 12) printf("%e * (%e * %e + (%e + %e) * (1-%e) = %e\n", distm, M_pp[bid], pMM[bid], X_pp[bid], Y_pp[bid], pXX[bid], M_loc[bid]);
          }
          if (c < COLS && r-stripe==BATCH-1 && c < 250) {
-            if (tid==0 && offset[0]==0 && c < 12) printf("(%d,%d): writing %e to column %d\n", r, c, M_loc[bid], c);
+            if (tid==0 && offset[0].x==0 && c < 12) printf("(%d,%d): writing %e to column %d\n", r, c, M_loc[bid], c);
             M[c] = M_loc[bid];
             X[c] = X_loc[bid];
             Y[c] = Y_loc[bid];
          }
          if (r==ROWS-1 && c > 0 && c < COLS ) {
             result += M_loc[bid] + X_loc[bid]; 
-            if (tid==12 && offset[0]==0 && c < 12) printf("(%d,%d): result += %e + %e = %e\n", r, c, M_loc[bid], X_loc[bid], result);
+            if (tid==12 && offset[0].x==0 && c < 12) printf("(%d,%d): result += %e + %e = %e\n", r, c, M_loc[bid], X_loc[bid], result);
          }
       }
       #pragma unroll 
@@ -585,7 +613,7 @@ pairhmm_kernel_onethread_old( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUM
    }
    
    }
-   if (tid==12 && offset[0]==0)printf("output[%d] = log10(%e) - %e = %e\n", tid, result, log10_init, log10(result)-log10_init);
+   if (tid==12 && offset[0].x==0)printf("output[%d] = log10(%e) - %e = %e\n", tid, result, log10_init, log10(result)-log10_init);
    output[tid]=log10(result)-log10_init;
 }
 #endif
@@ -676,17 +704,15 @@ pairhmm_kernel_old( NUMBER init_const, NUMBER* M, NUMBER *X, NUMBER *Y,
                                 n[3*r+CC]);
       } else if(wid==1) printf("Match : stripe = %d, tid = %d\n", stripe, tid);
 #endif
-#ifdef __USE_TEX
-      pMM = 1.0 - ph2pr<NUMBER>((tex1Dfetch<int>(t_n,3*r+II+n_off)+tex1Dfetch<int>(t_n,3*r+DD+n_off)) & 127);
-      pXX = ph2pr<NUMBER>(tex1Dfetch<int>(t_n,3*r+CC+n_off));
-      pMX = ph2pr<NUMBER>(tex1Dfetch<int>(t_n,3*r+II+n_off));
-      pMY = r == ROWS-1 ? 1.0 : ph2pr<NUMBER>(tex1Dfetch<int>(t_n,3*r+DD+n_off));
-#else
-      pMM = 1.0 - ph2pr<NUMBER>(n[3*r+II]+n[3*r+DD] & 127);
-      pXX = ph2pr<NUMBER>(n[3*r+CC]);
-      pMX = ph2pr<NUMBER>(n[3*r+II]);
-      pMY = r == ROWS-1 ? 1.0 : ph2pr<NUMBER>(n[3*r+DD]);
-#endif
+      int _n = n[r];
+      int _i = _n & 127;
+      int _d = (_n >> 7) & 127;
+      int _c = (_n >> 14) & 127;
+      //_q = ph2pr<NUMBER>((_n >> 21) & 127);
+      pMM = 1.0 - ph2pr<NUMBER>(_i+_d & 127);
+      pXX = ph2pr<NUMBER>(_d);
+      pMX = ph2pr<NUMBER>(_i);
+      pMY = r == ROWS-1 ? 1.0 : ph2pr<NUMBER>(_d);
 
       pGapM = 1.0 - pXX;
       pYY = r == ROWS-1 ? 1.0 : pXX;
@@ -843,6 +869,7 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
    cudaError_t err = cudaGetDeviceProperties(&deviceProp, 0);
    char *current, *d_current;
    int size = sizeof(NUMBER);
+   gmem.offset = (int2*)malloc(MAX_PROBS*sizeof(int2));
    gmem.totalMem = 3*deviceProp.totalGlobalMem/4;
    //TODO no need to assign d_M, etc.
    cudaMalloc(&gmem.d_amem, gmem.totalMem);
@@ -901,7 +928,7 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
       printf("CPU mem allocation fail\n");
       return 1;
    }
-   gmem.N_STREAMS=4;
+   gmem.N_STREAMS=1;
    gmem.strm = (cudaStream_t*)malloc(sizeof(cudaStream_t)*gmem.N_STREAMS);
    for (int z=0;z<gmem.N_STREAMS;z++) cudaStreamCreate(&gmem.strm[z]);
    return 0;
@@ -912,6 +939,7 @@ int GPUmemFree(GPUmem<NUMBER>& gmem)
    if (NULL==gmem.amem) {
       return 0;
    }
+   free(gmem.offset);gmem.offset=NULL;
    gmem.index=0;
    gmem.M=0;
    gmem.X=0;
@@ -939,7 +967,7 @@ template int GPUmemFree<float>(GPUmem<float>&);
 
 #define N_STREAM 4
 template <class PRECISION>
-void compute_gpu(int offset[][3], char* rs, char* hap, PRECISION* q, 
+void compute_gpu(int2 *offset, char* rs, char* hap, PRECISION* q, 
                  int* n, PRECISION init_const, int n_tc, GPUmem<PRECISION>& gmem)
 {
     cudaStream_t strm[N_STREAM];
@@ -951,7 +979,7 @@ void compute_gpu(int offset[][3], char* rs, char* hap, PRECISION* q,
     }
     start[N_STREAM]=n_tc;
     for (int z=0;z<N_STREAM;z++) {
-       compute_gpu_stream(&offset[start[z]], rs, hap, q, n, init_const, start[z+1]-start[z], gmem, strm[z], start[z]);
+       compute_gpu_stream(offset+start[z], rs, hap, q, n, init_const, start[z+1]-start[z], gmem, strm[z], start[z]);
        //memcpy(&gmem.results[start[z]], gmem.results, sizeof(PRECISION)*(start[z+1]-start[z]));
     }
     for (int z=0;z<N_STREAM;z++) {
@@ -960,7 +988,7 @@ void compute_gpu(int offset[][3], char* rs, char* hap, PRECISION* q,
     }
 }
 template <class PRECISION>
-void compute_gpu_stream(int offset[][3], char* rs, char* hap, PRECISION* q, 
+void compute_gpu_stream(int2 *offset, char* rs, char* hap, PRECISION* q, 
                            int* n, PRECISION init_const, int n_tc, GPUmem<PRECISION>& gmem, 
                            cudaStream_t strm, int results_inx) 
 {
@@ -969,53 +997,47 @@ void compute_gpu_stream(int offset[][3], char* rs, char* hap, PRECISION* q,
 
 #if 0
    printf("offset = \n");
-   for (int z=0;z<n_tc+1;z++) printf("%d:%d,%d,%d\n",z,offset[z][0], offset[z][1],offset[z][2]); 
+   for (int z=0;z<n_tc+1;z++) printf("%d:%d,%d\n",z,offset[z].x, offset[z].y);
    printf("p = \n");
-   for (int z=0;z<offset[n_tc][1]*6;z++) printf("%d:%1.13f\n", z, p[z]);
+   for (int z=0;z<offset[n_tc].x*6;z++) printf("%d:%1.13f\n", z, p[z]);
    printf("rs = ");
-   for (int z=0;z<offset[n_tc][1];z++) printf("%c", rs[z]);
+   for (int z=0;z<offset[n_tc].x;z++) printf("%c", rs[z]);
    printf("\nhap = ");
-   for (int z=0;z<offset[n_tc][2];z++) printf("%c", hap[z]);
+   for (int z=0;z<offset[n_tc].y;z++) printf("%c", hap[z]);
    printf("\nq = \n");
-   for (int z=0;z<offset[n_tc][1];z++) printf("%d:%e\n", z, q[z]);
+   for (int z=0;z<offset[n_tc].x;z++) printf("%d:%e\n", z, q[z]);
    printf("init_const = %e\n", init_const);
    printf("n = \n");
-   for (int z=0;z<offset[n_tc][1]*3;z++) printf("%d:%d\n", z/3, n[z]);
+   for (int z=0;z<offset[n_tc].x*3;z++) printf("%d:%d\n", z/3, n[z]);
 #endif
    if (0==gmem.M) {
       GPUmemAlloc<PRECISION>(gmem);
    }
-   cudaMalloc(&gmem.d_offset, sizeof(int)*3*(n_tc+1));
-   cudaMemcpyAsync(gmem.d_offset, &offset[0][0], sizeof(int)*3*(n_tc+1), cudaMemcpyHostToDevice, strm);
-#ifdef __CONDENSE_MEM
-   cudaMemcpyAsync(gmem.d_p, p, sizeof(PRECISION)*offset[n_tc][1]*6 +
-                           sizeof(PRECISION)*offset[n_tc][1] +
-                           sizeof(int)*offset[n_tc][1]*3 + 
-                           sizeof(char)*offset[n_tc][1] +
-                           sizeof(char)*offset[n_tc][2], cudaMemcpyHostToDevice, strm);
-#else
-   cudaMemcpyAsync(gmem.d_q+offset[0][1], q+offset[0][1], sizeof(PRECISION)*(offset[n_tc][1]-offset[0][1]), cudaMemcpyHostToDevice, strm);
-   cudaMemcpyAsync(gmem.d_n+offset[0][1]*3, n+offset[0][1]*3, sizeof(int)*(offset[n_tc][1]-offset[0][1])*3, cudaMemcpyHostToDevice, strm);
-   cudaMemcpyAsync(gmem.d_rs+offset[0][1], rs+offset[0][1], sizeof(char)*(offset[n_tc][1]-offset[0][1]), cudaMemcpyHostToDevice, strm);
-   cudaMemcpyAsync(gmem.d_hap+offset[0][2], hap+offset[0][2], sizeof(char)*(offset[n_tc][2]-offset[0][2]), cudaMemcpyHostToDevice, strm);
-#endif
-   createNewTextureFloat(gmem.n_tex.tex, gmem.n_tex.RD, gmem.n_tex.TD, gmem.d_n);
-   createNewTextureFloat(gmem.q_tex.tex, gmem.q_tex.RD, gmem.q_tex.TD, gmem.d_q);
+   cudaMalloc(&gmem.d_offset, sizeof(int)*2*(n_tc+1));
+   cudaMemcpyAsync(gmem.d_offset, &offset[0], sizeof(int)*2*(n_tc+1), cudaMemcpyHostToDevice, strm);
+   //cudaMemcpyAsync(gmem.d_q+offset[0].x, q+offset[0].x, sizeof(PRECISION)*(offset[n_tc].x-offset[0].x), cudaMemcpyHostToDevice, strm);
+   cudaMemcpyAsync(gmem.d_n+offset[0].x, n+offset[0].x, sizeof(int)*(offset[n_tc].x-offset[0].x), cudaMemcpyHostToDevice, strm);
+   cudaMemcpyAsync(gmem.d_rs+offset[0].x, rs+offset[0].x, sizeof(char)*(offset[n_tc].x-offset[0].x), cudaMemcpyHostToDevice, strm);
+   cudaMemcpyAsync(gmem.d_hap+offset[0].y, hap+offset[0].y, sizeof(char)*(offset[n_tc].y-offset[0].y), cudaMemcpyHostToDevice, strm);
+   createNewTextureFloat(gmem.n_tex.tex, gmem.n_tex.RD, gmem.n_tex.TD, gmem.d_n, offset[n_tc].x-offset[0].x);
+   //createNewTextureFloat(gmem.q_tex.tex, gmem.q_tex.RD, gmem.q_tex.TD, gmem.d_q);
    cuerr= cudaGetLastError();
    if (cuerr) printf("Error in memcpy. %d : %s\n", cuerr, cudaGetErrorString(cuerr));
    //One warp handles one matrix
 	PRECISION INITIAL_CONSTANT = ldexp(1.0, 1020.0);
 	PRECISION LOG10_INITIAL_CONSTANT = log10(INITIAL_CONSTANT);
    
+#ifdef __WARP_PER_MAT
+   printf("One warp/matrix\n");
    pairhmm_kernel<<<(n_tc+3)/4,WARP*4,0,strm>>>( init_const, gmem.d_M, gmem.d_X, 
                                   gmem.d_Y, gmem.d_rs, gmem.d_hap, gmem.d_q, gmem.d_n, gmem.n_tex.tex,
                                   gmem.d_offset, n_tc-1, gmem.d_results+results_inx, LOG10_INITIAL_CONSTANT); 
-   //pairhmm_kernel_onethread<PRECISION,5><<<(n_tc+WARP*4-1)/(WARP*4),WARP*4,0,strm>>>( init_const, gmem.d_M, gmem.d_X, 
-   //                               gmem.d_Y, gmem.d_rs, gmem.d_hap, gmem.d_q, gmem.d_n, gmem.n_tex.tex,
-   //                               gmem.d_offset, n_tc-1, gmem.d_results+results_inx, LOG10_INITIAL_CONSTANT); 
-   //pairhmm_jacopo<PRECISION,19><<<(n_tc+WARP*4-1)/(WARP*4),WARP*4,0,strm>>>(  gmem.d_rs, gmem.d_hap, 
-   //                                        gmem.d_q, (int4*)gmem.d_n, (int3*)gmem.d_offset, n_tc-1, 
-   //                                        gmem.d_results+results_inx, init_const, LOG10_INITIAL_CONSTANT); 
+#else
+   printf("One thread/matrix\n");
+   pairhmm_jacopo<PRECISION,19><<<(n_tc+WARP*4-1)/(WARP*4),WARP*4,0,strm>>>(  gmem.d_rs, gmem.d_hap, 
+                                           gmem.d_q, gmem.d_n, gmem.n_tex.tex, (int2*)gmem.d_offset, n_tc-1, 
+                                           gmem.d_results+results_inx, init_const, LOG10_INITIAL_CONSTANT); 
+#endif
    cuerr = cudaGetLastError();
    if (cuerr) {
       printf ("Cuda error %d : %s\n", cuerr, cudaGetErrorString(cuerr));
@@ -1024,5 +1046,5 @@ void compute_gpu_stream(int offset[][3], char* rs, char* hap, PRECISION* q,
                    cudaMemcpyDeviceToHost,strm);
    //GPUmemFree(gmem);
 }
-template void compute_gpu<double>(int [][3], char*, char*, double*, int*, double, int, GPUmem<double>&);
-template void compute_gpu<float>(int [][3], char*, char*, float*, int*, float, int, GPUmem<float>&);
+template void compute_gpu<double>(int2*, char*, char*, double*, int*, double, int, GPUmem<double>&);
+template void compute_gpu<float>(int2*, char*, char*, float*, int*, float, int, GPUmem<float>&);
