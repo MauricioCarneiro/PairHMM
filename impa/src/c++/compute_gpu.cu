@@ -1,6 +1,7 @@
 //#include "input.h"
 #include "compute_gpu.h"
 #include "stdio.h"
+#include <cfloat>
 
 void cudaCheckError(int line, const char* file) {
    cudaError_t err = cudaGetLastError();
@@ -53,7 +54,7 @@ void pairhmm_jacopo(
     const NUMBER*  q, 
     const int* idc,
     cudaTextureObject_t t_n,
-    const int2* offsets,    // NOTE: I have changed these to int2 (int3 causes bad striding! use either int2 or int4)
+    const int2* offsets,    
     const int   n_mats,
     NUMBER*     output,
     NUMBER      INITIAL_CONSTANT,
@@ -151,6 +152,7 @@ void pairhmm_jacopo(
 		    M[bid] = NUMBER(0.0);
 		    X[bid] = NUMBER(0.0);
 		    Y[bid] = INITIAL_CONSTANT / (COLS-1); 
+//          if(pid==12 && c < 12 && offsets[0].x==0) printf("Y[0] = %e/%d = %e\n", INITIAL_CONSTANT, COLS-1, INITIAL_CONSTANT/ (COLS-1));
         }
 
         // loop across all rows
@@ -192,6 +194,7 @@ void pairhmm_jacopo(
 
                 X[bid] = M[bid] * p_MX + X[bid] * p_XX; 
                 M[bid] = distm * (M[bid-1] * p_MM + X[bid-1] * p_GapM + Y[bid-1] * p_GapM);
+//                if (pid==12 && offsets[0].x==0 && c > 0 && c < 12) printf("(%d,%d): %e * (%e * %e + (%e + %e) * (1-%e) = %e\n", r,c, distm, M[bid-1], p_MM, X[bid-1], Y[bid-1], p_XX, M[bid]);
             }
 
             //TODO remove?
@@ -211,15 +214,18 @@ void pairhmm_jacopo(
             const int c = stripe + bid;
             if (c < COLS) {
                 result += M[bid] + X[bid];
+//                if (pid==12 && offsets[0].x==0 && c < 12) printf("(%d,%d): result += %e + %e = %e\n", r, c, M[bid], X[bid], result);
             }
         }
     }
 
 	output[pid] = log10(result) - LOG10_INITIAL_CONSTANT;
+//   if (pid==12 && offsets[0].x==0) printf("output[%d] = log10(%e) - %e = %e\n", pid, result, LOG10_INITIAL_CONSTANT, output[pid]);
 }
+#define MAT_PER_WARP 4
 template <class NUMBER>
 __global__ void
-__launch_bounds__(WARP*4,8)
+__launch_bounds__(WARP*4,12)
 pairhmm_kernel( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
                           char* rs, char* hap, NUMBER* q, 
                           int *n, cudaTextureObject_t t_n, int2* offset, int n_mats,
@@ -285,16 +291,16 @@ pairhmm_kernel( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
       for (z=1; z<COLS+WARP; z++) {
          c = z - r + stripe;
 #ifdef __SHARED_READ
-         if (1==(z%WARP)) {
-            M_top[threadIdx.x] = M[z-1+tid];
-            X_top[threadIdx.x] = X[z-1+tid];
-            Y_top[threadIdx.x] = Y[z-1+tid];
+         if (1==((c+r-stripe)%WARP)) {
+            M_top[threadIdx.x] = M[c-1+2*r-2*stripe];
+            X_top[threadIdx.x] = X[c-1+2*r-2*stripe];
+            Y_top[threadIdx.x] = Y[c-1+2*r-2*stripe];
          }
 #endif
          if (c>0 && c < COLS) {
 			   char _hap = hap[c-1];
 			   if (_rs == _hap || _rs == 'N' || _hap == 'N')
-	   			distm = double(1.0) - _q;
+	   			distm = NUMBER(1.0) - _q;
             else distm = _q;
             if (r-stripe==0) {
                //TODO pre-populate M,X,Y to eliminate this branch
@@ -412,7 +418,7 @@ pairhmm_kernel_onethread( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER 
             if (c<1) continue;
 			   char _hap = hap[c-1];
 			   if (_rs[bid] == _hap || _rs[bid] == 'N' || _hap == 'N')
-			   	distm = double(1.0) - _q[bid];
+			   	distm = NUMBER(1.0) - _q[bid];
             else distm = _q[bid];
             if (bid==0) {
                if (stripe==1) {
@@ -540,7 +546,7 @@ pairhmm_kernel_onethread_old( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUM
             if (c>0) _hap = hap[c-1];
             else _hap = hap[c];
 			   if (_rs[bid] == _hap || _rs[bid] == 'N' || _hap == 'N')
-			   	distm = double(1.0) - _q[bid];
+			   	distm = NUMBER(1.0) - _q[bid];
             else distm = _q[bid];
             if (r==0) {
                X_p[0] = 0.0;
@@ -747,7 +753,7 @@ pairhmm_kernel_old( NUMBER init_const, NUMBER* M, NUMBER *X, NUMBER *Y,
             if (c>0) {
             char _hap = hap[c-1];
 			   if (_rs == _hap || _rs == 'N' || _hap == 'N')
-			   	distm = double(1.0) - _q;
+			   	distm = NUMBER(1.0) - _q;
             else distm = _q;
             }
             else distm = _q;
@@ -862,7 +868,8 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
    cudaError_t err = cudaGetDeviceProperties(&deviceProp, 0);
    char *current, *d_current;
    int size = sizeof(NUMBER);
-   gmem.offset = (int2*)malloc(MAX_PROBS*sizeof(int2));
+   gmem.offset = (int2*)malloc((MAX_PROBS+1)*sizeof(int2));
+   cudaMalloc(&gmem.d_offset, (MAX_PROBS+1)*sizeof(int2));
    gmem.totalMem = 3*deviceProp.totalGlobalMem/4;
    //TODO no need to assign d_M, etc.
    cudaMalloc(&gmem.d_amem, gmem.totalMem);
@@ -911,14 +918,12 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
    err = cudaGetLastError();
    if (err) printf("cudaMalloc error %d: %s\n", err, cudaGetErrorString(err));
    if (err) return 9000+err;
-   if (!gmem.M ||
-       !gmem.X ||
-       !gmem.Y ||
-       !gmem.p ||
-       !gmem.q ||
-       !gmem.rs ||
-       !gmem.hap) {
+   if (!gmem.amem) {
       printf("CPU mem allocation fail\n");
+      return 1;
+   }
+   if (!gmem.d_amem) {
+      printf("GPU mem allocation fail\n");
       return 1;
    }
    gmem.N_STREAMS=STREAMS;
@@ -933,6 +938,7 @@ int GPUmemFree(GPUmem<NUMBER>& gmem)
       return 0;
    }
    free(gmem.offset);gmem.offset=NULL;
+   cudaFree(gmem.d_offset); gmem.d_offset = NULL;
    gmem.index=0;
    gmem.M=0;
    gmem.X=0;
@@ -987,12 +993,13 @@ void compute_gpu_stream(int2 *offset, char* rs, char* hap, PRECISION* q,
 {
    //GPUmem<PRECISION> gmem;
    cudaError_t cuerr;
+   //cudaEvent_t start, finish;
+   //cudaEventCreate(&start);
+   //cudaEventCreate(&finish);
 
 #if 0
    printf("offset = \n");
    for (int z=0;z<n_tc+1;z++) printf("%d:%d,%d\n",z,offset[z].x, offset[z].y);
-   printf("p = \n");
-   for (int z=0;z<offset[n_tc].x*6;z++) printf("%d:%1.13f\n", z, p[z]);
    printf("rs = ");
    for (int z=0;z<offset[n_tc].x;z++) printf("%c", rs[z]);
    printf("\nhap = ");
@@ -1001,35 +1008,49 @@ void compute_gpu_stream(int2 *offset, char* rs, char* hap, PRECISION* q,
    for (int z=0;z<offset[n_tc].x;z++) printf("%d:%e\n", z, q[z]);
    printf("init_const = %e\n", init_const);
    printf("n = \n");
-   for (int z=0;z<offset[n_tc].x*3;z++) printf("%d:%d\n", z/3, n[z]);
+   for (int z=0;z<offset[n_tc].x;z++) printf("%d:%d\n", z, n[z]);
 #endif
    if (0==gmem.M) {
       GPUmemAlloc<PRECISION>(gmem);
    }
-   cudaMalloc(&gmem.d_offset, sizeof(int)*2*(n_tc+1));
-   cudaMemcpyAsync(gmem.d_offset, &offset[0], sizeof(int)*2*(n_tc+1), cudaMemcpyHostToDevice, strm);
-   //cudaMemcpyAsync(gmem.d_q+offset[0].x, q+offset[0].x, sizeof(PRECISION)*(offset[n_tc].x-offset[0].x), cudaMemcpyHostToDevice, strm);
+   cudaMemcpyAsync(gmem.d_offset+results_inx, &offset[0], sizeof(int2)*(n_tc+1), cudaMemcpyHostToDevice, strm);
+   cuerr= cudaGetLastError();
+   if (cuerr) printf("E~rror in memcpy. %d : %s\n", cuerr, cudaGetErrorString(cuerr));
    cudaMemcpyAsync(gmem.d_n+offset[0].x, n+offset[0].x, sizeof(int)*(offset[n_tc].x-offset[0].x), cudaMemcpyHostToDevice, strm);
    cudaMemcpyAsync(gmem.d_rs+offset[0].x, rs+offset[0].x, sizeof(char)*(offset[n_tc].x-offset[0].x), cudaMemcpyHostToDevice, strm);
    cudaMemcpyAsync(gmem.d_hap+offset[0].y, hap+offset[0].y, sizeof(char)*(offset[n_tc].y-offset[0].y), cudaMemcpyHostToDevice, strm);
+#ifdef __USE_TEX
    createNewTextureFloat(gmem.n_tex.tex, gmem.n_tex.RD, gmem.n_tex.TD, gmem.d_n, offset[n_tc].x-offset[0].x);
+#endif
    //createNewTextureFloat(gmem.q_tex.tex, gmem.q_tex.RD, gmem.q_tex.TD, gmem.d_q);
    cuerr= cudaGetLastError();
    if (cuerr) printf("Error in memcpy. %d : %s\n", cuerr, cudaGetErrorString(cuerr));
    //One warp handles one matrix
-	PRECISION INITIAL_CONSTANT = ldexp(1.0, 1020.0);
-	PRECISION LOG10_INITIAL_CONSTANT = log10(INITIAL_CONSTANT);
+	PRECISION LOG10_INITIAL_CONSTANT = log10(init_const);
+   //printf("sizeof(PRECISION) = %d. init_const = %e. log(init_const) = %e\n", sizeof(PRECISION), init_const, LOG10_INITIAL_CONSTANT);
    
 #ifdef __WARP_PER_MAT
    printf("One warp/matrix\n");
+   //cudaEventRecord(start,strm);
    pairhmm_kernel<<<(n_tc+3)/4,WARP*4,0,strm>>>( init_const, gmem.d_M, gmem.d_X, 
                                   gmem.d_Y, gmem.d_rs, gmem.d_hap, gmem.d_q, gmem.d_n, gmem.n_tex.tex,
-                                  gmem.d_offset, n_tc-1, gmem.d_results+results_inx, LOG10_INITIAL_CONSTANT); 
+                                  gmem.d_offset+results_inx, n_tc-1, gmem.d_results+results_inx, LOG10_INITIAL_CONSTANT); 
 #else
    printf("One thread/matrix\n");
-   pairhmm_jacopo<PRECISION,16><<<(n_tc+WARP*4-1)/(WARP*4),WARP*4,0,strm>>>(  gmem.d_rs, gmem.d_hap, 
-                                           gmem.d_q, gmem.d_n, gmem.n_tex.tex, (int2*)gmem.d_offset, n_tc-1, 
+   cudaEvent_t start, finish;
+   cudaEventCreate(&start);
+   cudaEventCreate(&finish);
+   cudaEventRecord(start,strm);
+   pairhmm_jacopo<PRECISION,16><<<(n_tc+WARP-1)/(WARP),WARP,0,strm>>>(  gmem.d_rs, gmem.d_hap, 
+                                           gmem.d_q, gmem.d_n, gmem.n_tex.tex, (int2*)gmem.d_offset+results_inx, n_tc-1, 
                                            gmem.d_results+results_inx, init_const, LOG10_INITIAL_CONSTANT); 
+   cudaEventRecord(finish,strm);
+   cudaEventSynchronize(finish);
+   float elapsed; 
+   cudaEventElapsedTime(&elapsed, start,finish);
+   printf("Elapsed Time: %f\n", elapsed);
+   cudaEventDestroy(start);
+   cudaEventDestroy(finish);
 #endif
    cuerr = cudaGetLastError();
    if (cuerr) {
@@ -1037,6 +1058,8 @@ void compute_gpu_stream(int2 *offset, char* rs, char* hap, PRECISION* q,
    }
    cudaMemcpyAsync(gmem.results+results_inx, gmem.d_results+results_inx, sizeof(PRECISION)*n_tc,
                    cudaMemcpyDeviceToHost,strm);
+   //cudaFree(gmem.d_offset);
+   //gmem.d_offset=0;
    //GPUmemFree(gmem);
 }
 template void compute_gpu<double>(int2*, char*, char*, double*, int*, double, int, GPUmem<double>&);
