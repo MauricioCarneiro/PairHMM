@@ -10,9 +10,8 @@
 struct testcase
 {
 	int rslen, haplen, *q, *i, *d, *c;
-	char *hap, *rs;
+	char *hap_alloc, *hap, *rs; //hap_alloc is the allocation, hap is offset for padding
    int index;
-   int g_index;
    double prob;
    void display()
    {
@@ -33,20 +32,21 @@ struct testcase
    }
    void free() 
    {
-      if (hap) delete [] hap;
+      //Free hap_alloc, not hap (which is a pointer within hap_alloc
+      if (hap_alloc) delete [] hap_alloc;
       if (rs) delete [] rs;
       if (q) delete [] q;
       if (i) delete [] i;
       if (d) delete [] d;
       if (c) delete [] c;
-      hap = rs = NULL;
+      hap = rs = hap_alloc = NULL;
       q = i = c = d = NULL;
+      rslen = haplen = 0;
    }
    testcase& operator=(const testcase& src)
    {
        rslen = src.rslen;
        haplen = src.haplen;
-       index = src.index;
 	    int sz = 1 + ((rslen + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
        if (rslen > 0) 
        {
@@ -57,11 +57,12 @@ struct testcase
        }
        if (src.hap) 
        {
-          hap = new char[haplen + 2 * (sz-1) + 1]();
+          hap_alloc = new char[haplen + 2 * (sz-1) + 1]();
+          hap = hap_alloc;
           hap += (sz-1);
           strncpy(hap, src.hap, src.haplen);
        } else {
-          hap = 0;
+          hap = hap_alloc = 0;
        }
        if (src.rs) 
        {
@@ -80,29 +81,13 @@ struct testcase
        return *this;
    } 
    testcase() {
-       hap = rs = NULL;
+       hap = hap_alloc = rs = NULL;
        q = i = d = c = NULL;
        haplen = rslen = 0;
-       index = g_index++;
    }
-#if 0
    ~testcase() {
       free();
    }
-   ~testcase() {
-       printf("deleting %p. ", this);
-       if (hap) printf("Freeing %p\n", hap);
-       else printf("hap = %p\n", hap);
-       if (hap) delete(hap); 
-       if (rs) delete(rs);
-       if (q) delete(q);
-       if (i) delete(i);
-       if (d) delete(d);
-       if (c) delete(c);
-       hap = rs = 0;
-       q = i = d = c = 0;
-   }
-#endif
 };
 
 int read_testcase(testcase *, std::istream&, bool=false);

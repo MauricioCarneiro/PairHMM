@@ -41,9 +41,9 @@ To read a second set like above, call readv2 again (with new n_read, n_hap)
        remaining = n_read * n_hap;
        for (int z=0;z<n_read;z++)
        {
-           testcase* this_tc = new testcase;
-           if (!(infile >> rs >> q >> i >> d >> c).good())
+           if (!(infile >> rs >> q >> i >> d >> c).good()) 
                return -1;
+           testcase* this_tc = new testcase;
            this_tc->rslen = rs.size();
 
        	  int sz = 1 + ((this_tc->rslen + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
@@ -64,7 +64,7 @@ To read a second set like above, call readv2 again (with new n_read, n_hap)
                this_tc->d[x] = normalize((d.c_str())[x]);
                this_tc->c[x] = normalize((c.c_str())[x]);
            }
-           this_tc->hap = 0;
+           this_tc->hap = this_tc->hap_alloc = NULL;
            this_tc->haplen = 0;
            cases.push_back(this_tc);
        }
@@ -90,13 +90,15 @@ To read a second set like above, call readv2 again (with new n_read, n_hap)
     }
     //if (cases[read_inx]->hap) printf("cases[%d]->hap = %s\n", read_inx, cases[read_inx]->hap);
     //else printf("cases[%d]->hap = (null)\n", read_inx);
+    tc->free();
     *tc = *cases[read_inx++]; //copy constructor
     tc->haplen = hap.size();
 	 int sz = 1 + ((tc->rslen + VECTOR_SIZE - 1) / VECTOR_SIZE) * VECTOR_SIZE;
     if (tc->hap) {
        delete [] tc->hap;
     }
-    tc->hap = new char[tc->haplen + 2 * (sz-1) + 1]();
+    tc->hap_alloc = new char[tc->haplen + 2 * (sz-1) + 1]();
+    tc->hap = tc->hap_alloc;
     tc->hap += (sz-1);
     for (int x = 0; x < tc->haplen; x++)
         tc->hap[x] = hap[x];
