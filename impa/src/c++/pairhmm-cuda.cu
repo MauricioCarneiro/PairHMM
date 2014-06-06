@@ -60,6 +60,16 @@ struct Context<float>
 	float LOG10_INITIAL_CONSTANT;
 	float RESULT_THRESHOLD;
 };
+template<class T>
+T ph2pr(int);
+template <>
+float ph2pr<float>(int x) {
+			return powf(10.f, -((float)x) / 10.f);
+}
+template <>
+double ph2pr<double>(int x) {
+			return powf(10.0, -((double)x) / 10.0);
+}
 
 template<class NUMBER>
 int tc2gmem(GPUmem<NUMBER>& gmem, testcase* tc, int index)
@@ -99,6 +109,78 @@ void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in,
 
 }
 
+template<class NUMBER>
+NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
+{
+	int r, c;
+	int ROWS = tc->rslen + 1;
+	int COLS = tc->haplen + 1;
+	NUMBER INITIAL_CONSTANT = ldexp(1.0, 1020.0);
+	NUMBER LOG10_INITIAL_CONSTANT = log10(INITIAL_CONSTANT);
+
+
+	NUMBER M[ROWS][COLS];
+	NUMBER X[ROWS][COLS];
+	NUMBER Y[ROWS][COLS];
+	NUMBER p[ROWS][6];
+
+	p[0][MM] = 0.0;
+	p[0][GapM] = 0.0;
+	p[0][MX] = 0.0;
+	p[0][XX] = 0.0;
+	p[0][MY] = 0.0;
+	p[0][YY] = 0.0;
+	for (r = 1; r < ROWS; r++)
+	{
+		int _i = tc->i[r-1] & 127;
+		int _d = tc->d[r-1] & 127;
+		int _c = tc->c[r-1] & 127;
+		p[r][MM] = 1.0 - ph2pr<NUMBER>((_i + _d) & 127);
+		p[r][GapM] = 1.0 - ph2pr<NUMBER>(_c);
+		p[r][MX] = ph2pr<NUMBER>(_i);
+		p[r][XX] = ph2pr<NUMBER>(_c);
+		p[r][MY] = (r == ROWS - 1) ? 1.0 : ph2pr<NUMBER>(_d);
+		p[r][YY] = (r == ROWS - 1) ? 1.0 : ph2pr<NUMBER>(_c);
+	}
+
+	for (c = 0; c < COLS; c++)
+	{
+		M[0][c] = 0.0;
+		X[0][c] = 0.0;
+		Y[0][c] = INITIAL_CONSTANT / (tc->haplen);
+	}
+
+	for (r = 1; r < ROWS; r++)
+	{
+		M[r][0] = 0.0;
+		X[r][0] = X[r-1][0] * p[r][XX];
+		Y[r][0] = 0.0;
+	}
+
+	for (r = 1; r < ROWS; r++)
+		for (c = 1; c < COLS; c++)
+		{
+			char _rs = tc->rs[r-1];
+			char _hap = tc->hap[c-1];
+			int _q = tc->q[r-1] & 127;
+			NUMBER distm = ph2pr<NUMBER>(_q);
+			if (_rs == _hap || _rs == 'N' || _hap == 'N')
+				distm = 1.0 - distm;
+			M[r][c] = distm * (M[r-1][c-1] * p[r][MM] + X[r-1][c-1] * p[r][GapM] + Y[r-1][c-1] * p[r][GapM]);
+			X[r][c] = M[r-1][c] * p[r][MX] + X[r-1][c] * p[r][XX];
+			Y[r][c] = M[r][c-1] * p[r][MY] + Y[r][c-1] * p[r][YY];
+		}
+
+	NUMBER result = 0.0;
+	for (c = 0; c < COLS; c++)
+		result += M[ROWS-1][c] + X[ROWS-1][c];
+
+	if (before_last_log != NULL)
+		*before_last_log = result;	
+
+	return log10(result) - LOG10_INITIAL_CONSTANT;
+}
+
 int tc_comp(const void* tc_A, const void* tc_B) {
    int rA = 32*((((testcase*)tc_A)->rslen+31)/32); 
    int rB = 32*((((testcase*)tc_B)->rslen+31)/32); 
@@ -114,11 +196,13 @@ int tc_comp_unsort(const void* tc_A, const void* tc_B) {
 //#define round_up(A,B) A
 
 template<class NUMBER>
-void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc, 
+void compute_full_prob_multiple(double* probs, testcase *tc, int n_tc, 
                                  GPUmem<NUMBER> &gmem, NUMBER *before_last_log = NULL) {
    Context<NUMBER> ctx;
    int err;
 
+   //if (gmem.amem == 0) debugMark<1><<<1,1>>>();
+   //else debugMark<1><<<1,1,0, gmem.marker_s>>>();
    Timing All(string("compute_full_prob_multiple total :  "));
    Timing GPUAlloc(string("GPU Alloc/Free :  "));
    All.start();
@@ -126,10 +210,12 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    qsort(tc, n_tc, sizeof(testcase), tc_comp);
    printf("largest mat: %d x %d\n", tc[0].rslen, tc[0].haplen);
    if (0==n_tc) {
+      fprintf(stderr, "Free GPUmem\n");
       err = GPUmemFree<NUMBER>(gmem);
       return;
    }
-   if (gmem.M==0) {
+   if (gmem.amem==0) {
+      fprintf(stderr, "Alloc GPUmem\n");
       err = GPUmemAlloc<NUMBER>(gmem);
    }
    if (err != 0) printf("Error in GPU allocation/deallocation\n");
@@ -181,18 +267,16 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
       return;
    }
    int s=0;
-   cudaStream_t marker_s;
-   cudaStreamCreate(&marker_s);
    for (int start=0;start<n_tc;start+=n_tc/gmem.N_STREAMS) {
       int finish=min(start+n_tc/gmem.N_STREAMS, n_tc);
       Staging.start();
-      //CPU_start<<<1,1,0,marker_s>>>();
+//      CPU_start<<<1,1,0,gmem.marker_s>>>();
 #pragma omp parallel for shared(gmem, tc) private (z)
       for (int z=start;z<finish;z++)
       {
          err = tc2gmem<NUMBER>(gmem, &tc[z], z);
       }
-      //CPU_end<<<1,1,0,marker_s>>>();
+//      CPU_end<<<1,1,0,gmem.marker_s>>>();
       Staging.acc();
       ComputeGPU.start();
       cudaStreamSynchronize(gmem.strm[s]);
@@ -205,55 +289,16 @@ void compute_full_prob_multiple(NUMBER* probs, testcase *tc, int n_tc,
    ComputeGPU.start();
    for (s=0;s<gmem.N_STREAMS;s++) cudaStreamSynchronize(gmem.strm[s]);
    //memcpy(probs, gmem.results, sizeof(NUMBER)*n_tc);
-   for (int z=0;z<n_tc;z++) probs[tc[z].index] = gmem.results[z];
+		#pragma omp parallel for schedule(dynamic)
+   for (int z=0;z<n_tc;z++) {
+      if (fabs(gmem.results[z] - 1.0000) < 0.0001)
+         probs[tc[z].index] = compute_full_prob<double>(&tc[z]);
+      else probs[tc[z].index] = (double)gmem.results[z];
+   }
    ComputeGPU.acc();
    All.acc();
+//   debugMark<2><<<1,1>>>();
 } 
-template<class NUMBER>
-NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
-{
-	int r, c;
-	int ROWS = tc->rslen + 1;
-	int COLS = tc->haplen + 1;
-
-	Context<NUMBER> ctx;
-
-	NUMBER M[ROWS][COLS];
-	NUMBER M2[ROWS][COLS];
-	NUMBER X[ROWS][COLS];
-	NUMBER X2[ROWS][COLS];
-   NUMBER Xc0[ROWS];
-	NUMBER Y[ROWS][COLS];
-   NUMBER Yr0[COLS];
-	NUMBER p[ROWS][6];
-   extract_tc((NUMBER*)&M[0][0],(NUMBER*)&X[0][0],(NUMBER*)&Y[0][0],
-              (NUMBER*)&p[0][0],&Xc0[0],&Yr0[0],tc);
-   //     ********     Baseline compute ***********
-	for (r = 1; r < ROWS; r++)
-   {
-		for (c = 1; c < COLS; c++)
-		{
-			char _rs = tc->rs[r-1];
-			char _hap = tc->hap[c-1];
-			int _q = tc->q[r-1] & 127;
-			NUMBER distm = ctx.ph2pr[_q];
-			if (_rs == _hap || _rs == 'N' || _hap == 'N')
-				distm = ctx._(1.0) - distm;
-			M[r][c] = distm * (M[r-1][c-1] * p[r][MM] + X[r-1][c-1] * p[r][GapM] + Y[r-1][c-1] * p[r][GapM]);
-			X[r][c] = M[r-1][c] * p[r][MX] + X[r-1][c] * p[r][XX];
-			Y[r][c] = M[r][c-1] * p[r][MY] + Y[r][c-1] * p[r][YY];
-		}
-   }
-
-	NUMBER result = ctx._(0.0);
-	for (c = 0; c < COLS; c++)
-		result += M[ROWS-1][c] + X[ROWS-1][c];
-
-	if (before_last_log != NULL)
-		*before_last_log = result;	
-
-	return ctx.LOG10(result) - ctx.LOG10_INITIAL_CONSTANT;
-}
 
 #ifndef DOUBLE_FLOAT
 #define DOUBLE_FLOAT float
@@ -266,8 +311,8 @@ int main(int argc, char* argv[])
 	testcase *tc = new testcase[MAX_PROBS];
    int cnt=0;
    int basecnt=0;
-   DOUBLE_FLOAT *prob;
-   prob = (DOUBLE_FLOAT*)malloc(MAX_PROBS*sizeof(DOUBLE_FLOAT));
+   double *prob;
+   prob = (double*)malloc(MAX_PROBS*sizeof(double));
    GPUmem<DOUBLE_FLOAT> gmem;
   
    std::ifstream infile;
@@ -275,7 +320,7 @@ int main(int argc, char* argv[])
    if (argc>1) {
       infile.open((char*) argv[1]);
    } 
-   
+
 	while (read_testcase(tc+cnt, argc>1 ? infile: std::cin) == 0)
    {
       //printf("In pairhmm-cuda: &tc[%d] = %p\n", cnt, tc+cnt);

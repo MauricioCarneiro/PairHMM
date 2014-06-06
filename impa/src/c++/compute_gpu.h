@@ -29,6 +29,7 @@ struct GPUmem {
    int index;
    int N_STREAMS;
    cudaStream_t *strm;
+   cudaStream_t marker_s;
    cudaTextureData n_tex;
    cudaTextureData q_tex;
    char* d_amem; //these two get alloced, all else
@@ -58,7 +59,7 @@ struct GPUmem {
    PRECISION* d_X;
    PRECISION* d_Y;
 
-   GPUmem() {M=0;};
+   GPUmem() {amem=0;};
 }; 
 template<class PRECISION>
 int GPUmemAlloc(GPUmem<PRECISION>& gmem); 
@@ -74,4 +75,6 @@ void cudaCheckError(int line, const char* file);
 void createNewTextureFloat(cudaTextureObject_t& tex, cudaResourceDesc& resDesc, cudaTextureDesc& texDesc, void* devPtr);
 __global__ void CPU_start();
 __global__ void CPU_end();
+template <unsigned int u>
+__global__ void debugMark();
 #endif

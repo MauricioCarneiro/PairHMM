@@ -2,6 +2,10 @@
 #include "compute_gpu.h"
 #include "stdio.h"
 #include <cfloat>
+#define MAT_PER_WARP 8
+//#define FOCUS 7046
+#define FOCUS 12
+#define MIN_ACCEPTED 1e-28f
 
 void cudaCheckError(int line, const char* file) {
    cudaError_t err = cudaGetLastError();
@@ -48,6 +52,7 @@ __device__ PRECISION ph2pr(int in) {
 #define MAX_ROWS 310
 template<class NUMBER, int BATCH>
 __global__
+//__launch_bounds__(WARP,1)
 void pairhmm_jacopo(
     const char* rs,
     const char* hap,
@@ -64,6 +69,13 @@ void pairhmm_jacopo(
     int pid = threadIdx.x + blockIdx.x * blockDim.x;
     if (pid > n_mats) return;
     int r, c;
+    __shared__ NUMBER ph2pr_save[128];
+
+    for (int z=threadIdx.x; z< 128; z+=WARP) 
+    {
+       ph2pr_save[z] = ph2pr<NUMBER>(z);
+    }
+    __syncthreads();
 
     // fetch the row and column offsets
     const int row_off = offsets[pid].x;
@@ -77,14 +89,15 @@ void pairhmm_jacopo(
     idc+=row_off;
 
     // precompute p[][]
-	NUMBER p[4][MAX_ROWS];
+	NUMBER l_p[4][MAX_ROWS];
    
 
-   p[MM][0]    = NUMBER(0.0);
-	p[MX][0]    = NUMBER(0.0);
-	p[XX][0]    = NUMBER(0.0);
-	p[MY][0]    = NUMBER(0.0);
+   l_p[MM][0]    = NUMBER(0.0);
+	l_p[MX][0]    = NUMBER(0.0);
+	l_p[XX][0]    = NUMBER(0.0);
+	l_p[MY][0]    = NUMBER(0.0);
    int  l_q[MAX_ROWS];
+#if 1
 	for (r = 1; r < ROWS; r++)
 	{
 #ifdef __USE_TEX
@@ -99,18 +112,23 @@ void pairhmm_jacopo(
 		const int _c = (_idc >> 14) & 127;
       //if (pid==0) printf("i,d,c = %d,%d,%d\n", _i, _d, _c);
      //TODO (_i+_d)&127 This is here to match results from pairhmm-1-base
-		p[MM][r]    = NUMBER(1.0) - ph2pr<NUMBER>(_i + _d & 127);
-		p[MX][r]    = ph2pr<NUMBER>(_i);
-		p[XX][r]    = ph2pr<NUMBER>(_c);
-		p[MY][r]    = (r == ROWS - 1) ? NUMBER(1.0) : ph2pr<NUMBER>(_d);
+		//l_p[MM][r]    = NUMBER(1.0) - ph2pr<NUMBER>(_i + _d & 127);
+		//l_p[MX][r]    = ph2pr<NUMBER>(_i);
+		//l_p[XX][r]    = ph2pr<NUMBER>(_c);
+		//l_p[MY][r]    = (r == ROWS - 1) ? NUMBER(1.0) : ph2pr<NUMBER>(_d);
+		l_p[MM][r]    = NUMBER(1.0) - ph2pr_save[_i + _d & 127];
+		l_p[MX][r]    = ph2pr_save[_i];
+		l_p[XX][r]    = ph2pr_save[_c];
+		l_p[MY][r]    = (r == ROWS - 1) ? NUMBER(1.0) : ph2pr_save[_d];
 
       l_q[r] = (_idc >> 21) & 127;
 	}
+#endif
 
     // local memory copies of data used in the critical path
     char l_rs[MAX_ROWS];
     char l_hap[MAX_ROWS];
-
+#if 1
     for (r = 1; r < ROWS; ++r)
     {
         l_rs[r]  = rs[r-1];       // gmem inputs (NOTE: as above, these 2 vectors could be transposed)
@@ -118,6 +136,7 @@ void pairhmm_jacopo(
 
     for (c = 1; c < COLS; ++c)
 	    l_hap[c] = hap[c-1];      // gmem inputs (NOTE: as above)
+#endif
 
     NUMBER result = NUMBER(0.0);
 
@@ -155,13 +174,20 @@ void pairhmm_jacopo(
 //          if(pid==12 && c < 12 && offsets[0].x==0) printf("Y[0] = %e/%d = %e\n", INITIAL_CONSTANT, COLS-1, INITIAL_CONSTANT/ (COLS-1));
         }
 
+        // register block for l_hap
+        char H[BATCH+1];
+        #pragma unroll
+        for (int bid = 1; bid <= BATCH; ++bid)
+            H[bid] = l_hap[stripe + bid];
+
         // loop across all rows
         for (r = 1; r < ROWS; r++)
         {
 			const char _rs = l_rs[r];
 			const int  _q  = l_q[r];
 
-            const NUMBER distm_q = ph2pr<NUMBER>(_q);  // should use __ldg();
+            //const NUMBER distm_q = ph2pr<NUMBER>(_q);  // should use __ldg();
+            const NUMBER distm_q = ph2pr_save[_q];  // should use __ldg();
 
             // load the M,X,Y entries from the previous row of the previous stripe
             M[0] = M_c[r-1];
@@ -172,32 +198,74 @@ void pairhmm_jacopo(
             Y_c[r-1] = Y[BATCH];
 
             // prefetch p[r][*] in registers (though the compiler might do it)
-            NUMBER p_MM   = p[MM][r];
-            NUMBER p_MX   = p[MX][r];
-            NUMBER p_XX   = p[XX][r];
-            NUMBER p_MY   = p[MY][r];
-            NUMBER p_GapM = NUMBER(1.0) - p[XX][r];
-            NUMBER p_YY   = r==ROWS-1 ? NUMBER(1.0) : p[XX][r];
+            NUMBER p_MM   = l_p[MM][r];
+            NUMBER p_MX   = l_p[MX][r];
+            NUMBER p_XX   = l_p[XX][r];
+            NUMBER p_MY   = l_p[MY][r];
+            NUMBER p_GapM = NUMBER(1.0) - l_p[XX][r];
+            NUMBER p_YY   = r==ROWS-1 ? NUMBER(1.0) : l_p[XX][r];
 
+#if 1 // perhaps offer higher ILP
+	        NUMBER M_p[BATCH+1];            // save M[r-1]
+            #pragma unroll
+            for (int bid = 0; bid <= BATCH; ++bid)
+                M_p[bid] = M[bid];
+
+            NUMBER X_p = X[0];              // save X[r-1][0]
+
+            // loop across columns in this stripe
+            #pragma unroll
+            for (int bid = 1; bid <= BATCH; ++bid)
+            {
+                // fetch the corresponding hap entry
+                const char _hap = H[bid];
+
+                const NUMBER distm = (_rs == _hap || _rs == 'N' || _hap == 'N') ?
+                      NUMBER(1.0) - distm_q :
+                                    distm_q;
+
+                M[bid] = distm * (M_p[bid-1] * p_MM + X_p * p_GapM + Y[bid-1] * p_GapM);
+
+                X_p = X[bid]; // save X[r-1][c]
+                X[bid] = M_p[bid] * p_MX + X[bid] * p_XX;
+            }
+#elif 0
+            NUMBER M_p = M[0];              // save M[r-1][0]
+            NUMBER X_p = X[0];              // save X[r-1][0]
+
+            // loop across columns in this stripe
+            for (int bid = 1; bid <= BATCH; ++bid)
+            {
+                // fetch the corresponding hap entry
+                const char _hap = H[bid];
+
+                const NUMBER distm = (_rs == _hap || _rs == 'N' || _hap == 'N') ?
+                      NUMBER(1.0) - distm_q :
+                                    distm_q;
+
+                NUMBER M_pp = M_p;  // save M[r-1][c-1]
+                M_p = M[bid];       // save M[r-1][c]
+                M[bid] = distm * (M_pp * p_MM + X_p * p_GapM + Y[bid-1] * p_GapM);
+
+                X_p = X[bid]; // save X[r-1][c]
+                X[bid] = M_p * p_MX + X[bid] * p_XX;
+            }
+#else
             // loop across columns in this stripe
             for (int bid = BATCH; bid >0; --bid)
             {
-                // compute the column index
-                const int c = stripe + bid;
-
                 // fetch the corresponding hap entry
-                const char _hap = l_hap[c];
+                const char _hap = H[bid];
 
-           		const NUMBER distm = (_rs == _hap || _rs == 'N' || _hap == 'N') ?
+                const NUMBER distm = (_rs == _hap || _rs == 'N' || _hap == 'N') ?
                       NUMBER(1.0) - distm_q :
                                     distm_q;
 
                 X[bid] = M[bid] * p_MX + X[bid] * p_XX; 
                 M[bid] = distm * (M[bid-1] * p_MM + X[bid-1] * p_GapM + Y[bid-1] * p_GapM);
-//                if (pid==12 && offsets[0].x==0 && c > 0 && c < 12) printf("(%d,%d): %e * (%e * %e + (%e + %e) * (1-%e) = %e\n", r,c, distm, M[bid-1], p_MM, X[bid-1], Y[bid-1], p_XX, M[bid]);
             }
+#endif
 
-            //TODO remove?
             M[0] = M_c[r];
             Y[0] = Y_c[r];
 
@@ -219,13 +287,164 @@ void pairhmm_jacopo(
         }
     }
 
+   if (result < MIN_ACCEPTED) {
+      output[pid] = 1.0;
+   } else {
+	   output[pid] = log10(result) - LOG10_INITIAL_CONSTANT;
+   }
+//   if (pid==12 && offsets[0].x==0) printf("output[%d] = log10(%e) - %e = %e\n", pid, result, LOG10_INITIAL_CONSTANT, output[pid]);
+}
+#define MAX_COLS 310
+template<class NUMBER, int BATCH>
+__global__
+//__launch_bounds__(WARP,1)
+void pairhmm_1thread_sweepright(
+    const char* rs,
+    const char* hap,
+    const NUMBER*  q, 
+    const int* idc,
+    cudaTextureObject_t t_n,
+    const int2* offsets,    
+    const int   n_mats,
+    NUMBER*     output,
+    NUMBER      INITIAL_CONSTANT,
+    NUMBER      LOG10_INITIAL_CONSTANT) 
+{
+    
+    int pid = threadIdx.x + blockIdx.x * blockDim.x;
+    if (pid > n_mats) return;
+    int r, c;
+
+    // fetch the row and column offsets
+    const int row_off = offsets[pid].x;
+    const int col_off = offsets[pid].y;
+    const int ROWS    = offsets[pid+1].x - row_off;
+    const int COLS    = offsets[pid+1].y - col_off;
+
+    q+=row_off;
+    rs+=row_off;
+    hap+=col_off;
+    idc+=row_off;
+
+
+	 NUMBER pMM[BATCH+1];
+	 NUMBER pMX[BATCH+1];
+	 NUMBER pXX[BATCH+1];
+	 NUMBER pMY[BATCH+1];
+    NUMBER distm_q[BATCH+1];
+    NUMBER _rs[BATCH+1];
+    char _q[BATCH+1];
+
+    NUMBER result = NUMBER(0.0);
+
+    // local memory columns of M, X, Y
+    NUMBER M_r[MAX_COLS];
+    NUMBER X_r[MAX_COLS];
+    NUMBER Y_r[MAX_COLS];
+
+    // initialize the first stripe, i.e. the 0-th column
+	for (c = 0; c < COLS; c++)
+	{
+		M_r[c] = NUMBER(0.0);
+		X_r[c] = NUMBER(0.0);
+		Y_r[c] = INITIAL_CONSTANT / (COLS-1);
+	}
+
+    // stripe the matrix in BATCH-wide blocks
+    for (int stripe = 0; stripe < ROWS; stripe += BATCH)
+    {
+        // register blocks for M, X and Y
+	    NUMBER M[BATCH+1];
+	    NUMBER X[BATCH+1];
+	    NUMBER Y[BATCH+1];
+
+       //TODO pad by BATCH
+       for(int bid = 1; bid <= BATCH && bid + stripe < ROWS; bid++)
+       {
+          r = bid + stripe;
+
+#ifdef __USE_TEX
+           const int _idc = tex1Dfetch<int>(t_n, r + row_off);
+#else
+           const int _idc = idc[ r ];              //Four quality metrics (0-127) are combined into 1 int
+#endif
+                                                             // NOTE: not sure if it's worth doing, but this could also be transposed
+                                                             // for strided access...
+   		const int _i = _idc & 127;
+   		const int _d = (_idc >> 7) & 127;
+   		const int _c = (_idc >> 14) & 127;
+         //if (pid==0) printf("i,d,c = %d,%d,%d\n", _i, _d, _c);
+        //TODO (_i+_d)&127 This is here to match results from pairhmm-1-base
+		   pMM[bid]    = NUMBER(1.0) - ph2pr<NUMBER>(_i + _d & 127);
+   		pMX[bid]    = ph2pr<NUMBER>(_i);
+   		pXX[bid]    = ph2pr<NUMBER>(_c);
+   		pMY[bid]    = (r == ROWS - 1) ? NUMBER(1.0) : ph2pr<NUMBER>(_d);
+
+         const int _q = (_idc >> 21) & 127;
+         distm_q[bid] = ph2pr<NUMBER>(_q);  // should use __ldg();
+         _rs[bid] = rs[r-1];
+   	}
+      // initialize the zero-th col
+      for (int bid = 1; bid <= BATCH; ++bid)
+      {
+		  M[bid] = NUMBER(0.0);
+		  X[bid] = NUMBER(0.0);
+		  Y[bid] = NUMBER(0.0);
+//        if(pid==12 && c < 12 && offsets[0].x==0) printf("Y[0] = %e/%d = %e\n", INITIAL_CONSTANT, COLS-1, INITIAL_CONSTANT/ (COLS-1));
+      }
+
+      // loop across all rows
+      for (c = 1; c < COLS; c++)
+      {
+
+          //TODO read _hap from lmem, not gmem
+          const char _hap = hap[c-1];
+
+          // load the M,X,Y entries from the previous row of the previous stripe
+          M[0] = M_r[c-1];
+          X[0] = X_r[c-1];
+          Y[0] = Y_r[c-1];
+          M_r[c-1] = M[BATCH];
+          X_r[c-1] = X[BATCH];
+          Y_r[c-1] = Y[BATCH];
+
+          // prefetch p[r][*] in registers (though the compiler might do it)
+
+          // loop across columns in this stripe
+          for (int bid = BATCH; bid >0; --bid)
+          {
+
+              const NUMBER distm = (_rs[bid] == _hap || _rs[bid] == 'N' || _hap == 'N') ?
+                    NUMBER(1.0) - distm_q[bid] :
+                                  distm_q[bid];
+
+              Y[bid] = M[bid] * pMY[bid] + Y[bid] * (r == ROWS-1 ? 1.0 : pXX[bid]); 
+              M[bid] = distm * (M[bid-1] * pMM[bid] + (X[bid-1] + Y[bid-1]) * (1.0 - pMX[bid]));
+          }
+
+          //TODO remove?
+          M[0] = M_r[c];
+          Y[0] = Y_r[c];
+
+          for (int bid = 1; bid <= BATCH; bid++)
+          {
+  			    X[bid] = M[bid-1] * pMX[bid] + X[bid-1] * pXX[bid];
+          }
+
+          // add up the result
+          if (ROWS-1-stripe <=BATCH) {
+             result += X[ROWS-1-stripe] + M[ROWS-1-stripe];
+          }
+      }
+
+    }
+
 	output[pid] = log10(result) - LOG10_INITIAL_CONSTANT;
 //   if (pid==12 && offsets[0].x==0) printf("output[%d] = log10(%e) - %e = %e\n", pid, result, LOG10_INITIAL_CONSTANT, output[pid]);
 }
-#define MAT_PER_WARP 4
 template <class NUMBER>
 __global__ void
-__launch_bounds__(WARP*4,12)
+__launch_bounds__(WARP*4,8)
 pairhmm_kernel( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
                           char* rs, char* hap, NUMBER* q, 
                           int *n, cudaTextureObject_t t_n, int2* offset, int n_mats,
@@ -243,10 +462,17 @@ pairhmm_kernel( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
    NUMBER pXX;
    NUMBER pMX;
    NUMBER pMY;
+   NUMBER pGapM;
+   NUMBER pYY;
    NUMBER M_loc, X_loc, Y_loc;
 #ifdef __SHARED_READ
    __shared__ NUMBER M_top[128], X_top[128], Y_top[128];
 #endif
+   __shared__ NUMBER ph2pr_save[128];
+   for (int z=threadIdx.x;z<128;z+=WARP) {
+      ph2pr_save[z] = ph2pr<NUMBER>(z);
+   }
+   __syncthreads();
 
    int tid = threadIdx.x + blockDim.x * blockIdx.x;
    int wid = tid/WARP;
@@ -259,9 +485,9 @@ pairhmm_kernel( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
 #ifdef __LMEM
    NUMBER M[500], X[500], Y[500];
 #else
-   NUMBER *M=M_in+offset[wid].y;
-   NUMBER *X=X_in+offset[wid].y;
-   NUMBER *Y=Y_in+offset[wid].y;
+   NUMBER *M=M_in+offset[wid].y+ROWS;
+   NUMBER *X=X_in+offset[wid].y+ROWS;
+   NUMBER *Y=Y_in+offset[wid].y+ROWS;
 #endif
    rs+=offset[wid].x; 
    hap+=offset[wid].y; 
@@ -269,6 +495,7 @@ pairhmm_kernel( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
    int n_off=offset[wid].x;
    n+=offset[wid].x;
    int z,r,c,bid;
+//   if (wid==FOCUS && tid==0) printf("%s vs %s\n", rs, hap);
    for (int stripe = 1; stripe < ROWS; stripe+=WARP) 
    {
       r = stripe + tid;
@@ -282,11 +509,13 @@ pairhmm_kernel( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
       int _i = _n & 127;
       int _d = (_n >> 7) & 127;
       int _c = (_n >> 14) & 127;
-      _q = ph2pr<NUMBER>((_n >> 21) & 127);
-      pMM = 1.0 - ph2pr<NUMBER>(_i+_d & 127);
-      pXX = ph2pr<NUMBER>(_c);
-      pMX = ph2pr<NUMBER>(_i);
-      pMY = r == ROWS-1 ? 1.0 : ph2pr<NUMBER>(_d);
+      _q = ph2pr_save[(_n >> 21) & 127];
+      pMM = 1.0 - ph2pr_save[_i+_d & 127];
+      pXX = ph2pr_save[_c];
+      pMX = ph2pr_save[_i];
+      pMY = r == ROWS-1 ? 1.0 : ph2pr_save[_d];
+      pGapM = 1.0 - pXX;
+      pYY = r == ROWS-1 ? 1.0 : pXX;
       M_pp = M_p = X_p = X_pp = Y_p = Y_pp = 0.0;
       for (z=1; z<COLS+WARP; z++) {
          c = z - r + stripe;
@@ -302,36 +531,63 @@ pairhmm_kernel( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
 			   if (_rs == _hap || _rs == 'N' || _hap == 'N')
 	   			distm = NUMBER(1.0) - _q;
             else distm = _q;
+//            if (wid==FOCUS) printf("(%d,%d)  _hap: %c  _rs %c\n", r, c, _hap, _rs);
+            if (c==1) {
+               M_p=Y_p=X_p=0.0;
+            }
             if (r-stripe==0) {
-               //TODO pre-populate M,X,Y to eliminate this branch
                if (stripe==1) {
-                  M_loc = distm * init_const * (1.0 - pXX) ;
-			         Y_loc = M_p * pMY + Y_p * (r == ROWS-1 ? 1.0 : pXX);
-			         X_loc = 0.0;
+                  M_pp = 0.0;
+                  X_pp = 0.0;
+                  Y_pp = init_const;
                } else {
 #ifdef __SHARED_READ
-                  M_loc = distm * (M_top[WARP*(wid%4)+(c-1)%WARP] * pMM + (X_top[WARP*(wid%4)+(c-1)%WARP] + Y_top[WARP*(wid%4)+(c-1)%WARP]) * (1.0 - pXX) );
-		   	      Y_loc = M_p * pMY + Y_p * (r == ROWS-1 ? 1.0 : pXX);
-		   	      X_loc = M_top[WARP*(wid%4)+c%WARP] * pMX + X_top[WARP*(wid%4)+c%WARP] * pXX;
+                  M_pp = M_top[WARP*(wid%4)+(c-1)%WARP];
+                  X_pp = X_top[WARP*(wid%4)+(c-1)%WARP];
+                  Y_pp = Y_top[WARP*(wid%4)+(c-1)%WARP];
 #else
-                  M_loc = distm * (M[c-1] * pMM + (X[c-1] + Y[c-1]) * (1.0 - pXX) );
-		   	      Y_loc = M_p * pMY + Y_p * (r == ROWS-1 ? 1.0 : pXX);
-		   	      X_loc = M[c] * pMX + X[c] * pXX;
+                  M_pp = M[c-1];
+                  X_pp = X[c-1];
+                  Y_pp = Y[c-1];
+//                  if ((wid==FOCUS || wid==FOCUS) && tid < 31 && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): M: reading %e from M[%d]\n", r, c, M_pp, c-1);
+//                  if ((wid==FOCUS || wid==FOCUS) && tid < 31 && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): X: reading %e from X[%d]\n", r, c, X_pp, c-1);
+//                  if ((wid==FOCUS || wid==FOCUS) && tid < 31 && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): Y: reading %e from Y[%d]\n", r, c, Y_pp, c-1);
 #endif
                }
-            } else { 
-			      Y_loc = M_p * pMY + Y_p * (r == ROWS-1 ? 1.0 : pXX);
-               M_loc = distm * (M_pp * pMM + (X_pp + Y_pp) * (1.0 - pXX) );
             }
+            M_loc = distm * (M_pp * pMM + (X_pp + Y_pp) * pGapM);
+			   Y_loc = M_p * pMY + Y_p * pYY;
+//            if ((wid==FOCUS || wid==FOCUS) && tid < 31 && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): M: %e * (%e * %e + (%e + %e) * (1-%e)) = %e\n", r, c, distm, M_pp, pMM, X_pp, Y_pp, pXX, M_loc);
+//            if ((wid==FOCUS || wid==FOCUS) && tid < 31 && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): Y: %e * %e + %e * %e = %e\n", r, c, M_p, pMY, Y_p, (r == ROWS-1 ? 1.0 : pXX), Y_loc);
          } else {
-            M_loc = Y_loc = X_loc = 0.0;
+            M_loc = Y_loc = 0.0;
          }
          M_p = __shfl_up(M_p,1);
          X_p = __shfl_up(X_p,1);
          Y_p = __shfl_up(Y_p,1);
-         if (r-stripe>0 && c > 0)
+         if (r-stripe==0) 
+         {
+            if (stripe==1) {
+               M_p = 0.0;
+               X_p = 0.0;
+            } else {
+#ifdef __SHARED_READ
+               M_p = M_top[WARP*(wid%4) + c%WARP];
+               X_p = X_top[WARP*(wid%4) + c%WARP];
+               Y_p = Y_top[WARP*(wid%4) + c%WARP];
+#else
+               M_p = M[c]; 
+               X_p = X[c];
+               Y_p = Y[c];
+#endif
+//               if ((wid==FOCUS || wid==FOCUS) && tid < 31 && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): M: reading %e from M[%d]\n", r, c, M_p, c);
+//               if ((wid==FOCUS || wid==FOCUS) && tid < 31 && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): X: reading %e from X[%d]\n", r, c, X_p, c);
+            }
+         }
+         if (c > 0 && c < COLS)
          {
 			   X_loc = M_p * pMX + X_p * pXX;
+//            if ((wid==FOCUS || wid==FOCUS) && tid < 31 && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): X: %e * %e + %e * %e = %e\n", r, c, M_p, pMX, X_p, pXX, X_loc);
          }
          M_pp = M_p; M_p = M_loc;
          X_pp = X_p; X_p = X_loc;
@@ -340,16 +596,235 @@ pairhmm_kernel( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
             M[c] = M_loc;
             X[c] = X_loc;
             Y[c] = Y_loc;
+//            if ((wid==FOCUS || wid==FOCUS) && tid < 31 && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): X: writing %e to X[%d]\n", r, c, X_loc, c);
          }
          if (r==ROWS-1 && c > 0 && c < COLS) {
             result += M_loc + X_loc;
+//            if ((wid==FOCUS || wid==FOCUS) && offset[0].x==0 && c > 0 && c < COLS) printf("(%d,%d): result += %e + %e = %e\n", r, c, M_loc, X_loc, result);
          }
       }
    }
    if (r==ROWS-1)
    {
-      output[wid]=log10(result)-log10_init;
+      if (result < MIN_ACCEPTED) {
+         output[wid] = 1.0;
+      } else {
+	      output[wid] = log10(result) - log10_init;
+      }
    }
+}
+template <class NUMBER>
+__global__ void
+__launch_bounds__(WARP*4,10)
+pairhmm_kernel_wrap( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUMBER *Y_in,
+                          char* rs, char* hap, NUMBER* q, 
+                          int *n, cudaTextureObject_t t_n, int2* offset, int n_mats,
+                          NUMBER* output, NUMBER log10_init) {
+   NUMBER M_p;
+   NUMBER M_pp;
+   NUMBER X_p;
+   NUMBER X_pp;
+   NUMBER Y_p;
+   NUMBER Y_pp;
+   char _rs, _rs_next;
+   NUMBER _q, _q_next;
+   NUMBER distm;
+   NUMBER pMM, pMM_next;
+   NUMBER pXX, pXX_next;
+   NUMBER pMX, pMX_next;
+   NUMBER pMY, pMY_next;
+   NUMBER pYY, pYY_next;
+   NUMBER pGapM, pGapM_next;
+   NUMBER M_loc, X_loc, Y_loc;
+   NUMBER Y0;
+#ifdef __SHARED_READ
+   __shared__ NUMBER M_top[128], X_top[128], Y_top[128];
+#endif
+   __shared__ NUMBER ph2pr_save[128];
+   for (int z=threadIdx.x;z<128;z+=WARP) {
+      ph2pr_save[z] = ph2pr<NUMBER>(z);
+   }
+   __syncthreads();
+
+   int tid = threadIdx.x + blockDim.x * blockIdx.x;
+   int wid = MAT_PER_WARP*(tid/WARP);
+   if (wid > n_mats) return;
+#ifdef __LMEM
+   NUMBER M[500], X[500], Y[500];
+#else
+   NUMBER *M=M_in+offset[wid].y;
+   NUMBER *X=X_in+offset[wid].y;
+   NUMBER *Y=Y_in+offset[wid].y;
+#endif
+   rs+=offset[wid].x; 
+   hap+=offset[wid].y; 
+   q+=offset[wid].x;
+   int n_off=offset[wid].x;
+   n+=offset[wid].x;
+   int mid = -1;
+   int r=tid%WARP;
+   int c=1-r;
+   int stripe=1;
+   int ROWS=0, COLS=2, nCOLS=0, nROWS=0;
+   NUMBER result=0.0;
+   nROWS = offset[wid+1].x-offset[wid].x;
+   nCOLS = offset[wid+1].y-offset[wid].y;
+   {
+      int nextr = r+1;
+	   _rs_next = rs[nextr-1];
+#ifdef __USE_TEX
+      int _n = tex1Dfetch<int>(t_n, nextr+n_off);
+#else
+      int _n = n[nextr];
+#endif
+      int _i = _n & 127;
+      int _d = (_n >> 7) & 127;
+      int _c = (_n >> 14) & 127;
+      _q_next = ph2pr_save[(_n >> 21) & 127];
+//      if (MAT_PER_WARP*((threadIdx.x +blockIdx.x * blockDim.x)/WARP) == FOCUS) printf("threadIdx.x: %d. tid:%d. _q_next = %f\n", tid, tid%WARP, _q_next);
+      pMM_next = 1.0 - ph2pr_save[_i+_d & 127];
+      pXX_next = ph2pr_save[_c];
+      pMX_next = ph2pr_save[_i];
+      pMY_next = r == ROWS-1 ? 1.0 : ph2pr_save[_d];
+   }
+   while(mid < MAT_PER_WARP) 
+   {
+      while (r>=ROWS) {
+         mid++;
+         tid = threadIdx.x + blockDim.x * blockIdx.x;
+         wid = tid/WARP;
+         wid = wid*MAT_PER_WARP + mid;
+         tid %= WARP;
+         if (wid >=n_mats) return;
+         stripe=1;
+         r-=ROWS-1;
+         //r = tid+1;
+         rs+=ROWS;
+         hap+=COLS;
+         q+=ROWS;
+         n_off+=ROWS;
+         n+=ROWS;
+         ROWS = nROWS;
+         if (nCOLS != COLS) init_const *= (1.0*(COLS-1))/(nCOLS-1);
+         COLS = nCOLS;
+         nCOLS = offset[wid+2].y-offset[wid+1].y;
+         nROWS = offset[wid+2].x-offset[wid+1].x;
+         //TODO resolve cases where more than 2 matrices are found in a single set of 32 rows
+         //nROWS = offset[wid+2].x-offset[wid+1].x;
+         //if (tid + ROWS + nROWS - r  < WARP) {
+         //   nCOLS = max(nCOLS,offset[wid+3].y-offset[wid+2].y);
+         //   nROWS = offset[wid+3].x-offset[wid+2].x;
+         //}
+//         if (wid==FOCUS || wid == FOCUS-1) printf("thread: %d, block %d, wid = %d. r= %d. n_off = %d, q = %p, ROWS= %d, COLS = %d, rs = %s, hap(%p) = %s\n", threadIdx.x, blockIdx.x, wid, r, n_off, q, ROWS, COLS, rs, (void*)hap, hap);
+         result=0.0;
+      }
+      if (c==1+WARP-tid) { //All threads do this computation at the same time.
+         //Compute the next set of q,p and rs
+         int nextr = r+WARP;
+         //TODO What if we fit more than 3 mats in a single batch of 32 rows?
+         if (nextr >= ROWS) nextr++; //skip one for the string termination char (\0)
+         if (nextr >= ROWS+nROWS) nextr++;
+	      _rs_next = rs[nextr-1];
+#ifdef __USE_TEX
+         int _n = tex1Dfetch<int>(t_n, nextr+n_off);
+#else
+         int _n = n[nextr];
+#endif
+         int _i = _n & 127;
+         int _d = (_n >> 7) & 127;
+         int _c = (_n >> 14) & 127;
+         _q_next = ph2pr_save[(_n >> 21) & 127];
+//         if (wid==FOCUS || wid==FOCUS-1) printf("tid:%d. new _q_next = %f\n", tid, _q_next);
+         pMM_next = 1.0 - ph2pr_save[_i+_d & 127];
+         pXX_next = ph2pr_save[_c];
+         pMX_next = ph2pr_save[_i];
+         pMY_next = r == ROWS-1 ? 1.0 : ph2pr_save[_d];
+         pYY_next = r == ROWS-1 ? 1.0 : pXX;
+         pGapM_next = 1.0-pXX;
+      }
+      if (c==1) {
+         //First time on this row, recompute pMM, pXX, pMX, pMY and _q
+         //TODO don't do this every time
+	      _rs = _rs_next;
+	      _q = _q_next;
+         pMM = pMM_next;
+         pXX = pXX_next;
+         pMX = pMX_next;
+         pMY = pMY_next;
+         M_pp = M_p = X_p = X_pp = Y_p = Y_pp = 0.0;
+         pYY = pYY_next;
+         pGapM = pGapM_next;
+//         if (wid==FOCUS) printf("row: %d tid: %d mid: %d. Switching to _q_next (%e)\n", r, tid, mid, _q);
+      }
+#ifdef __SHARED_READ
+      if (1==((c+r-stripe)%WARP)) {
+         M_top[threadIdx.x] = M[c-1+2*r-2*stripe];
+         X_top[threadIdx.x] = X[c-1+2*r-2*stripe];
+         Y_top[threadIdx.x] = Y[c-1+2*r-2*stripe];
+      }
+#endif
+      if (c>0 && c < COLS) {
+		  char _hap = hap[c-1];
+		  if (_rs == _hap || _rs == 'N' || _hap == 'N')
+	        distm = NUMBER(1.0) - _q;
+        else distm = _q;
+        if (r==1 && c==1) {
+           Y_pp = init_const;
+        } 
+		  Y_loc = M_p * pMY + Y_p * pYY;
+        M_loc = distm * (M_pp * pMM + (X_pp + Y_pp) * pGapM );
+//        if ((wid==FOCUS || wid==FOCUS) && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): M: %e * (%e * %e + (%e + %e) * (1-%e)) = %e\n", r,c, distm, M_pp, pMM, X_pp, Y_pp, pXX, M_loc);
+//        if ((wid==FOCUS || wid==FOCUS) && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): Y: %e * %e + %e * %e = %e\n", r,c, M_p, pMY, Y_p, (r==ROWS-1 ? 1.0 : pXX), Y_loc);
+      } else {
+         //TODO do we need this?
+         //M_loc = Y_loc = X_loc = 0.0;
+      }
+      M_p = __shfl_up(M_p,1);
+      X_p = __shfl_up(X_p,1);
+      Y_p = __shfl_up(Y_p,1);
+      if (r == 1)
+      { 
+         M_p = X_p = 0.0;
+         Y_p = init_const;
+      } else if (tid==0) {
+#ifdef __SHARED_READ
+         M_p = M_top[WARP*(wid%4)+c%WARP];
+         X_p = X_top[WARP*(wid%4)+c%WARP];
+         Y_p = Y_top[WARP*(wid%4)+c%WARP];
+#else
+         M_p = M[c];
+         X_p = X[c];
+         Y_p = Y[c];
+#endif
+      }
+		X_loc = M_p * pMX + X_p * pXX;
+//      if ((wid==FOCUS || wid==FOCUS) && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): X: %e * %e + %e * %e = %e\n", r,c, M_p, pMX, X_p, pXX, X_loc);
+      M_pp = M_p; M_p = M_loc;
+      X_pp = X_p; X_p = X_loc;
+      Y_pp = Y_p; Y_p = Y_loc;
+      if (tid==WARP-1 && c >=0 && c < COLS) {
+         M[c] = M_loc;
+         X[c] = X_loc;
+         Y[c] = Y_loc;
+//         if ((wid==FOCUS || wid==FOCUS) && offset[0].x==0 && c > 0 && c < 12) printf("(%d,%d): writing %e to Y[%d]\n", r, c, Y_loc, c);
+      }
+      if (r==ROWS-1 && c > 0 && c < COLS) {
+         result += M_loc + X_loc;
+//         if ((wid==FOCUS || wid==FOCUS) && offset[0].x==0 && c > 0 && c < COLS) printf("(%d,%d): result += %e + %e = %e\n", r, c, M_loc, X_loc, result);
+         if (c == COLS-1) {
+	         output[wid] = log10(result) - log10_init;
+         }
+//         if (c == COLS-1 && (wid==FOCUS || wid==FOCUS)) printf("thread: %d, block %d, wid = %d. writing log10(%e) - %e = %e\n", threadIdx.x, blockIdx.x, wid, result, log10_init, output[wid]);
+      }
+      c++;
+      if (c > COLS-1 && c > nCOLS-1 && c >= WARP) { //TODO You don't always have to wait for nCOLS
+         //if we're at the end of a column, move down WARP rows
+//         if (wid==FOCUS || wid==FOCUS) printf("Row %d (tid %d) reached the end. Changing to row %d (mid=%d)\n", r, tid, r+WARP, mid);
+         stripe+=WARP;
+         r+=WARP;
+         c=1;
+      }
+   }  //mid
 }
 template <class NUMBER, unsigned int BATCH>
 __global__ void
@@ -618,6 +1093,8 @@ pairhmm_kernel_onethread_old( NUMBER init_const, NUMBER* M_in, NUMBER *X_in, NUM
 #endif
 __global__ void CPU_start() {}
 __global__ void CPU_end() {}
+template <unsigned int u>
+__global__ void debugMark() {}
 
 template<class NUMBER>
 __global__ void 
@@ -928,6 +1405,7 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
    }
    gmem.N_STREAMS=STREAMS;
    gmem.strm = (cudaStream_t*)malloc(sizeof(cudaStream_t)*gmem.N_STREAMS);
+   cudaStreamCreate(&gmem.marker_s);
    for (int z=0;z<gmem.N_STREAMS;z++) cudaStreamCreate(&gmem.strm[z]);
    return 0;
 }
@@ -956,6 +1434,7 @@ int GPUmemFree(GPUmem<NUMBER>& gmem)
    gmem.d_amem = 0;
    gmem.amem = 0;
    for (int z=0;z<gmem.N_STREAMS;z++) cudaStreamDestroy(gmem.strm[z]);
+   cudaStreamDestroy(gmem.marker_s);
    free(gmem.strm);
    return 0;
 }
@@ -963,6 +1442,10 @@ template int GPUmemAlloc<double>(GPUmem<double>&);
 template int GPUmemAlloc<float>(GPUmem<float>&);
 template int GPUmemFree<double>(GPUmem<double>&);
 template int GPUmemFree<float>(GPUmem<float>&);
+template __global__ void debugMark<1>();
+template __global__ void debugMark<2>();
+template __global__ void debugMark<3>();
+template __global__ void debugMark<4>();
 
 #define N_STREAM 4
 template <class PRECISION>
@@ -1032,7 +1515,8 @@ void compute_gpu_stream(int2 *offset, char* rs, char* hap, PRECISION* q,
 #ifdef __WARP_PER_MAT
    printf("One warp/matrix\n");
    //cudaEventRecord(start,strm);
-   pairhmm_kernel<<<(n_tc+3)/4,WARP*4,0,strm>>>( init_const, gmem.d_M, gmem.d_X, 
+   //pairhmm_kernel<<<(n_tc+3)/4,WARP*4,0,strm>>>( init_const, gmem.d_M, gmem.d_X, 
+   pairhmm_kernel_wrap<<<(n_tc+3)/4,WARP*4,0,strm>>>( init_const, gmem.d_M, gmem.d_X, 
                                   gmem.d_Y, gmem.d_rs, gmem.d_hap, gmem.d_q, gmem.d_n, gmem.n_tex.tex,
                                   gmem.d_offset+results_inx, n_tc-1, gmem.d_results+results_inx, LOG10_INITIAL_CONSTANT); 
 #else
