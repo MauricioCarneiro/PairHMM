@@ -5,3 +5,11 @@
 *.o
 pairhmm
 other/
+*.exe
+*.dll
+*/obj/*
+src/csharp/obj/*
+src/csharp/bin/*
+*.suo
+*.user
+*.out
