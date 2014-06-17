@@ -159,7 +159,7 @@ pairhmm_jacopo(
         // register blocks for M, X and Y
 	    NUMBER M[BATCH+1];
 	    NUMBER X[BATCH+1];
-	    NUMBER Y, Y_p, tmp;
+	    NUMBER Y, Y_p;
 
         // initialize the zero-th row
         for (int bid = 1; bid <= BATCH; ++bid)
@@ -1298,8 +1298,9 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
    gmem.totalMem = 3*deviceProp.totalGlobalMem/4;
    //TODO no need to assign d_M, etc.
    cudaMalloc(&gmem.d_amem, gmem.totalMem);
-   //gmem.amem = (char*)malloc(gmem.totalMem);
-   cudaMallocHost(&gmem.amem, gmem.totalMem); 
+   gmem.amem = (char*)malloc(gmem.totalMem);
+   cudaHostRegister(gmem.amem, gmem.totalMem, cudaHostRegisterMapped);
+   //cudaMallocHost(&gmem.amem, gmem.totalMem); 
    d_current = (char*)gmem.d_amem;
    current = (char*)gmem.amem;
 
@@ -1378,7 +1379,8 @@ int GPUmemFree(GPUmem<NUMBER>& gmem)
    gmem.d_rs=gmem.d_hap=0;
    gmem.d_n=0;
    cudaFree(gmem.d_amem);
-   cudaFreeHost(gmem.amem);
+   cudaHostUnregister(gmem.amem);
+   free(gmem.amem);
    gmem.d_amem = 0;
    gmem.amem = 0;
    for (int z=0;z<gmem.N_STREAMS;z++) cudaStreamDestroy(gmem.strm[z]);
