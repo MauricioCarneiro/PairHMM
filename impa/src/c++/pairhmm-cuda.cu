@@ -215,7 +215,7 @@ void compute_full_prob_multiple(double* probs, testcase *tc, int n_tc,
    SortTC.start();
 #pragma omp parallel for
    for (int z=0;z<4;z++) {
-      //qsort(tc+z*n_tc/4, n_tc/4, sizeof(testcase), tc_comp2);
+      qsort(tc+z*n_tc/4, n_tc/4, sizeof(testcase), tc_comp2);
    }
    printf("largest mat: %d x %d\n", tc[0].rslen, tc[0].haplen);
    SortTC.acc();
