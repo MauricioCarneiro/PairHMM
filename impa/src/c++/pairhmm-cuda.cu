@@ -78,14 +78,16 @@ int tc2gmem(GPUmem<NUMBER>& gmem, testcase* tc, int index)
 	int COLS = tc->haplen + 1;
 
    if (ROWS==1 || COLS==1) return 0;
+#ifdef __NO_PREPACK
    extract_tc(gmem.M,gmem.X,gmem.Y,gmem.p+gmem.offset[index].x*6,gmem.n+gmem.offset[index].x,
               gmem.q+gmem.offset[index].x,tc);
+#else
+   memcpy(gmem.n+gmem.offset[index].x+1, tc->n_new, sizeof(int)*ROWS);
+#endif
    //TODO check data sizes first
    //      return error if we're out of space
-#ifndef __NO_COPY
    memcpy(gmem.rs+gmem.offset[index].x, tc->rs, sizeof(char)*ROWS);
    memcpy(gmem.hap+gmem.offset[index].y, tc->hap, sizeof(char)*COLS);
-#endif
    gmem.index++;
    return 0;
 }
@@ -96,7 +98,6 @@ void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in,
 	int ROWS = tc->rslen + 1;
    int r;
 
-#ifndef __NO_COPY
 	for (r = 1; r < ROWS; r++)
 	{
 		int _i = tc->i[r-1] & 127;
@@ -105,7 +106,6 @@ void extract_tc(NUMBER* M_in, NUMBER* X_in, NUMBER* Y_in,
       int _q = tc->q[r-1] & 127;
       n_new[r]=_i+128*_d+128*128*_c+128*128*128*_q;
 	}
-#endif
 
 }
 
@@ -181,11 +181,16 @@ NUMBER compute_full_prob(testcase *tc, NUMBER *before_last_log = NULL)
 	return log10(result) - LOG10_INITIAL_CONSTANT;
 }
 
-int tc_comp(const void* tc_A, const void* tc_B) {
-   int rA = 32*((((testcase*)tc_A)->rslen+31)/32); 
-   int rB = 32*((((testcase*)tc_B)->rslen+31)/32); 
-   if (rA*((testcase*)tc_A)->haplen + 32*32*(rA/32) <  
-       rB*((testcase*)tc_B)->haplen + 32*32*(rB/32)) return 1;
+int tc_comp1(const void* tc_A, const void* tc_B) {
+   int rA = ((testcase*)tc_A)->rslen * ((testcase*)tc_A)->haplen; 
+   int rB = ((testcase*)tc_B)->rslen * ((testcase*)tc_B)->haplen; 
+   if (rA<rB) return 1;
+   else return -1;
+}
+int tc_comp2(const void* tc_A, const void* tc_B) {
+   int rA = ((testcase*)tc_A)->rslen;
+   int rB = ((testcase*)tc_B)->rslen;
+   if (rA<rB) return 1;
    else return -1;
 }
 int tc_comp_unsort(const void* tc_A, const void* tc_B) {
@@ -205,10 +210,16 @@ void compute_full_prob_multiple(double* probs, testcase *tc, int n_tc,
    //else debugMark<1><<<1,1,0, gmem.marker_s>>>();
    Timing All(string("compute_full_prob_multiple total :  "));
    Timing GPUAlloc(string("GPU Alloc/Free :  "));
+   Timing SortTC(string("Sort :  "));
    All.start();
-   GPUAlloc.start();
-   qsort(tc, n_tc, sizeof(testcase), tc_comp);
+   SortTC.start();
+#pragma omp parallel for
+   for (int z=0;z<4;z++) {
+      //qsort(tc+z*n_tc/4, n_tc/4, sizeof(testcase), tc_comp2);
+   }
    printf("largest mat: %d x %d\n", tc[0].rslen, tc[0].haplen);
+   SortTC.acc();
+   GPUAlloc.start();
    if (0==n_tc) {
       fprintf(stderr, "Free GPUmem\n");
       err = GPUmemFree<NUMBER>(gmem);
@@ -333,6 +344,7 @@ int main(int argc, char* argv[])
          compute_full_prob_multiple(prob, tc, cnt+1, gmem);
          ComputationTime.acc();
          for (int q=0;q<cnt+1;q++) {
+            //printf("%s vs %s\n", tc[q].rs, tc[q].hap);
 		      printf("%E\n", q+basecnt, prob[q]);
          }
          cnt = -1;
@@ -351,6 +363,7 @@ int main(int argc, char* argv[])
    compute_full_prob_multiple(prob, tc, 0, gmem);
 
    for (int q=0;q<cnt;q++) {
+            //printf("%s vs %s\n", tc[q].rs, tc[q].hap);
      printf("%E\n", q+basecnt, prob[q]);
    }
 

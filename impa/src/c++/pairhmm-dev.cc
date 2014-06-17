@@ -15,7 +15,7 @@
 
 typedef struct 
 {
-	int rslen, haplen, *q, *i, *d, *c;
+	int rslen, haplen, *q, *i, *d, *c, *n_new;
 	int *hap, *rs;
 } testcase;
 

@@ -53,6 +53,7 @@ To read a second set like above, call readv2 again (with new n_read, n_hap)
            this_tc->i = new int[sz]();
            this_tc->d = new int[sz]();
            this_tc->c = new int[sz]();
+           this_tc->n_new = new int[sz]();
 
 
            for (int x = 0; x < this_tc->rslen; x++)
@@ -60,9 +61,13 @@ To read a second set like above, call readv2 again (with new n_read, n_hap)
                this_tc->rs[x] = rs[x];
                this_tc->q[x] = normalize((q.c_str())[x]);
                this_tc->q[x] = this_tc->q[x] < 6 ? 6 : (this_tc->q[x]) & 127;
-               this_tc->i[x] = normalize((i.c_str())[x]);
-               this_tc->d[x] = normalize((d.c_str())[x]);
-               this_tc->c[x] = normalize((c.c_str())[x]);
+               this_tc->i[x] = normalize((i.c_str())[x]) & 127;
+               this_tc->d[x] = normalize((d.c_str())[x]) & 127;
+               this_tc->c[x] = normalize((c.c_str())[x]) & 127;
+               this_tc->n_new[x] = this_tc->i[x] + 
+                                   this_tc->d[x] * 128 + 
+                                   this_tc->c[x] * 128 * 128 + 
+                                   this_tc->q[x] * 128 * 128 * 128;
            }
            this_tc->hap = this_tc->hap_alloc = NULL;
            this_tc->haplen = 0;

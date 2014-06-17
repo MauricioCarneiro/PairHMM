@@ -4,7 +4,8 @@
 #include <cfloat>
 #define MAT_PER_WARP 8
 //#define FOCUS 7046
-#define FOCUS 12
+#define FOCUS 24022
+//#define FOCUS 12
 #define MIN_ACCEPTED 1e-28f
 
 void cudaCheckError(int line, const char* file) {
@@ -51,9 +52,9 @@ __device__ PRECISION ph2pr(int in) {
 
 #define MAX_ROWS 310
 template<class NUMBER, int BATCH>
-__global__
-//__launch_bounds__(WARP,1)
-void pairhmm_jacopo(
+__global__ void
+__launch_bounds__(4*WARP,6)
+pairhmm_jacopo(
     const char* rs,
     const char* hap,
     const NUMBER*  q, 
@@ -71,6 +72,7 @@ void pairhmm_jacopo(
     int r, c;
     __shared__ NUMBER ph2pr_save[128];
 
+    //Precompute and store a mapping from ints to floating point qualities
     for (int z=threadIdx.x; z< 128; z+=WARP) 
     {
        ph2pr_save[z] = ph2pr<NUMBER>(z);
@@ -83,7 +85,6 @@ void pairhmm_jacopo(
     const int ROWS    = offsets[pid+1].x - row_off;
     const int COLS    = offsets[pid+1].y - col_off;
 
-    q+=row_off;
     rs+=row_off;
     hap+=col_off;
     idc+=row_off;
@@ -94,8 +95,8 @@ void pairhmm_jacopo(
 
    l_p[MM][0]    = NUMBER(0.0);
 	l_p[MX][0]    = NUMBER(0.0);
-	l_p[XX][0]    = NUMBER(0.0);
-	l_p[MY][0]    = NUMBER(0.0);
+	l_p[XX][0]    = NUMBER(1.0);
+	l_p[MY][0]    = NUMBER(1.0);
    int  l_q[MAX_ROWS];
 #if 1
 	for (r = 1; r < ROWS; r++)
@@ -110,12 +111,7 @@ void pairhmm_jacopo(
 		const int _i = _idc & 127;
 		const int _d = (_idc >> 7) & 127;
 		const int _c = (_idc >> 14) & 127;
-      //if (pid==0) printf("i,d,c = %d,%d,%d\n", _i, _d, _c);
      //TODO (_i+_d)&127 This is here to match results from pairhmm-1-base
-		//l_p[MM][r]    = NUMBER(1.0) - ph2pr<NUMBER>(_i + _d & 127);
-		//l_p[MX][r]    = ph2pr<NUMBER>(_i);
-		//l_p[XX][r]    = ph2pr<NUMBER>(_c);
-		//l_p[MY][r]    = (r == ROWS - 1) ? NUMBER(1.0) : ph2pr<NUMBER>(_d);
 		l_p[MM][r]    = NUMBER(1.0) - ph2pr_save[_i + _d & 127];
 		l_p[MX][r]    = ph2pr_save[_i];
 		l_p[XX][r]    = ph2pr_save[_c];
@@ -163,16 +159,15 @@ void pairhmm_jacopo(
         // register blocks for M, X and Y
 	    NUMBER M[BATCH+1];
 	    NUMBER X[BATCH+1];
-	    NUMBER Y[BATCH+1];
+	    NUMBER Y, Y_p, tmp;
 
         // initialize the zero-th row
         for (int bid = 1; bid <= BATCH; ++bid)
         {
 		    M[bid] = NUMBER(0.0);
 		    X[bid] = NUMBER(0.0);
-		    Y[bid] = INITIAL_CONSTANT / (COLS-1); 
-//          if(pid==12 && c < 12 && offsets[0].x==0) printf("Y[0] = %e/%d = %e\n", INITIAL_CONSTANT, COLS-1, INITIAL_CONSTANT/ (COLS-1));
         }
+		  Y = INITIAL_CONSTANT / (COLS-1); 
 
         // register block for l_hap
         char H[BATCH+1];
@@ -186,26 +181,23 @@ void pairhmm_jacopo(
 			const char _rs = l_rs[r];
 			const int  _q  = l_q[r];
 
-            //const NUMBER distm_q = ph2pr<NUMBER>(_q);  // should use __ldg();
             const NUMBER distm_q = ph2pr_save[_q];  // should use __ldg();
 
             // load the M,X,Y entries from the previous row of the previous stripe
             M[0] = M_c[r-1];
             X[0] = X_c[r-1];
-            Y[0] = Y_c[r-1];
+            Y = Y_c[r-1];
             M_c[r-1] = M[BATCH];
             X_c[r-1] = X[BATCH];
-            Y_c[r-1] = Y[BATCH];
 
             // prefetch p[r][*] in registers (though the compiler might do it)
             NUMBER p_MM   = l_p[MM][r];
             NUMBER p_MX   = l_p[MX][r];
             NUMBER p_XX   = l_p[XX][r];
-            NUMBER p_MY   = l_p[MY][r];
+            NUMBER p_MY   = l_p[MY][r-1];
             NUMBER p_GapM = NUMBER(1.0) - l_p[XX][r];
-            NUMBER p_YY   = r==ROWS-1 ? NUMBER(1.0) : l_p[XX][r];
+            NUMBER p_YY   = r==ROWS ? NUMBER(1.0) : l_p[XX][r-1];
 
-#if 1 // perhaps offer higher ILP
 	        NUMBER M_p[BATCH+1];            // save M[r-1]
             #pragma unroll
             for (int bid = 0; bid <= BATCH; ++bid)
@@ -224,55 +216,15 @@ void pairhmm_jacopo(
                       NUMBER(1.0) - distm_q :
                                     distm_q;
 
-                M[bid] = distm * (M_p[bid-1] * p_MM + X_p * p_GapM + Y[bid-1] * p_GapM);
+                Y_p = Y;
+    			    Y = M_p[bid-1] * p_MY + Y_p * p_YY;
+                M[bid] = distm * (M_p[bid-1] * p_MM + X_p * p_GapM + Y_p * p_GapM);
 
                 X_p = X[bid]; // save X[r-1][c]
                 X[bid] = M_p[bid] * p_MX + X[bid] * p_XX;
             }
-#elif 0
-            NUMBER M_p = M[0];              // save M[r-1][0]
-            NUMBER X_p = X[0];              // save X[r-1][0]
+            Y_c[r-1] = Y;
 
-            // loop across columns in this stripe
-            for (int bid = 1; bid <= BATCH; ++bid)
-            {
-                // fetch the corresponding hap entry
-                const char _hap = H[bid];
-
-                const NUMBER distm = (_rs == _hap || _rs == 'N' || _hap == 'N') ?
-                      NUMBER(1.0) - distm_q :
-                                    distm_q;
-
-                NUMBER M_pp = M_p;  // save M[r-1][c-1]
-                M_p = M[bid];       // save M[r-1][c]
-                M[bid] = distm * (M_pp * p_MM + X_p * p_GapM + Y[bid-1] * p_GapM);
-
-                X_p = X[bid]; // save X[r-1][c]
-                X[bid] = M_p * p_MX + X[bid] * p_XX;
-            }
-#else
-            // loop across columns in this stripe
-            for (int bid = BATCH; bid >0; --bid)
-            {
-                // fetch the corresponding hap entry
-                const char _hap = H[bid];
-
-                const NUMBER distm = (_rs == _hap || _rs == 'N' || _hap == 'N') ?
-                      NUMBER(1.0) - distm_q :
-                                    distm_q;
-
-                X[bid] = M[bid] * p_MX + X[bid] * p_XX; 
-                M[bid] = distm * (M[bid-1] * p_MM + X[bid-1] * p_GapM + Y[bid-1] * p_GapM);
-            }
-#endif
-
-            M[0] = M_c[r];
-            Y[0] = Y_c[r];
-
-            for (int bid = 1; bid <= BATCH; bid++)
-            {
-    			    Y[bid] = M[bid-1] * p_MY + Y[bid-1] * p_YY;
-            }
         }
 
         // add up the result
@@ -282,7 +234,6 @@ void pairhmm_jacopo(
             const int c = stripe + bid;
             if (c < COLS) {
                 result += M[bid] + X[bid];
-//                if (pid==12 && offsets[0].x==0 && c < 12) printf("(%d,%d): result += %e + %e = %e\n", r, c, M[bid], X[bid], result);
             }
         }
     }
@@ -292,7 +243,6 @@ void pairhmm_jacopo(
    } else {
 	   output[pid] = log10(result) - LOG10_INITIAL_CONSTANT;
    }
-//   if (pid==12 && offsets[0].x==0) printf("output[%d] = log10(%e) - %e = %e\n", pid, result, LOG10_INITIAL_CONSTANT, output[pid]);
 }
 #define MAX_COLS 310
 template<class NUMBER, int BATCH>
@@ -373,7 +323,6 @@ void pairhmm_1thread_sweepright(
    		const int _i = _idc & 127;
    		const int _d = (_idc >> 7) & 127;
    		const int _c = (_idc >> 14) & 127;
-         //if (pid==0) printf("i,d,c = %d,%d,%d\n", _i, _d, _c);
         //TODO (_i+_d)&127 This is here to match results from pairhmm-1-base
 		   pMM[bid]    = NUMBER(1.0) - ph2pr<NUMBER>(_i + _d & 127);
    		pMX[bid]    = ph2pr<NUMBER>(_i);
@@ -390,7 +339,6 @@ void pairhmm_1thread_sweepright(
 		  M[bid] = NUMBER(0.0);
 		  X[bid] = NUMBER(0.0);
 		  Y[bid] = NUMBER(0.0);
-//        if(pid==12 && c < 12 && offsets[0].x==0) printf("Y[0] = %e/%d = %e\n", INITIAL_CONSTANT, COLS-1, INITIAL_CONSTANT/ (COLS-1));
       }
 
       // loop across all rows
@@ -1525,7 +1473,7 @@ void compute_gpu_stream(int2 *offset, char* rs, char* hap, PRECISION* q,
    cudaEventCreate(&start);
    cudaEventCreate(&finish);
    cudaEventRecord(start,strm);
-   pairhmm_jacopo<PRECISION,16><<<(n_tc+WARP-1)/(WARP),WARP,0,strm>>>(  gmem.d_rs, gmem.d_hap, 
+   pairhmm_jacopo<PRECISION,18><<<(n_tc+4*WARP-1)/(4*WARP),4*WARP,0,strm>>>(  gmem.d_rs, gmem.d_hap, 
                                            gmem.d_q, gmem.d_n, gmem.n_tex.tex, (int2*)gmem.d_offset+results_inx, n_tc-1, 
                                            gmem.d_results+results_inx, init_const, LOG10_INITIAL_CONSTANT); 
    cudaEventRecord(finish,strm);

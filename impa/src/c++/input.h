@@ -9,7 +9,7 @@
 
 struct testcase
 {
-	int rslen, haplen, *q, *i, *d, *c;
+	int rslen, haplen, *q, *i, *d, *c, *n_new;
 	char *hap_alloc, *hap, *rs; //hap_alloc is the allocation, hap is offset for padding
    int index;
    double prob;
@@ -29,6 +29,9 @@ struct testcase
       printf("c = ");
       for (int z=0;z<rslen;z++) printf("%d  ", c[z]);
       printf("\n");
+      printf("n_new = ");
+      for (int z=0;z<rslen;z++) printf("%d  ", n_new[z]);
+      printf("\n");
    }
    void free() 
    {
@@ -39,8 +42,9 @@ struct testcase
       if (i) delete [] i;
       if (d) delete [] d;
       if (c) delete [] c;
+      if (n_new) delete [] n_new;
       hap = rs = hap_alloc = NULL;
-      q = i = c = d = NULL;
+      q = i = c = d = n_new = NULL;
       rslen = haplen = 0;
    }
    testcase& operator=(const testcase& src)
@@ -54,6 +58,7 @@ struct testcase
           i = new int[sz]();
           c = new int[sz]();
           d = new int[sz]();
+          n_new = new int[sz]();
        }
        if (src.hap) 
        {
@@ -77,12 +82,13 @@ struct testcase
            i[z] = src.i[z];
            d[z] = src.d[z];
            c[z] = src.c[z];
+           n_new[z] = src.n_new[z];
        }
        return *this;
    } 
    testcase() {
        hap = hap_alloc = rs = NULL;
-       q = i = d = c = NULL;
+       q = i = d = c = n_new = NULL;
        haplen = rslen = 0;
    }
    ~testcase() {
