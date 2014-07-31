@@ -1,6 +1,6 @@
 #CXXFLAGS=-c -Wall -std=c++11 -g -mfpmath=sse -O4 -march=corei7 -pedantic
-CXXFLAGS=-Wall -W -std=c++11 -msse -mfpmath=sse -ffast-math -march=corei7-avx -Wa,-q -pedantic
-LDFLAGS=
+CXXFLAGS=  -fopenmp -Wall -W -std=c++11 -msse -mfpmath=sse -ffast-math -march=corei7-avx -Wa,-q -pedantic
+LDFLAGS= -fopenmp
 SOURCES= testcase.cpp testcase_iterator.cpp main.cpp diagonals.cpp 
 OBJECTS=$(SOURCES:.cpp=.o)
 EXECUTABLE=pairhmm
@@ -10,10 +10,12 @@ ifeq ($(GPU),1)
   NVCC = nvcc 
   LIBS += -L/usr/local/cuda/lib64 -lcudart
   NVFLAGS = -arch=sm_35
+  LDFLAGS += -g
 endif
 ifeq ($(DEBUG),1)
   CXXFLAGS += -g -O0
-  NVFLAGS += -g -G -lineinfo -Xptxas -v,-abi=no
+#  NVFLAGS += -g -G -lineinfo -Xptxas -v,-abi=no
+  NVFLAGS += -g -G -lineinfo
 else
   CXXFLAGS += -O4
 endif

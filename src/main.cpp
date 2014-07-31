@@ -30,10 +30,10 @@ int main (const int argc, char const * const argv[]) {
     //PairhmmSSEFloatImpl,
     //PairhmmAVXFloatImpl,
     //PairhmmAVXDoubleImpl
-    PairhmmAVXFloat2DiagsImpl,
+    //PairhmmAVXFloat2DiagsImpl,
+    //PairhmmAVXDouble2DiagsImpl
+    PairhmmCudaImpl<float>,
     PairhmmAVXDouble2DiagsImpl
-    //PairhmmCudaImpl<double>,
-    //PairhmmCudaImpl<double>
   >{};
   InputReader<TestcaseIterator> reader {};
   if (argc == 2)
@@ -42,11 +42,15 @@ int main (const int argc, char const * const argv[]) {
   Chronos time;
   for (auto& testcase : reader) {
     time.reset();
-    auto results = pairhmm.calculate(testcase);
+    //auto results = pairhmm.calculate(testcase);
+    pairhmm.sow(testcase);
     computation_time += time.elapsed();
-    for (auto x : results)
-      cout << x << endl;
   }
+  time.reset();
+  auto results = pairhmm.reap();
+  computation_time += time.elapsed();
+  for (auto x : results)
+    cout << x << endl;
   std::cerr << "done in " << computation_time << "ms\n";
   return 0;
 }

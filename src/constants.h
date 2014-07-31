@@ -24,8 +24,8 @@ struct Constants {
   void update(const Read<PRECISION, BASE_TYPE>& read) {
     const auto rows = read.bases.size();
     for (auto i = 1u; i != rows; ++i) {
-      //printf("%d : ins_quals = %f, del_quals = %f\n", i, read.ins_quals[i], read.del_quals[i]);
-      //printf("%d : gcp_quals = %f\n", i, read.gcp_quals[i]);
+      //printf("%d : ins_quals = %d, del_quals = %d\n", i, read.ins_quals[i], read.del_quals[i]);
+      //printf("%d : gcp_quals = %d\n", i, read.gcp_quals[i]);
       mm[i] = static_cast<PRECISION>(1) - (read.ins_quals[i] + read.del_quals[i]);
       gm[i] = static_cast<PRECISION>(1) - read.gcp_quals[i];
       mx[i] = read.ins_quals[i];
