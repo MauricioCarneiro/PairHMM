@@ -12,20 +12,22 @@ struct int2 {
 };
 
 struct pair {
-   Read<uint8_t,uint8_t> read;
-   Haplotype<uint8_t> hap;
+   const int* n;
+   const unsigned char *hap, *rs;
+   int haplen, rslen;
    int inx;
    double result;
 
    public:
-      pair(Read<uint8_t,uint8_t> r, Haplotype<uint8_t> h, int i) {
-         this->read=r;this->hap=h;this->inx=i; result = 0.0;
+      pair(const unsigned char* hap, const int haplen, const unsigned char* rs, const int* n, 
+           const int rslen, const int inx) : 
+         n{n}, hap{hap}, rs{rs}, haplen{haplen}, rslen{rslen}, inx{inx}, result{0.0} {
       }
 };
 
 bool pair_comp (pair* pA, pair* pB) {
-     int rA = pA->read.bases.size() * pA->hap.bases.size();
-     int rB = pB->read.bases.size() * pB->hap.bases.size();
+     int rA = pA->rslen * pA->haplen;
+     int rB = pB->rslen * pB->haplen;
      return rA<rB;
 }
 
@@ -36,11 +38,13 @@ class PairhmmCudaImpl: public PairhmmImpl<PRECISION, Diagonals3<PRECISION>, Cons
   std::vector<char> hap_reverse;
   std::vector<char> rs_copy;
   std::vector<int> n;
+  std::vector<Testcase> tc_save;
   size_t next = 0;
   int2 this_offset;
   std::vector<pair*> pair_list;
   double* output;
-  double sow_time = 0.f, setup_time = 0.f, compute_time = 0.f, sort_time = 0.f, extract_time = 0.f;
+  double sow_time = 0.f, setup_time = 0.f, compute_time = 0.f, sort_time = 0.f;
+  double extract_time = 0.f;
   void clear() {
      offsets.clear();
      hap_reverse.clear();
@@ -48,26 +52,27 @@ class PairhmmCudaImpl: public PairhmmImpl<PRECISION, Diagonals3<PRECISION>, Cons
      n.clear();
   }
   void one_pair_extract(pair p) {
-     int this_r = p.read.bases.size()+1;
-     int this_c = p.hap.bases.size()+1;
+     int this_r = p.rslen+1;
+     int this_c = p.haplen+1;
      this_offset.x += this_r;
      this_offset.y += this_c;
      offsets.push_back(this_offset);
-     for (int z=0; z<p.hap.bases.size(); z++) {
+     for (int z=0; z<p.haplen; z++) {
         //printf("%c", (char)hap.bases[q]);
-        hap_reverse.push_back((char)p.hap.bases[z]);
+        hap_reverse.push_back((char)p.hap[z]);
      }
      hap_reverse.push_back('\0');
      //printf("\n");
-     for (int z=0;z<p.read.bases.size();z++) {
+     for (int z=0;z<p.rslen;z++) {
         //TODO try this at 256 (w/ unsigned)
-        int i = (int)p.read.ins_quals[z] & 127;
-        int d = (int)p.read.del_quals[z] & 127;
-        int c = (int)p.read.gcp_quals[z] & 127;
-        int q = (int)p.read.base_quals[z] & 127;
-        n.push_back(i + d * 128 + c * 128 * 128 + q * 128 * 128 * 128);
+        //int i = (int)p.read->ins_quals[z] & 127;
+        //int d = (int)p.read->del_quals[z] & 127;
+        //int c = (int)p.read->gcp_quals[z] & 127;
+        //int q = (int)p.read->base_quals[z] & 127;
+        //n.push_back(i + d * 128 + c * 128 * 128 + q * 128 * 128 * 128);
         //printf("push_back %d,%d,%d,%d => %d\n", i, d, c, q, (((( q * 128 ) + c) * 128 + d) * 128) + i);
-        rs_copy.push_back((char)p.read.bases[z]);
+        n.push_back((char)p.n[z]);
+        rs_copy.push_back((char)p.rs[z]);
      }
      rs_copy.push_back('\0');
      n.push_back(0);
@@ -76,23 +81,22 @@ class PairhmmCudaImpl: public PairhmmImpl<PRECISION, Diagonals3<PRECISION>, Cons
   void one_pair_extract_parallel(pair p, int2 this_off) {
   //   this version assumes rs_copy and hap_reverse are "reserved" and 
   //   that the offset list is already built
-     for (int z=0; z<p.hap.bases.size(); z++) {
-        //printf("%c", (char)hap.bases[q]);
-        hap_reverse[z+this_off.y]=(char)p.hap.bases[z];
+     for (int z=0; z<p.haplen; z++) {
+     //   printf("%c", (char)p.hap[z]);
+        hap_reverse[z+this_off.y]=(char)p.hap[z];
      }
-     hap_reverse[p.hap.bases.size()+this_off.y]='\0';
      //printf("\n");
-     for (int z=0;z<p.read.bases.size();z++) {
+     for (int z=0;z<p.rslen;z++) {
         //TODO try this at 256 (w/ unsigned)
-        int i = (int)p.read.ins_quals[z] & 127;
-        int d = (int)p.read.del_quals[z] & 127;
-        int c = (int)p.read.gcp_quals[z] & 127;
-        int q = (int)p.read.base_quals[z] & 127;
-        n[z+this_off.x]= i + d * 128 + c * 128 * 128 + q * 128 * 128 * 128;
-        rs_copy[z+this_off.x]=(char)p.read.bases[z];
+        n[z+this_off.x]=p.n[z];
+     //   printf("%c", (char)p.rs[z]);
+        rs_copy[z+this_off.x]=(char)p.rs[z];
      }
-     rs_copy[p.read.bases.size()+this_off.x]='\0';
-     n[p.read.bases.size()+this_off.x]=0;
+     //printf("\n");
+     //for (int z=0;z<p.rslen;z++) printf("%d ", p.n[z]);
+     //printf("\n");
+     rs_copy[p.rslen+this_off.x]='\0';
+     n[p.rslen+this_off.x]=0;
   }
   void one_testcase_extract( const std::vector<Read<uint8_t,uint8_t>>& padded_reads,
                                     const std::vector<Haplotype<uint8_t>>& padded_haplotypes) {
@@ -100,8 +104,11 @@ class PairhmmCudaImpl: public PairhmmImpl<PRECISION, Diagonals3<PRECISION>, Cons
        //Base::m_constants.update(read);
        for (const auto& hap : padded_haplotypes) {
           pair p;
-          p.read = read;
-          p.hap = hap;
+          p.rs = &read.bases[0];
+          p.hap = &hap.bases[0];
+          p.n = &read.combined_quals[0];
+          p.rslen = read.bases.size();
+          p.haplen = hap.bases.size();
           one_pair_extract(p);
        }
      }
@@ -119,10 +126,11 @@ public:
   std::vector<double> results;
   PairhmmCudaImpl(const size_t initial_size = Base::INITIAL_SIZE): Base {initial_size} { }
   virtual ~PairhmmCudaImpl() { }
-  void sow(const Testcase& testcase) {
+  void sow(const Testcase& tc) {
     Chronos time;
     time.reset();
-    sow(testcase.reads, testcase.haplotypes);
+    tc_save.push_back(tc);
+    sow(tc_save[tc_save.size()-1].reads, tc_save[tc_save.size()-1].haplotypes);
     sow_time += time.elapsed();
   }
   std::vector<double> calculate (const Testcase& testcase) {
@@ -136,6 +144,7 @@ public:
      fprintf(stderr, "Total sow time: %f ms\n\n", sow_time);
 #endif
      fprintf(stderr,"Solving %lu matrices\n", pair_list.size());
+     fprintf(stdout,"Solving %lu matrices\n", pair_list.size());
      Chronos time; time.reset();
      output = (double*)realloc(output, sizeof(double) * pair_list.size());
      std::sort(pair_list.begin(), pair_list.end(), pair_comp);
@@ -148,9 +157,9 @@ public:
      for (int z = 0; z < pair_list.size(); z++) {
         offsets[z].x = total_rows;
         offsets[z].y = total_cols;
-        total_rows += pair_list[z]->read.bases.size()+1;
-        total_cols += pair_list[z]->hap.bases.size()+1;
-        total_cells += pair_list[z]->read.bases.size()*pair_list[z]->hap.bases.size();
+        total_rows += pair_list[z]->rslen+1;
+        total_cols += pair_list[z]->haplen+1;
+        total_cells += pair_list[z]->rslen*pair_list[z]->haplen;
         results.push_back(0.0);
      }
      offsets[pair_list.size()].x = total_rows;
@@ -164,7 +173,8 @@ public:
      }
      CHECKPT(setup_time);
 
-     compute_gpu_head<PRECISION>((int*)&offsets[0], (char*)&rs_copy[0], (char*)&hap_reverse[0], (int*)&n[0],
+     compute_gpu_head<PRECISION>((int*)&offsets[0], (char*)&rs_copy[0], 
+                         (char*)&hap_reverse[0], (int*)&n[0],
                          (PRECISION)Base::INITIAL_CONSTANT, results.size()-next, output, 
                          (double)this->FAILED_RUN_RESULT );
      CHECKPT(compute_time);
@@ -193,7 +203,9 @@ public:
      }
      for (const auto& read : padded_reads) {
         for (const auto& hap : padded_haplotypes) {
-        pair_list.push_back(new pair(read, hap, pair_list.size()+next));
+        pair_list.push_back(new pair(&hap.bases[0], hap.bases.size(), &read.bases[0], 
+                                     &read.combined_quals[0], read.bases.size(), 
+                                     pair_list.size()+next));
         }
      }
   }
@@ -206,17 +218,19 @@ public:
 #ifdef __TIMING_DETAIL
      fprintf(stderr, "Totals:\n");
      fprintf(stderr, "    sow_time : %f\n", sow_time);
-     fprintf(stderr, "    sort_time : %f ( %f \%)\n", sort_time, 100.f*sort_time/sow_time);
-     fprintf(stderr, "    setup_time : %f ( %f \%)\n", setup_time, 100.f*setup_time/sow_time);
-     fprintf(stderr, "    compute_time : %f ( %f \%)\n", compute_time, 100.f*compute_time/sow_time);
-     fprintf(stderr, "    extract_time : %f ( %f \%)\n", extract_time, 100.f*extract_time/sow_time);
+     fprintf(stderr, "    sort_time : %f ( %f %%)\n", sort_time, 100.f*sort_time/sow_time);
+     fprintf(stderr, "    setup_time : %f ( %f %%)\n", setup_time, 100.f*setup_time/sow_time);
+     fprintf(stderr, "    compute_time : %f ( %f %%)\n", compute_time, 100.f*compute_time/sow_time);
+     fprintf(stderr, "    extract_time : %f ( %f %%)\n", extract_time, 100.f*extract_time/sow_time);
      sow_time = sort_time = setup_time = compute_time = extract_time = 0.f;
 #endif
+     tc_save.clear();
      return results;
   }
   void calculate_failed (const Testcase& testcase, std::vector<double>& results) {
   }
-  double do_compute_full_prob(const Read<PRECISION,PRECISION>& read, const Haplotype<PRECISION>& haplotype) override {
+  double do_compute_full_prob(const Read<PRECISION,PRECISION>& read, 
+                              const Haplotype<PRECISION>& haplotype) override {
      return 0.0;
   }
 };

@@ -10,6 +10,7 @@
 #include "testcase.h"
 #include "constants.h"
 #include "diagonals.h"
+#include "chronos.h"
 
 #define P(x) x
 
@@ -81,10 +82,13 @@ public:
     printf("total pairs = %d\n", tmp);
     master_idx = 0;
     int cnt=0;
+    Chronos time; time.reset();
     for (const auto& tc : tc_save) {
         recalculate(tc, results);
         cnt += tc.reads.size() * tc.haplotypes.size();
     }
+    //fprintf(stderr, "Recalc in %f ms\n", time.elapsed());
+    std::cerr << "Recalc in " << time.elapsed() << " ms" << std::endl;
     tc_save.clear();
   }
   void resow(const Testcase& tc) {
