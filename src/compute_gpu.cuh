@@ -74,8 +74,7 @@ template <class PRECISION>
 void compute_gpu(int2 *offset, char *rs, char* hap, PRECISION* q, int* n,
                   PRECISION init_const, int n_tc, GPUmem<PRECISION>&, double FAILED_RUN_RESULT);
 template <class PRECISION>
-void compute_gpu_stream(int2 *offset, char *rs, char* hap, PRECISION* q,
+void compute_gpu_stream(int *offset, char *rs, char* hap, 
                   int* n, PRECISION init_const, int n_tc, GPUmem<PRECISION>&, cudaStream_t strm, int start,
                   double FAILED_RUN_RESULT);
-
 #endif

@@ -22,6 +22,8 @@ void compute_gpu_head(int* offset_in, char* rs, char* hap, int* n,
                       T init_const, int n_tc, double* results, double FAILED_RUN_RESULT);
 template <class T>
 void gpu_init(int* offset_in, int n_tc);
+template <class T>
+void gpu_stream_sync(int s);
 
 template <>
 void GPUAlloc<double>() {
@@ -43,6 +45,7 @@ void GPUFree<float>() {
 bool isGPUAllocated() {
    return (gd_gmem.amem || gf_gmem.amem);
 }
+#if 0
 template <> 
 void compute_gpu_head<float>(int* offset_in, char* rs, char* hap, int* n,
                       float init_const, int n_tc, double* results, double FAILED_RUN_RESULT) {
@@ -76,6 +79,64 @@ void compute_gpu_head<float>(int* offset_in, char* rs, char* hap, int* n,
    //if (isGPUAllocated()) GPUFree<float>();
    cudaCheckError(__LINE__, __FILE__);
 }
+#else
+template <class T> 
+void compute_gpu_setup(int* offset_in, int n_tc, double* results);
+template <> 
+void compute_gpu_setup<float>(int* offset_in, int n_tc, double* results) {
+   int2* offset= (int2*) offset_in;
+   if (!isGPUAllocated()) {
+      GPUAlloc<float>();
+   }
+   cudaCheckError(__LINE__, __FILE__);
+   gf_gmem.results = results;
+   char* current = (char*)gf_gmem.d_amem;
+
+   gf_gmem.d_results = (double*) current;
+   current += sizeof(double) * n_tc;
+
+   gf_gmem.d_offset = (int2*) current;
+   current += sizeof(int2) * (n_tc+1);
+
+   gf_gmem.d_n = (int*)current;
+   current += sizeof(int) * offset[n_tc].x;
+
+   gf_gmem.d_rs = (char*)current;
+   current += offset[n_tc].x;
+   current += ROUND_UP(current-gf_gmem.d_amem, 512);
+
+   gf_gmem.d_hap = (char*)current;
+   current += offset[n_tc].y;
+
+   if (current-gf_gmem.d_amem > gf_gmem.totalMem) {
+     fprintf(stderr, "Error. Problem exceeds GPU memory size. Aborting GPU computation\n"); 
+     return;
+   }
+   //if (isGPUAllocated()) GPUFree<float>();
+   cudaCheckError(__LINE__, __FILE__);
+}
+template <> 
+void compute_gpu_head<float>(int* offset_in, char* rs, char* hap, int* n,
+                      float init_const, int n_tc, double* results, double FAILED_RUN_RESULT) {
+   compute_gpu_setup<float>(offset_in, n_tc, results);
+   compute_gpu_stream(offset_in, rs, hap, n, init_const, n_tc, gf_gmem, 0, 0, FAILED_RUN_RESULT);
+   gf_gmem.results= NULL;
+   cudaCheckError(__LINE__, __FILE__);
+}
+//To enable this to be called from a file not compiled with nvcc
+template <>
+void compute_gpu_stream<float>(int* offset_in, char* rs, char* hap, int* n, float init_const, int n_tc, 
+                        int strm, int results_inx, double FAILED_RUN_RESULT) {
+   compute_gpu_stream(offset_in, rs, hap, n, init_const, n_tc, gf_gmem, gf_gmem.strm[strm], 
+                      results_inx, FAILED_RUN_RESULT);
+}
+template <>
+void compute_gpu_stream<double>(int* offset_in, char* rs, char* hap, int* n, double init_const, int n_tc, 
+                        int strm, int results_inx, double FAILED_RUN_RESULT) {
+   compute_gpu_stream(offset_in, rs, hap, n, init_const, n_tc, gd_gmem, gd_gmem.strm[strm], 
+                      results_inx, FAILED_RUN_RESULT);
+}
+#endif
 template <> 
 void gpu_init<float> (int* offset_in, int n_tc) {
    int2* offset= (int2*) offset_in;
@@ -104,6 +165,25 @@ void gpu_init<float> (int* offset_in, int n_tc) {
      fprintf(stderr, "Error. Problem exceeds GPU memory size. Aborting GPU computation\n"); 
      return;
    }
+}
+void gpu_sync() {
+   fprintf(stderr,"Sync\n");
+   for(int z=0;z<gf_gmem.N_STREAMS;z++)
+      cudaStreamSynchronize(gf_gmem.strm[z]);
+   cudaMemcpy(gf_gmem.results, gf_gmem.d_results, sizeof(double)*4, cudaMemcpyDeviceToHost);
+   //cudaDeviceSynchronize();
+}
+template <>
+void gpu_stream_sync<float>(int s) {
+   fprintf(stderr, "Float: syn stream %d = %d\n", s,gf_gmem.strm[s]);
+   cudaStreamSynchronize(gf_gmem.strm[s]);
+   cudaCheckError(__LINE__, __FILE__);
+}
+template <>
+void gpu_stream_sync<double>(int s) {
+   fprintf(stderr, "Double: syn stream %d = %d\n", s,gd_gmem.strm[s]);
+   cudaStreamSynchronize(gd_gmem.strm[s]);
+   cudaCheckError(__LINE__, __FILE__);
 }
 template <> 
 void gpu_init<double> (int* offset_in, int n_tc) {
@@ -141,7 +221,7 @@ void compute_gpu_head<double>(int* offset_in, char* rs, char* hap, int* n,
                       double init_const, int n_tc, double* results, double FAILED_RUN_RESULT) {
    gpu_init<double>(offset_in, n_tc);
    gd_gmem.results = results;
-   compute_gpu_stream((int2*)offset_in, rs, hap, (double*)NULL, n, init_const, n_tc, gd_gmem, 0, 0, FAILED_RUN_RESULT );
+   compute_gpu_stream(offset_in, rs, hap, n, init_const, n_tc, gd_gmem, 0, 0, FAILED_RUN_RESULT );
    gd_gmem.results= NULL;
    //if (isGPUAllocated()) GPUFree<double>();
    cudaCheckError(__LINE__, __FILE__);
@@ -211,7 +291,9 @@ pairhmm_jacopo(
 {
     
     int pid = threadIdx.x + blockIdx.x * blockDim.x;
-    if (pid >= n_mats) return;
+    if (pid >= n_mats) {
+       return;
+    }
     int r, c;
     __shared__ NUMBER ph2pr_save[128];
 
@@ -1494,14 +1576,15 @@ pairhmm_kernel_old( NUMBER init_const, NUMBER* M, NUMBER *X, NUMBER *Y,
       int _d = (_n >> 7) & 127;
       int _c = (_n >> 14) & 127;
       //_q = ph2pr<NUMBER>((_n >> 21) & 127);
-      pMM = 1.0 - ph2pr<NUMBER>(_i+_d & 127);
-      pXX = ph2pr<NUMBER>(_d);
+      pMM = 1.0 - ph2pr<NUMBER>((_i+_d) & 127);
+      pXX = ph2pr<NUMBER>(_c);
       pMX = ph2pr<NUMBER>(_i);
+      //TODO set n strategically to remove the branch
       pMY = r == ROWS-1 ? 1.0 : ph2pr<NUMBER>(_d);
 
       pGapM = 1.0 - pXX;
       pYY = r == ROWS-1 ? 1.0 : pXX;
-      //TODO get rid of this?
+      //TODO get rid of this by setting n right?
       if (r==0) {
          pMM = pXX = pGapM = pMX = pYY = pMY = 0.0;
       }
@@ -1660,56 +1743,15 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
    printf("GPUmemAlloc for device %d\n", devinx);
    gmem.offset = (int2*)malloc((MAX_PROBS+1)*sizeof(int2));
    cudaHostRegister(gmem.offset, (MAX_PROBS+1)*sizeof(int2), cudaHostRegisterMapped);
-   cudaMalloc(&gmem.d_offset, (MAX_PROBS+1)*sizeof(int2));
-   cudaMalloc(&gmem.d_results, (MAX_PROBS+1)*sizeof(double));
    gmem.totalMem = deviceProp.totalGlobalMem/4;
    //TODO no need to assign d_M, etc.
    cudaMalloc(&gmem.d_amem, gmem.totalMem);
+   printf("d_amem = %p\n", gmem.d_amem);
    cudaCheckError(__LINE__, __FILE__);
    gmem.amem = (char*)malloc(gmem.totalMem);
    cudaHostRegister(gmem.amem, gmem.totalMem, cudaHostRegisterMapped);
    cudaCheckError(__LINE__, __FILE__);
    //cudaMallocHost(&gmem.amem, gmem.totalMem); 
-   d_current = (char*)gmem.d_amem;
-   current = (char*)gmem.amem;
-
-   gmem.d_M = (NUMBER*)d_current;
-   gmem.M = (NUMBER*)current;
-   current += size*(gmem.totalMem/10/size); d_current += size*(gmem.totalMem/10/size);
-
-   gmem.d_X = (NUMBER*)d_current;
-   gmem.X = (NUMBER*)current;
-   current += size*(gmem.totalMem/10/size); d_current += size*(gmem.totalMem/10/size);
-
-   gmem.d_Y = (NUMBER*)d_current;
-   gmem.Y = (NUMBER*)current;
-   current += size*(gmem.totalMem/10/size); d_current += size*(gmem.totalMem/10/size);
-
-   //TODO don't assign these, they get reassigned anyway
-   gmem.d_p = (NUMBER*)d_current;
-   gmem.p = (NUMBER*)current;
-   current += size*(gmem.totalMem/10/size); d_current += size*(gmem.totalMem/10/size);
-
-   gmem.d_q = (NUMBER*)d_current;
-   gmem.q = (NUMBER*)current;
-   current += size*(gmem.totalMem/10/size); d_current += size*(gmem.totalMem/10/size);
-
-   gmem.d_n = (int*)d_current;
-   gmem.n = (int*)current;
-   current += 4*(gmem.totalMem/10/4); d_current += 4*(gmem.totalMem/10/4);
-
-   gmem.d_rs = d_current;
-   gmem.rs = current;
-   current += gmem.totalMem/5; d_current += gmem.totalMem/5;
-
-   gmem.d_hap = d_current;
-   gmem.hap = current;
-   current += gmem.totalMem/5; d_current += gmem.totalMem/5;
-
-   if( current - (char*)gmem.amem > gmem.totalMem) {
-      printf("Error: Requested too much memory on GPU\n");
-      return 9000;
-   }
    cudaCheckError(__LINE__, __FILE__);
    if (!gmem.amem) {
       printf("CPU mem allocation fail\n");
@@ -1723,7 +1765,12 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
    gmem.N_STREAMS=STREAMS;
    gmem.strm = (cudaStream_t*)malloc(sizeof(cudaStream_t)*gmem.N_STREAMS);
    cudaStreamCreate(&gmem.marker_s);
-   for (int z=0;z<gmem.N_STREAMS;z++) cudaStreamCreate(&gmem.strm[z]);
+   printf("%d streams\n", STREAMS);
+   for (int z=0;z<gmem.N_STREAMS;z++) {
+      printf("Create stream %d\n", z);   
+      cudaStreamCreate(&gmem.strm[z]);
+   }
+   cudaCheckError(__LINE__, __FILE__);
    return 0;
 }
 template<class NUMBER>
@@ -1744,6 +1791,8 @@ int GPUmemFree(GPUmem<NUMBER>& gmem)
    gmem.d_M=gmem.d_X=gmem.d_Y=gmem.d_p=gmem.d_q=0;
    gmem.d_rs=gmem.d_hap=0;
    gmem.d_n=0;
+   gmem.d_results=0;
+   gmem.d_offset=0;
    cudaFree(gmem.d_amem);
    gmem.d_amem = 0;
    cudaHostUnregister(gmem.amem);
@@ -1751,8 +1800,8 @@ int GPUmemFree(GPUmem<NUMBER>& gmem)
    gmem.d_amem = 0;
    gmem.amem = 0;
    free(gmem.offset);gmem.offset=NULL;
-   cudaFree(gmem.d_offset); gmem.d_offset = NULL;
-   cudaFree(gmem.d_results); gmem.d_results = NULL;
+   //cudaFree(gmem.d_offset); gmem.d_offset = NULL;
+   //cudaFree(gmem.d_results); gmem.d_results = NULL;
    for (int z=0;z<gmem.N_STREAMS;z++) cudaStreamDestroy(gmem.strm[z]);
    cudaStreamDestroy(gmem.marker_s);
    free(gmem.strm);
@@ -1782,7 +1831,7 @@ void compute_gpu(int2 *offset, char* rs, char* hap, PRECISION* q,
     }
     start[N_STREAM]=n_tc;
     for (int z=0;z<N_STREAM;z++) {
-       compute_gpu_stream(offset+start[z], rs, hap, q, n, init_const, start[z+1]-start[z], 
+       compute_gpu_stream((int*)(offset+start[z]), rs, hap, n, init_const, start[z+1]-start[z], 
                           gmem, strm[z], start[z], FAILED_RUN_RESULT);
        //memcpy(&gmem.results[start[z]], gmem.results, sizeof(PRECISION)*(start[z+1]-start[z]));
     }
@@ -1791,11 +1840,43 @@ void compute_gpu(int2 *offset, char* rs, char* hap, PRECISION* q,
        cudaStreamDestroy(strm[z]);
     }
 }
+void test_copy() {
+   cudaCheckError(__LINE__, __FILE__);
+   double* junk  = (double*)malloc(sizeof(double)*200000);
+   double* d_junk;
+   cudaMalloc(&d_junk, sizeof(double)*200000);
+   cudaCheckError(__LINE__, __FILE__);
+   cudaMemcpy(junk, d_junk, sizeof(double)*1024,
+                   cudaMemcpyDeviceToHost);
+   cudaCheckError(__LINE__, __FILE__);
+}
+template <>
+void gpu_copy_results<float>(int strm, int start, int finish) {
+   cudaCheckError(__LINE__, __FILE__);
+   cudaMemcpyAsync(gf_gmem.results+start, gf_gmem.d_results+start, sizeof(double)*(finish-start),
+                   cudaMemcpyDeviceToHost, gf_gmem.strm[strm]);
+   cudaCheckError(__LINE__, __FILE__);
+   //TODO remove
+   //cudaStreamSynchronize(gf_gmem.strm[strm]);
+   //fprintf(stderr, "results[%d] = %f\n", start, gf_gmem.results[start]);
+   //cudaMemcpy(gf_gmem.results+start, gf_gmem.d_results+start, sizeof(double)*(finish-start),
+   //                cudaMemcpyDeviceToHost);
+   //fprintf(stderr, "results[%d] = %f\n", start, gf_gmem.results[start]);
+   cudaCheckError(__LINE__, __FILE__);
+}
+template <>
+void gpu_copy_results<double>(int strm, int start, int finish) {
+   cudaCheckError(__LINE__, __FILE__);
+   cudaMemcpyAsync(gd_gmem.results+start, gd_gmem.d_results+start, sizeof(double)*(finish-start),
+                   cudaMemcpyDeviceToHost, gd_gmem.strm[strm]);
+   cudaCheckError(__LINE__, __FILE__);
+}
 template <class PRECISION>
-void compute_gpu_stream(int2 *offset, char* rs, char* hap, PRECISION* q, 
+void compute_gpu_stream(int *offset_in, char* rs, char* hap, 
                            int* n, PRECISION init_const, int n_tc, GPUmem<PRECISION>& gmem, 
                            cudaStream_t strm, int results_inx, double FAILED_RUN_RESULT) 
 {
+   int2* offset = (int2*) offset_in;
    //GPUmem<PRECISION> gmem;
    //cudaEvent_t start, finish;
    //cudaEventCreate(&start);
@@ -1821,7 +1902,7 @@ void compute_gpu_stream(int2 *offset, char* rs, char* hap, PRECISION* q,
    if (0==gmem.amem) {
       GPUmemAlloc<PRECISION>(gmem);
    }
-   cudaMemcpyAsync(gmem.d_offset+results_inx, &offset[0], sizeof(int2)*(n_tc+1), 
+   cudaMemcpyAsync(gmem.d_offset+results_inx, offset, sizeof(int2)*(n_tc+1), 
                    cudaMemcpyHostToDevice, strm);
    cudaCheckError(__LINE__, __FILE__);
    cudaMemcpyAsync(gmem.d_n+offset[0].x, n+offset[0].x, sizeof(int)*(offset[n_tc].x-offset[0].x), 
@@ -1864,6 +1945,7 @@ void compute_gpu_stream(int2 *offset, char* rs, char* hap, PRECISION* q,
                                            (int2*)gmem.d_offset+results_inx, n_tc-1, 
                                            gmem.d_results+results_inx, init_const, 
                                            LOG10_INITIAL_CONSTANT, FAILED_RUN_RESULT); 
+   cudaCheckError(__LINE__, __FILE__);
 
    //cudaEventRecord(finish,strm);
    //cudaEventSynchronize(finish);
@@ -1873,15 +1955,23 @@ void compute_gpu_stream(int2 *offset, char* rs, char* hap, PRECISION* q,
    //cudaEventDestroy(start);
    //cudaEventDestroy(finish);
 #endif
+#if 0
    cudaCheckError(__LINE__, __FILE__);
    cudaMemcpyAsync(gmem.results+results_inx, gmem.d_results+results_inx, sizeof(double)*n_tc,
                    cudaMemcpyDeviceToHost,strm);
    //cudaFree(gmem.d_offset);
    //gmem.d_offset=0;
    //GPUmemFree(gmem);
+#endif
    cudaCheckError(__LINE__, __FILE__);
 }
 template void compute_gpu<double>(int2*, char*, char*, double*, int*, double, int, GPUmem<double>&, double);
 template void compute_gpu<float>(int2*, char*, char*, float*, int*, float, int, GPUmem<float>&, double);
 template void compute_gpu_head<float>(int*, char*, char*, int*, float, int, double*, double);
 template void compute_gpu_head<double>(int*, char*, char*, int*, double, int, double*, double);
+template void compute_gpu_stream<float>(int*, char*, char*, int*, float, int, int, int, double);
+template void compute_gpu_stream<double>(int*, char*, char*, int*, double, int, int, int, double);
+template void gpu_stream_sync<float>(int);
+template void gpu_stream_sync<double>(int);
+template void gpu_copy_results<float>(int, int, int);
+template void gpu_copy_results<double>(int, int, int);

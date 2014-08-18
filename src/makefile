@@ -9,13 +9,14 @@ ifeq ($(GPU),1)
   OBJECTS += compute_gpu.o
   NVCC = nvcc 
   LIBS += -L/usr/local/cuda/lib64 -lcudart
-  NVFLAGS = -arch=sm_35
+  NVFLAGS = -arch=sm_35 ${USERNVFLAGS}
   LDFLAGS += -g
 endif
 ifeq ($(DEBUG),1)
   CXXFLAGS += -g -O0
 #  NVFLAGS += -g -G -lineinfo -Xptxas -v,-abi=no
   NVFLAGS += -g -G -lineinfo
+#  NVFLAGS += -g 
 else
   CXXFLAGS += -O4
 endif

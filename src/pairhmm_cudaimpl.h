@@ -25,6 +25,11 @@ struct pair {
       }
 };
 
+bool pair_comp_reverse (pair* pA, pair* pB) {
+     int rA = pA->rslen * pA->haplen;
+     int rB = pB->rslen * pB->haplen;
+     return rA>rB;
+}
 bool pair_comp (pair* pA, pair* pB) {
      int rA = pA->rslen * pA->haplen;
      int rB = pB->rslen * pB->haplen;
@@ -122,14 +127,15 @@ class PairhmmCudaImpl: public PairhmmImpl<PRECISION, Diagonals3<PRECISION>, Cons
 #else 
 #define CHECKPT(ABC) ;;
 #endif
+#define min(A,B) ((A)<(B))?(A):(B)
 public:
   std::vector<double> results;
-  PairhmmCudaImpl(const size_t initial_size = Base::INITIAL_SIZE): Base {initial_size} { }
-  virtual ~PairhmmCudaImpl() { }
+  PairhmmCudaImpl(const size_t initial_size = Base::INITIAL_SIZE): Base {initial_size} { GPUAlloc<PRECISION>(); }
+  virtual ~PairhmmCudaImpl() { GPUFree<float>(); }
   void sow(const Testcase& tc) {
     Chronos time;
-    time.reset();
     tc_save.push_back(tc);
+    time.reset();
     sow(tc_save[tc_save.size()-1].reads, tc_save[tc_save.size()-1].haplotypes);
     sow_time += time.elapsed();
   }
@@ -147,7 +153,8 @@ public:
      fprintf(stdout,"Solving %lu matrices\n", pair_list.size());
      Chronos time; time.reset();
      output = (double*)realloc(output, sizeof(double) * pair_list.size());
-     std::sort(pair_list.begin(), pair_list.end(), pair_comp);
+     //TODO sort in sections
+     std::sort(pair_list.begin(), pair_list.end(), pair_comp_reverse);
      //std::sort(pair_list.begin(), pair_list.end());
 
      CHECKPT(sort_time);
@@ -167,21 +174,47 @@ public:
      n.reserve(total_rows);
      rs_copy.reserve(total_rows);
      hap_reverse.reserve(total_cols);
-     #pragma omp parallel for 
-     for (int z = 0; z < pair_list.size(); z++) {
-        one_pair_extract_parallel(*pair_list[z], offsets[z]);
+     int s=0, last_start=-1;
+     int N_STREAMS = 4;
+     compute_gpu_setup<PRECISION>((int*)&offsets[0], results.size()-next, output);
+     for (int start=0;start<pair_list.size();start+=pair_list.size()/N_STREAMS+1)
+     {
+        s %= N_STREAMS;
+        CHECKPT(compute_time);
+        int finish = min(start+pair_list.size()/N_STREAMS+1, pair_list.size());
+        #pragma omp parallel for 
+        for (int z = start; z < finish; z++) {
+           one_pair_extract_parallel(*pair_list[z], offsets[z]);
+        }
+        CHECKPT(setup_time);
+     
+
+        fprintf(stderr, "compute_gpu_stream(%d to %d, stream %d)\n", start, finish, s);
+        compute_gpu_stream((int*)&offsets[start], (char*)&rs_copy[0], 
+                            (char*)&hap_reverse[0], (int*)&n[0],
+                            (PRECISION)Base::INITIAL_CONSTANT, finish-start, s, start, 
+                            (double)this->FAILED_RUN_RESULT );
+        gpu_copy_results<PRECISION>(s, start, finish);
+        if (last_start >=0) {
+           int last_s = (s+N_STREAMS-1)%N_STREAMS;
+           gpu_stream_sync<PRECISION>(last_s);
+           for (int z=last_start; z < start; z++) {
+              results[pair_list[z]->inx] = output[z];
+           }
+        }
+        //time.reset();
+        //while(time.elapsed() < 100000);
+        //gpu_copy_results<PRECISION>(s,start,finish);
+        last_start = start;
+        s++;
      }
-     CHECKPT(setup_time);
-
-     compute_gpu_head<PRECISION>((int*)&offsets[0], (char*)&rs_copy[0], 
-                         (char*)&hap_reverse[0], (int*)&n[0],
-                         (PRECISION)Base::INITIAL_CONSTANT, results.size()-next, output, 
-                         (double)this->FAILED_RUN_RESULT );
-     CHECKPT(compute_time);
-
-     for (int z=0; z < results.size()-next; z++) {
+     int last_s = (s+N_STREAMS-1)%N_STREAMS;
+     gpu_stream_sync<PRECISION>(last_s);
+     fprintf(stdout, "final:Send %d thru %d to results\n", last_start, pair_list.size());
+     for (int z=last_start; z < pair_list.size(); z++) {
         results[pair_list[z]->inx] = output[z];
      }
+     CHECKPT(compute_time);
 
      clear();
      next=results.size();
@@ -212,7 +245,10 @@ public:
   std::vector<double> reap() {
      printf("Before reap. Solving %lu matrices\n", pair_list.size());
      if (0 != pair_list.size() ) { 
+        Chronos time; time.reset();
         gpu_compute();
+        sow_time += time.elapsed();
+        fprintf(stderr, " Total gpu_compute time: %f ms\n\n", time.elapsed());
      }
      next=0;
 #ifdef __TIMING_DETAIL

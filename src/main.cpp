@@ -46,6 +46,7 @@ int main (const int argc, char const * const argv[]) {
     pairhmm.sow(testcase);
     computation_time += time.elapsed();
   }
+  std::cerr << "total sow time " << computation_time << "ms\n";
   time.reset();
   auto results = pairhmm.reap();
   computation_time += time.elapsed();
