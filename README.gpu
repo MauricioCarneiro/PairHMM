@@ -1,0 +1,6 @@
+To build for GPU, you'll need to build with 
+make GPU=1
+
+You'll get better performance with
+
+USERNVFLAGS="-DSTREAMS=4"
