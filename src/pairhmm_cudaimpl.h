@@ -193,7 +193,6 @@ public:
         CHECKPT(setup_time);
      
 
-        fprintf(stderr, "compute_gpu_stream(%d to %d, stream %d)\n", start, finish, s);
         compute_gpu_stream((int*)&offsets[start], (char*)&rs_copy[0], 
                             (char*)&hap_reverse[0], (int*)&n[0],
                             (PRECISION)Base::INITIAL_CONSTANT, finish-start, s, start, 
