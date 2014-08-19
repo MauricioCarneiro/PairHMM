@@ -153,8 +153,12 @@ public:
      fprintf(stdout,"Solving %lu matrices\n", pair_list.size());
      Chronos time; time.reset();
      output = (double*)realloc(output, sizeof(double) * pair_list.size());
-     //TODO sort in sections
-     std::sort(pair_list.begin(), pair_list.end(), pair_comp_reverse);
+     #pragma omp parallel for 
+     for (int this_start=0;this_start<pair_list.size();this_start+=pair_list.size()/10) {
+        if (this_start+pair_list.size()/10 > pair_list.size()) 
+             std::sort(pair_list.begin()+this_start, pair_list.end(), pair_comp_reverse);
+        else std::sort(pair_list.begin()+this_start, pair_list.begin()+this_start+pair_list.size()/10, pair_comp_reverse);
+     }
      //std::sort(pair_list.begin(), pair_list.end());
 
      CHECKPT(sort_time);
