@@ -83,13 +83,11 @@ public:
     }
     printf("total pairs = %d\n", tmp);
     master_idx = 0;
-    int cnt=0;
 //    #pragma omp parallel for
     for (int q=0;q<tc_save.size();q++) {
         Testcase tc = tc_save[q];
     //for (const auto& tc : tc_save) {
         recalculate(tc, results, tc.offset);
-        cnt += tc.reads.size() * tc.haplotypes.size();
     }
     std::cerr << "Recalc in " << time.elapsed() << " ms" << std::endl;
     tc_save.clear();

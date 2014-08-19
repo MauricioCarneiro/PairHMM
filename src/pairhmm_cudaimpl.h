@@ -63,19 +63,10 @@ class PairhmmCudaImpl: public PairhmmImpl<PRECISION, Diagonals3<PRECISION>, Cons
      this_offset.y += this_c;
      offsets.push_back(this_offset);
      for (int z=0; z<p.haplen; z++) {
-        //printf("%c", (char)hap.bases[q]);
         hap_reverse.push_back((char)p.hap[z]);
      }
      hap_reverse.push_back('\0');
-     //printf("\n");
      for (int z=0;z<p.rslen;z++) {
-        //TODO try this at 256 (w/ unsigned)
-        //int i = (int)p.read->ins_quals[z] & 127;
-        //int d = (int)p.read->del_quals[z] & 127;
-        //int c = (int)p.read->gcp_quals[z] & 127;
-        //int q = (int)p.read->base_quals[z] & 127;
-        //n.push_back(i + d * 128 + c * 128 * 128 + q * 128 * 128 * 128);
-        //printf("push_back %d,%d,%d,%d => %d\n", i, d, c, q, (((( q * 128 ) + c) * 128 + d) * 128) + i);
         n.push_back((char)p.n[z]);
         rs_copy.push_back((char)p.rs[z]);
      }
@@ -87,19 +78,13 @@ class PairhmmCudaImpl: public PairhmmImpl<PRECISION, Diagonals3<PRECISION>, Cons
   //   this version assumes rs_copy and hap_reverse are "reserved" and 
   //   that the offset list is already built
      for (int z=0; z<p.haplen; z++) {
-     //   printf("%c", (char)p.hap[z]);
         hap_reverse[z+this_off.y]=(char)p.hap[z];
      }
-     //printf("\n");
      for (int z=0;z<p.rslen;z++) {
         //TODO try this at 256 (w/ unsigned)
         n[z+this_off.x]=p.n[z];
-     //   printf("%c", (char)p.rs[z]);
         rs_copy[z+this_off.x]=(char)p.rs[z];
      }
-     //printf("\n");
-     //for (int z=0;z<p.rslen;z++) printf("%d ", p.n[z]);
-     //printf("\n");
      rs_copy[p.rslen+this_off.x]='\0';
      n[p.rslen+this_off.x]=0;
   }
@@ -140,8 +125,6 @@ public:
     sow_time += time.elapsed();
   }
   std::vector<double> calculate (const Testcase& testcase) {
-    //const auto padded_haplotypes = this->pad_haplotypes<PRECISION>(testcase); // updates m_max_original_read_length (important!)
-    //const auto padded_reads = this->pad_reads_noconvert(testcase.reads);
     sow(testcase.reads, testcase.haplotypes);
     return reap();
   }
@@ -149,7 +132,6 @@ public:
 #ifdef __TIMING_DETAIL
      fprintf(stderr, "Total sow time: %f ms\n\n", sow_time);
 #endif
-     fprintf(stderr,"Solving %lu matrices\n", pair_list.size());
      fprintf(stdout,"Solving %lu matrices\n", pair_list.size());
      Chronos time; time.reset();
      output = (double*)realloc(output, sizeof(double) * pair_list.size());
@@ -205,9 +187,6 @@ public:
               results[pair_list[z]->inx] = output[z];
            }
         }
-        //time.reset();
-        //while(time.elapsed() < 100000);
-        //gpu_copy_results<PRECISION>(s,start,finish);
         last_start = start;
         s++;
      }
@@ -273,9 +252,5 @@ public:
      return 0.0;
   }
 };
-
-
-
-
 
 #endif

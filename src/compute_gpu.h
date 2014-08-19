@@ -20,6 +20,8 @@ template <class T>
 void GPUFree();
 bool isGPUAllocated();
 void test_copy();
+template <unsigned int I>
+void dbgMark();
 
 void cudaCheckError(int line, const char* file);
 void gpu_sync();

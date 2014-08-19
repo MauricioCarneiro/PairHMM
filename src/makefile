@@ -10,7 +10,7 @@ ifeq ($(GPU),1)
   NVCC = nvcc 
   LIBS += -L/usr/local/cuda/lib64 -lcudart
   NVFLAGS = -arch=sm_35 ${USERNVFLAGS}
-  LDFLAGS += -g
+  #LDFLAGS += -g
 endif
 ifeq ($(DEBUG),1)
   CXXFLAGS += -g -O0
