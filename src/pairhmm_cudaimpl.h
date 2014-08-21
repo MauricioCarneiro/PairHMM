@@ -192,7 +192,6 @@ public:
      }
      int last_s = (s+N_STREAMS-1)%N_STREAMS;
      gpu_stream_sync<PRECISION>(last_s);
-     fprintf(stdout, "final:Send %d thru %d to results\n", last_start, pair_list.size());
      for (int z=last_start; z < pair_list.size(); z++) {
         results[pair_list[z]->inx] = output[z];
      }

@@ -447,8 +447,6 @@ int GPUmemAlloc(GPUmem<NUMBER>& gmem)
    int devinx;
    cudaGetDevice(&devinx);
    cudaError_t err = cudaGetDeviceProperties(&deviceProp, devinx);
-   char *current, *d_current;
-   int size = sizeof(NUMBER);
    if (err) printf("Error getting device props\n");
    printf("GPUmemAlloc for device %d\n", devinx);
    gmem.offset = (int2*)malloc((MAX_PROBS+1)*sizeof(int2));

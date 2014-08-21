@@ -8,7 +8,7 @@ LIBS=
 ifeq ($(GPU),1)
   OBJECTS += compute_gpu.o
   NVCC = nvcc 
-  LIBS += -L/usr/local/cuda/lib64 -lcudart
+  LIBS += -L$(CUDA_PATH)/lib64 -lcudart
   NVFLAGS = -arch=sm_35 ${USERNVFLAGS}
   #LDFLAGS += -g
 endif
