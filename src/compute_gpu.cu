@@ -42,6 +42,11 @@ void GPUFree<float>() {
 bool isGPUAllocated() {
    return (gd_gmem.amem || gf_gmem.amem);
 }
+int get_nstreams() {
+   if (gf_gmem.amem != 0) return gf_gmem.N_STREAMS;
+   else if (gd_gmem.amem != 0) return gd_gmem.N_STREAMS;
+   else return 0;
+}
 template <class T> 
 void compute_gpu_setup(int* offset_in, int n_tc, double* results);
 cudaStream_t dbg_strm;

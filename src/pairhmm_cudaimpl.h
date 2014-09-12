@@ -49,7 +49,8 @@ class PairhmmCudaImpl: public PairhmmImpl<PRECISION, Diagonals3<PRECISION>, Cons
   std::vector<pair*> pair_list;
   double* output;
   double sow_time = 0.f, setup_time = 0.f, compute_time = 0.f, sort_time = 0.f;
-  double extract_time = 0.f;
+  double extract_time = 0.f, alloc_time = 0.f, collect_time = 0.f;
+  double sow_time2 = 0.f;
   void clear() {
      offsets.clear();
      hap_reverse.clear();
@@ -115,12 +116,24 @@ class PairhmmCudaImpl: public PairhmmImpl<PRECISION, Diagonals3<PRECISION>, Cons
 #define min(A,B) ((A)<(B))?(A):(B)
 public:
   std::vector<double> results;
-  PairhmmCudaImpl(const size_t initial_size = Base::INITIAL_SIZE): Base {initial_size} { GPUAlloc<PRECISION>(); }
-  virtual ~PairhmmCudaImpl() { GPUFree<float>(); }
+  PairhmmCudaImpl(const size_t initial_size = Base::INITIAL_SIZE): Base {initial_size} { 
+            Chronos time; time.reset(); 
+            GPUAlloc<PRECISION>(); 
+            alloc_time += time.elapsed();
+  }
+  virtual ~PairhmmCudaImpl() { 
+            Chronos time; time.reset(); 
+            GPUFree<PRECISION>(); 
+            alloc_time += time.elapsed();
+#ifdef __TIMING_DETAIL
+            std::cerr << "Alloc/Free time: " << alloc_time << " ms" << std::endl;
+#endif
+  }
   void sow(const Testcase& tc) {
-    Chronos time;
+    Chronos time,time2;
+    time.reset();time2.reset();
     tc_save.push_back(tc);
-    time.reset();
+    collect_time+=time2.elapsed();
     sow(tc_save[tc_save.size()-1].reads, tc_save[tc_save.size()-1].haplotypes);
     sow_time += time.elapsed();
   }
@@ -161,7 +174,7 @@ public:
      rs_copy.reserve(total_rows);
      hap_reverse.reserve(total_cols);
      int s=0, last_start=-1;
-     int N_STREAMS = 4;
+     int N_STREAMS = get_nstreams();
      compute_gpu_setup<PRECISION>((int*)&offsets[0], results.size()-next, output);
      for (int start=0;start<pair_list.size();start+=pair_list.size()/N_STREAMS+1)
      {
@@ -192,10 +205,11 @@ public:
      }
      int last_s = (s+N_STREAMS-1)%N_STREAMS;
      gpu_stream_sync<PRECISION>(last_s);
+     CHECKPT(compute_time);
+
      for (int z=last_start; z < pair_list.size(); z++) {
         results[pair_list[z]->inx] = output[z];
      }
-     CHECKPT(compute_time);
 
      clear();
      next=results.size();
@@ -205,11 +219,13 @@ public:
   }
   void sow (const std::vector<Read<uint8_t,uint8_t>>& padded_reads,
                                     const std::vector<Haplotype<uint8_t>>& padded_haplotypes) {
+     Chronos time3;time3.reset();
      if (pair_list.size() + padded_reads.size() * padded_haplotypes.size() > MAX_PROBS) {
         Chronos time; time.reset();
         gpu_compute();
         fprintf(stderr, " Total gpu_compute time: %f ms\n\n", time.elapsed());
      } 
+     Chronos time2; time2.reset();
      //If results have just been harvested, clear results
      if (0==next && 0 == rs_copy.size()) results.clear();
      if (0==offsets.size()) {
@@ -222,6 +238,8 @@ public:
                                      pair_list.size()+next));
         }
      }
+     collect_time += time2.elapsed();
+     sow_time2 += time3.elapsed();
   }
   std::vector<double> reap() {
      printf("Before reap. Solving %lu matrices\n", pair_list.size());
@@ -235,10 +253,14 @@ public:
 #ifdef __TIMING_DETAIL
      fprintf(stderr, "Totals:\n");
      fprintf(stderr, "    sow_time : %f\n", sow_time);
+     fprintf(stderr, "    sow_time2 : %f\n", sow_time2);
      fprintf(stderr, "    sort_time : %f ( %f %%)\n", sort_time, 100.f*sort_time/sow_time);
      fprintf(stderr, "    setup_time : %f ( %f %%)\n", setup_time, 100.f*setup_time/sow_time);
      fprintf(stderr, "    compute_time : %f ( %f %%)\n", compute_time, 100.f*compute_time/sow_time);
      fprintf(stderr, "    extract_time : %f ( %f %%)\n", extract_time, 100.f*extract_time/sow_time);
+     fprintf(stderr, "    collect_time : %f ( %f %%)\n", collect_time, 100.f*collect_time/sow_time);
+     fprintf(stderr, "    missing : %f (%f %%)\n", sow_time-collect_time-extract_time-compute_time-setup_time-sort_time,
+                                                   100.f*(sow_time-collect_time-extract_time-compute_time-setup_time-sort_time)/sow_time);
      sow_time = sort_time = setup_time = compute_time = extract_time = 0.f;
 #endif
      tc_save.clear();

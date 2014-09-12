@@ -11,6 +11,7 @@ class Pairhmm {
  private:
   FAST fast;
   CORRECT correct;
+  double resow_time = 0.f;
  public:
   std::vector<double> calculate(const Testcase& testcase) {
     auto results = fast.calculate(testcase); // calculate all the testcases using the float precision pairhmm implementation
@@ -27,14 +28,16 @@ class Pairhmm {
     time.reset();
     correct.rereap(results);
     std::cerr << "DP computation: " << time.elapsed() << " ms." << std::endl;
+    std::cerr << "resow time: " << resow_time << " ms." << std::endl;
     //correct.recalculate(testcase, results);
     return results;
   }
   void sow(const Testcase& testcase) {
+    Chronos time;
     fast.sow(testcase);
+    time.reset();
     correct.resow(testcase);
-    //TODO maybe call correct.sow for each testcase so the data will
-    //     be in correct when it's time to recalc and reap
+    resow_time += time.elapsed();
   }
 };
 

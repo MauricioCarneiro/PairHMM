@@ -19,6 +19,7 @@ void GPUAlloc();
 template <class T>
 void GPUFree();
 bool isGPUAllocated();
+int get_nstreams();
 void test_copy();
 template <unsigned int I>
 void dbgMark();

@@ -13,7 +13,7 @@
 
 #define WARP 32 
 #ifndef STREAMS
-#define STREAMS 1
+#define STREAMS 4
 #endif
 
 struct cudaTextureData {

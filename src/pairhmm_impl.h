@@ -84,13 +84,14 @@ public:
     printf("total pairs = %d\n", tmp);
     master_idx = 0;
 //    #pragma omp parallel for
+//TODO can't parallelize due to m_constants, etc.
     for (int q=0;q<tc_save.size();q++) {
         Testcase tc = tc_save[q];
     //for (const auto& tc : tc_save) {
         recalculate(tc, results, tc.offset);
     }
-    std::cerr << "Recalc in " << time.elapsed() << " ms" << std::endl;
     tc_save.clear();
+    std::cerr << "Recalc in " << time.elapsed() << " ms" << std::endl;
   }
   void resow(const Testcase& tc) {
      tc_save.push_back(tc);
