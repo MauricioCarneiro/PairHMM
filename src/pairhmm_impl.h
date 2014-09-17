@@ -74,7 +74,7 @@ public:
     tresults.clear();
     return ret_results;
   }
-  void rereap(std::vector<double> results) {
+  void rereap(std::vector<double>& results) {
     int tmp=0;
     Chronos time; time.reset();
     for (auto& tc : tc_save) {
@@ -218,7 +218,7 @@ public:
     for (auto read : testcase.reads) {
       auto has_padded_read = false;
       for (auto hap_idx = 0u; hap_idx != testcase.haplotypes.size(); ++hap_idx) {
-        //printf("results[%d] = %f\n", master_idx, r[idx]); fflush(0);
+        //printf("results[%d] = %f\n", offset+idx, results[offset+idx]); fflush(0);
         if (results[offset+idx] == FAILED_RUN_RESULT) {
           if (!has_padded_read) {
             padded_read = pad_read(read); // making a copy here so I can keep it across haplotype iterations
@@ -228,6 +228,7 @@ public:
           auto padded_haplotype = pad_haplotype(testcase.haplotypes[hap_idx]); // can try to optimize this later, but only after benchmarking
           m_diagonals.update(INITIAL_CONSTANT/padded_haplotype.original_length);
           results[offset+idx] = compute_full_prob(padded_read, padded_haplotype);
+          //printf("new results[%d] = %f\n", offset+idx, results[offset+idx]); fflush(0);
 //        } else {
 //          printf("result %d (%f) is OK.\n", master_idx, results[master_idx]);
         }

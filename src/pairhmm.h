@@ -21,10 +21,6 @@ class Pairhmm {
   std::vector<double> reap() {
     Chronos time; time.reset();
     auto results = fast.reap();
-    //TODO 
-    //     - move testcase data from fast to correct
-    //     - pad read and haplotype for cases which underflowed
-    //     - call correct.compute_full_prob for each
     time.reset();
     correct.rereap(results);
     std::cerr << "DP computation: " << time.elapsed() << " ms." << std::endl;
