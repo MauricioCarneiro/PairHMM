@@ -15,6 +15,7 @@ struct Read {
   std::vector<QUAL_TYPE> ins_quals;
   std::vector<QUAL_TYPE> del_quals;
   std::vector<QUAL_TYPE> gcp_quals;
+  std::vector<int> combined_quals;
 
   explicit Read() = default;
 
@@ -45,7 +46,16 @@ struct Read {
     ins_quals {convert_bytes<std::vector<QUAL_TYPE>>(ins_quals_,  -QUAL_OFFSET)},
     del_quals {convert_bytes<std::vector<QUAL_TYPE>>(del_quals_,  -QUAL_OFFSET)},
     gcp_quals {convert_bytes<std::vector<QUAL_TYPE>>(gcp_quals_,  -QUAL_OFFSET)}
-  {}
+  {
+    //for ( int y=0;y<bases.size();y++) combined_quals.push_back(12345);
+    for (int y=0;y<bases.size();y++) {
+       int _i = ins_quals[y] & 127;
+       int _d = del_quals[y] & 127;
+       int _c = gcp_quals[y] & 127;
+       int _q = base_quals[y] & 127;
+       combined_quals.push_back(_i + 128 * _d + 128 * 128 * _c + 128 * 128 * 128 * _q);
+    }
+  }
 
 };
 

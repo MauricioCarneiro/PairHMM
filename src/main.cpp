@@ -14,6 +14,7 @@
 #include "pairhmm_vecimpl.h"
 #include "pairhmm_sseimpl.h"
 #include "pairhmm_avximpl.h"
+#include "pairhmm_cudaimpl.h"
 #include "chronos.h"
 
 using namespace std;
@@ -29,7 +30,9 @@ int main (const int argc, char const * const argv[]) {
     //PairhmmSSEFloatImpl,
     //PairhmmAVXFloatImpl,
     //PairhmmAVXDoubleImpl
-    PairhmmAVXFloat2DiagsImpl,
+    //PairhmmAVXFloat2DiagsImpl,
+    //PairhmmAVXDouble2DiagsImpl
+    PairhmmCudaImpl<float>,
     PairhmmAVXDouble2DiagsImpl
   >{};
   InputReader<TestcaseIterator> reader {};
@@ -39,11 +42,16 @@ int main (const int argc, char const * const argv[]) {
   Chronos time;
   for (auto& testcase : reader) {
     time.reset();
-    auto results = pairhmm.calculate(testcase);
+    //auto results = pairhmm.calculate(testcase);
+    pairhmm.sow(testcase);
     computation_time += time.elapsed();
-    for (auto x : results)
-      cout << x << endl;
   }
+  std::cerr << "total sow time " << computation_time << "ms\n";
+  time.reset();
+  auto results = pairhmm.reap();
+  computation_time += time.elapsed();
+  for (auto x : results)
+    cout << x << endl;
   std::cerr << "done in " << computation_time << "ms\n";
   return 0;
 }

@@ -10,6 +10,7 @@
 struct Testcase {
   std::vector<Read<uint8_t,uint8_t>> reads;
   std::vector<Haplotype<uint8_t>> haplotypes;
+  int offset;
 
   Testcase() {}
   Testcase(std::vector<Read<uint8_t,uint8_t>>& reads_, std::vector<Haplotype<uint8_t>>& haplotypes_) = delete;

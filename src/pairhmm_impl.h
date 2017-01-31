@@ -10,6 +10,7 @@
 #include "testcase.h"
 #include "constants.h"
 #include "diagonals.h"
+#include "chronos.h"
 
 #define P(x) x
 
@@ -36,8 +37,12 @@ namespace constants_with_precision {
 template <class PRECISION, class DIAGONALS, class CONSTANTS, int VECSIZE = 1>
 class PairhmmImpl {
   size_t m_max_original_read_length = 0;  // updated during calculate() -- inside pad_haplotypes
+  int master_idx;
 
 public:
+  std::vector<double> tresults;
+  std::vector<Testcase> tc_save;
+  size_t next;
   size_t max_original_read_length(void) const { return m_max_original_read_length; }
 
   PairhmmImpl(const size_t initial_size = INITIAL_SIZE) :
@@ -60,12 +65,43 @@ public:
     return calculate(padded_reads, padded_haplotypes);
   }
 
-  void recalculate (const Testcase& testcase, std::vector<double>& results) {
+  virtual void sow (const Testcase& testcase) {
+     auto lresults = calculate(testcase);
+     for (const auto& r : lresults) tresults.push_back(r);
+  }
+  virtual std::vector<double> reap() {
+    auto ret_results = tresults;
+    tresults.clear();
+    return ret_results;
+  }
+  void rereap(std::vector<double>& results) {
+    int tmp=0;
+    Chronos time; time.reset();
+    for (auto& tc : tc_save) {
+       tc.offset = tmp;
+       tmp += tc.reads.size() * tc.haplotypes.size();
+    }
+    printf("total pairs = %d\n", tmp);
+    master_idx = 0;
+//    #pragma omp parallel for
+//TODO can't parallelize due to m_constants, etc.
+    for (int q=0;q<tc_save.size();q++) {
+        Testcase tc = tc_save[q];
+    //for (const auto& tc : tc_save) {
+        recalculate(tc, results, tc.offset);
+    }
+    tc_save.clear();
+    std::cerr << "Recalc in " << time.elapsed() << " ms" << std::endl;
+  }
+  void resow(const Testcase& tc) {
+     tc_save.push_back(tc);
+  }
+  void recalculate (const Testcase& testcase, std::vector<double>& results, int offset) {
     m_max_original_read_length = calculate_max_read_length(testcase.reads);
     const auto max_padded_read_length = m_max_original_read_length + total_read_padding();
     m_constants.reserve(max_padded_read_length+(VECSIZE-1));
     m_diagonals.reserve(max_padded_read_length+(VECSIZE-1));
-    calculate_failed(testcase, results);
+    calculate_failed(testcase, results, offset);
   }
  protected:
   CONSTANTS m_constants;
@@ -79,6 +115,7 @@ public:
   static constexpr auto INITIAL_SIZE       = 1;
   static constexpr auto MIN_ACCEPTED       = constants_with_precision::MIN_ACCEPTED_WITH_PRECISION<PRECISION>();
   static constexpr auto FAILED_RUN_RESULT  = std::numeric_limits<double>::min();
+  static constexpr auto GPU_WARP_SIZE = 32;
 
   size_t total_read_padding() {
     return READ_LEFT_PADDING + READ_RIGHT_PADDING;
@@ -131,7 +168,7 @@ public:
     return padded_read;
   }
 
-  std::vector<Read<PRECISION,PRECISION>> pad_reads(const std::vector<Read<uint8_t, uint8_t>>& reads) const {
+  virtual std::vector<Read<PRECISION,PRECISION>> pad_reads(const std::vector<Read<uint8_t, uint8_t>>& reads) const {
     auto padded_reads = std::vector<Read<PRECISION,PRECISION>>{};
     padded_reads.reserve(reads.size());
     for (auto& read : reads)
@@ -160,7 +197,7 @@ public:
     return do_compute_full_prob(read, haplotype);
   }
 
-  std::vector<double> calculate (const std::vector<Read<PRECISION,PRECISION>>& padded_reads, const std::vector<Haplotype<PRECISION>>& padded_haplotypes) {
+  virtual std::vector<double> calculate (const std::vector<Read<PRECISION,PRECISION>>& padded_reads, const std::vector<Haplotype<PRECISION>>& padded_haplotypes) {
     auto results = std::vector<double>{};
     results.reserve(padded_reads.size() * padded_haplotypes.size());
     for (const auto& read : padded_reads) {
@@ -173,13 +210,16 @@ public:
     return results;
   }
 
-  void calculate_failed (const Testcase& testcase, std::vector<double>& results) {
-    auto master_idx = 0;
+  virtual void calculate_failed (const Testcase& testcase, std::vector<double>& results, int offset) {
     auto padded_read = Read<PRECISION,PRECISION>{};
+//    printf("Recalculating\n");
+    //double* r = &results[offset];
+    int idx = 0;
     for (auto read : testcase.reads) {
       auto has_padded_read = false;
       for (auto hap_idx = 0u; hap_idx != testcase.haplotypes.size(); ++hap_idx) {
-        if (results[master_idx] == FAILED_RUN_RESULT) {
+        //printf("results[%d] = %f\n", offset+idx, results[offset+idx]); fflush(0);
+        if (results[offset+idx] == FAILED_RUN_RESULT) {
           if (!has_padded_read) {
             padded_read = pad_read(read); // making a copy here so I can keep it across haplotype iterations
             m_constants.update(padded_read);
@@ -187,9 +227,12 @@ public:
           }
           auto padded_haplotype = pad_haplotype(testcase.haplotypes[hap_idx]); // can try to optimize this later, but only after benchmarking
           m_diagonals.update(INITIAL_CONSTANT/padded_haplotype.original_length);
-          results[master_idx] = compute_full_prob(padded_read, padded_haplotype);
+          results[offset+idx] = compute_full_prob(padded_read, padded_haplotype);
+          //printf("new results[%d] = %f\n", offset+idx, results[offset+idx]); fflush(0);
+//        } else {
+//          printf("result %d (%f) is OK.\n", master_idx, results[master_idx]);
         }
-        ++master_idx;
+        ++idx;
       }
     }
   }
